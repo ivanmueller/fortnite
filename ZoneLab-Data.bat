@@ -21,6 +21,7 @@ echo   3  List tournaments from the last 30 days
 echo   4  Collect match IDs for one tournament window
 echo   5  Download and process the collected matches (strongest lobbies first)
 echo   V  Preview which matches option 5 downloads next
+echo   W  Download every match from one tournament window (e.g. a LAN event)
 echo   6  Process my own recent replays from the Fortnite Demos folder
 echo   7  Re-process everything already downloaded (after an update)
 echo   8  Download via api-fortnite.com instead (2 credits per match; use if 5 fails)
@@ -46,6 +47,7 @@ if /i "%choice%"=="l" goto :logout
 if /i "%choice%"=="d" goto :datadir
 if /i "%choice%"=="p" goto :pr
 if /i "%choice%"=="v" goto :plan
+if /i "%choice%"=="w" goto :pilotwindow
 if /i "%choice%"=="k" goto :keepraw
 if /i "%choice%"=="q" goto :end
 goto :menu
@@ -111,6 +113,13 @@ goto :done
 
 :plan
 %PS% "pipeline\run.ps1" plan
+goto :done
+
+:pilotwindow
+set "window="
+set /p "window=Event window ID (already collected with option 4): "
+if "%window%"=="" goto :menu
+%PS% "pipeline\run.ps1" pilot -Limit 1000 -Window "%window%"
 goto :done
 
 :pr

@@ -7,6 +7,8 @@
 //   node download.js --with-checkpoints      also download checkpoints (see below)
 //   node download.js --plan                  show the download order and stop
 //   node download.js --order list            download in list order instead of strongest lobbies first
+//   node download.js --window <eventWindowId> download every match from one tournament window, in any order
+//                                            (for events whose players aren't in Power Rankings, e.g. LAN accounts)
 //
 // By default the strongest lobbies come first: matches are ranked by how many Power
 // Rankings top-1,000 players the leaderboards showed in them (or, before Power Rankings
@@ -60,10 +62,22 @@ if (!fs.existsSync(CSV)) {
   console.error('match_ids.csv not found. Run find_matches.js first, or add IDs by hand.');
   process.exit(1);
 }
-const ids = fs.readFileSync(CSV, 'utf8').split('\n').slice(1)
+const onlyWindow = args.includes('--window') ? args[args.indexOf('--window') + 1] : null;
+const rowsAll = fs.readFileSync(CSV, 'utf8').split('\n').slice(1)
   .map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
-  .map((l) => l.split(',')[0].trim())
-  .filter((id) => /^[0-9a-f]{32}$/i.test(id));
+  .map((l) => l.split(',').map((v) => v.trim()))
+  .filter((c) => /^[0-9a-f]{32}$/i.test(c[0]));
+const ids = rowsAll
+  .filter((c) => !onlyWindow || (c[1] || '').toLowerCase() === onlyWindow.toLowerCase())
+  .map((c) => c[0]);
+if (onlyWindow) {
+  const done = ids.filter((id) => fs.existsSync(path.join(RAW, `${id}.replay`))).length;
+  console.log(`Window ${onlyWindow}: ${ids.length} matches in the list, ${done} already downloaded.`);
+  if (!ids.length) {
+    console.log('No match IDs for that window. Run option 4 on it first (the ID is case-sensitive in option 4, not here).');
+    process.exit(1);
+  }
+}
 
 // ---- strongest lobbies first
 function readCsv(file) {
@@ -82,7 +96,7 @@ for (const r of readCsv(path.join(DATA, 'match_seen_players.csv'))) {
   s[2] += 1;
   strength.set(r.match_id, s);
 }
-const byStrength = !args.includes('--order') || args[args.indexOf('--order') + 1] !== 'list';
+const byStrength = !onlyWindow && (!args.includes('--order') || args[args.indexOf('--order') + 1] !== 'list');
 const score = (id) => strength.get(id.toLowerCase()) || [0, 0, 0];
 const waiting = ids.filter((id) => !fs.existsSync(path.join(RAW, `${id}.replay`)));
 if (byStrength && strength.size) {
@@ -90,6 +104,20 @@ if (byStrength && strength.size) {
   waiting.sort((a, b) => { const x = score(a), y = score(b); return (y[0] - x[0]) || (y[1] - x[1]) || (y[2] - x[2]); });
 }
 const todo = waiting.slice(0, limit);
+if (onlyWindow && todo.length) {
+  // Self-check: how many of each match's players are in Power Rankings? (LAN events often use event accounts.)
+  console.log('match id                          leaderboard players seen  in Power Rankings  PR top-1,000');
+  for (const id of todo) {
+    const [a, b, c] = score(id);
+    console.log(`${id}  ${String(c).padStart(24)}  ${String(b).padStart(17)}  ${String(a).padStart(12)}`);
+  }
+  const seen = todo.reduce((n, id) => n + score(id)[2], 0);
+  const inPr = todo.reduce((n, id) => n + score(id)[1], 0);
+  if (seen && inPr / seen < 0.2) {
+    console.log('Few of these players are in Power Rankings: likely event accounts (common at LAN events). '
+      + 'Lobby strength will read low for these matches; compare them by event window instead.');
+  }
+}
 const basis = prRank.size ? 'Power Rankings top-1,000 players' : 'top-leaderboard players';
 if (byStrength && strength.size && todo.length) {
   const pick = (id) => (prRank.size ? score(id)[0] : score(id)[2]);

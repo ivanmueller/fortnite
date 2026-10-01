@@ -33,7 +33,7 @@ case "${1:-help}" in
   test)  (cd pipeline/node && node find_matches.js test) ;;
   tournaments) shift; (cd pipeline/node && node find_matches.js tournaments "$@") ;;
   find)  (cd pipeline/node && node find_matches.js window "${2:?usage: ./run.sh find <eventWindowId>}" --pages "${3:-10}") ;;
-  pilot) (cd pipeline/node && node download.js --limit "${2:-10}" --via "${3:-epic}"); dotnet "$(extractor)" "$DATA/raw" "$DATA/parsed" --mode full; analyze "$DATA" ;;
+  pilot) (cd pipeline/node && node download.js --limit "${2:-10}" --via "${3:-epic}" ${4:+--window "$4"}); dotnet "$(extractor)" "$DATA/raw" "$DATA/parsed" --mode full; analyze "$DATA" ;;
   analyze) analyze "$DATA" "${2:-}" ;;
   plan) (cd pipeline/node && node download.js --plan) ;;
   pr) (cd pipeline/node && node find_matches.js powerrankings --pages "${2:-all}"); analyze "$DATA" ;;

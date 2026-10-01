@@ -6,7 +6,7 @@
 #   .\pipeline\run.ps1 test [-Source api-fortnite]  check the Epic login (or the api-fortnite.com key)
 #   .\pipeline\run.ps1 tournaments [-Region EU] [-Search cash] [-Days 30]   recent tournament windows
 #   .\pipeline\run.ps1 find -Window <eventWindowId> [-Pages 10|all]          collect match IDs into data/match_ids.csv
-#   .\pipeline\run.ps1 pilot [-Limit 10] [-Via api-fortnite]                 download -> extract -> flatten -> validate
+#   .\pipeline\run.ps1 pilot [-Limit 10] [-Via api-fortnite] [-Window <eventWindowId>]                 download -> extract -> flatten -> validate
 #   .\pipeline\run.ps1 analyze [-Season v37.10]     re-run flatten, validate and zone analysis only
 #   .\pipeline\run.ps1 reparse                      re-read every downloaded replay (after parser updates), then analyze
 #   .\pipeline\run.ps1 datadir -Path D:\ZoneLabData move downloaded data to another folder/drive and use it from now on
@@ -89,7 +89,9 @@ switch ($Stage) {
     }
     "find" { if (-not $Window) { throw "Use: .\pipeline\run.ps1 find -Window <eventWindowId>" }; Push-Location pipeline/node; node find_matches.js window $Window --pages $Pages --source $Source; Pop-Location }
     "pilot" {
-        Push-Location pipeline/node; node download.js --limit $Limit --via $Via; Pop-Location
+        $dl = @("--limit", $Limit, "--via", $Via)
+        if ($Window) { $dl += @("--window", $Window) }
+        Push-Location pipeline/node; node download.js @dl; Pop-Location
         dotnet (Extractor) "$Data/raw" "$Data/parsed" --mode full
         PruneRaw
         Analyze $Data
