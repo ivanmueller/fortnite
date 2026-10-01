@@ -23,12 +23,21 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 export const AUTH_FILE = path.join(ROOT, '.epic-auth.json');
 const ACCOUNT_BASE = process.env.EPIC_ACCOUNT_BASE || 'https://account-public-service-prod.ol.epicgames.com';
 
-// Fortnite iOS client: one of the clients Epic allows device auths for (from fnbr.js / EpicResearch).
-const CLIENT_ID = '3446cd72694c4a4485d81b77adbb2141';
-const CLIENT_SECRET = '9209d4a5e25a457fb9b07489d313b41a';
-const BASIC = `basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')}`;
-export const LOGIN_URL = 'https://www.fortnite.com/id/login?redirectUrl='
-  + encodeURIComponent(`https://www.epicgames.com/id/api/redirect?clientId=${CLIENT_ID}&responseType=code`);
+// Epic only allows saved logins (device auths) for a few game clients. Android is the
+// default in fnbr.js (as of Aug 2026); Epic disabled the iOS one in 2026. Override with
+// EPIC_CLIENT=switch if Epic ever disables Android too.
+const CLIENTS = {
+  android: { id: '3f69e56c7649492c8cc29f1af08a8a12', secret: 'b51ee9cb12234f50a69efa67ef53812e' },
+  switch: { id: '98f7e42c2e3a4f86a74eb43fbb41ed39', secret: '0a2449a2-001a-451e-afec-3e812901c4d7' },
+  ios: { id: '3446cd72694c4a4485d81b77adbb2141', secret: '9209d4a5e25a457fb9b07489d313b41a' },
+};
+const clientFor = (name) => {
+  const c = CLIENTS[name];
+  if (!c) throw new EpicError(0, 'bad_client', `Unknown EPIC_CLIENT "${name}". Use one of: ${Object.keys(CLIENTS).join(', ')}.`);
+  return { name, ...c, basic: `basic ${Buffer.from(`${c.id}:${c.secret}`).toString('base64')}` };
+};
+const DEFAULT_CLIENT = process.env.EPIC_CLIENT || 'android';
+const redirectUrl = (c) => `https://www.epicgames.com/id/api/redirect?clientId=${c.id}&responseType=code`;
 
 export class EpicError extends Error {
   constructor(status, code, message) { super(message); this.status = status; this.code = code; }
@@ -47,12 +56,19 @@ async function epic(url, init = {}) {
   return body;
 }
 
-async function token(params) {
-  return epic(`${ACCOUNT_BASE}/account/api/oauth/token`, {
-    method: 'POST',
-    headers: { Authorization: BASIC, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ ...params, token_type: 'eg1' }).toString(),
-  });
+async function token(client, params) {
+  try {
+    return await epic(`${ACCOUNT_BASE}/account/api/oauth/token`, {
+      method: 'POST',
+      headers: { Authorization: client.basic, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ ...params, token_type: 'eg1' }).toString(),
+    });
+  } catch (e) {
+    if (e.code?.includes('client_disabled')) {
+      e.message += `\n  Epic has disabled the ${client.name} client. Try another: set EPIC_CLIENT=switch, then log in again (option 2).`;
+    }
+    throw e;
+  }
 }
 
 export function savedAuth() {
@@ -67,7 +83,7 @@ export async function session({ fresh = false } = {}) {
   const auth = savedAuth();
   if (!auth) throw new EpicError(0, 'not_logged_in', 'Not logged in to Epic. Run ZoneLab-Data.bat option 2 first.');
   try {
-    const t = await token({ grant_type: 'device_auth', account_id: auth.accountId, device_id: auth.deviceId, secret: auth.secret });
+    const t = await token(clientFor(auth.client || 'ios'), { grant_type: 'device_auth', account_id: auth.accountId, device_id: auth.deviceId, secret: auth.secret });
     cached = { accessToken: t.access_token, accountId: t.account_id, displayName: t.displayName || auth.displayName, expiresAt: t.expires_at };
     return cached;
   } catch (e) {
@@ -93,18 +109,21 @@ async function login() {
     const again = await ask('You are already logged in. Log in again with a different account? (y/N) ');
     if (!/^y/i.test(again)) return status();
   }
-  console.log('\n1. Open this link in your browser and log in with your SECONDARY Epic account:\n');
-  console.log(`   ${LOGIN_URL}\n`);
-  console.log('2. The page then shows some text containing "authorizationCode":"<32 letters and numbers>".');
-  console.log('   Copy that code (or the whole text) and paste it here. It expires after 5 minutes.\n');
+  const client = clientFor(DEFAULT_CLIENT);
+  console.log('\n1. In your browser, log in to https://www.epicgames.com/account/personal with your SECONDARY Epic account.');
+  console.log('2. In the same browser, open this link:\n');
+  console.log(`   ${redirectUrl(client)}\n`);
+  console.log('3. It shows some text containing "authorizationCode":"<32 letters and numbers>".');
+  console.log('   Copy all of it (Ctrl+A, Ctrl+C) and paste it here. It works once and expires after 5 minutes.\n');
   const code = extractCode(await ask('Authorization code: '));
   if (!code) throw new EpicError(0, 'bad_code', 'That doesn\'t contain a 32-character code. Run option 2 again.');
 
-  const t = await token({ grant_type: 'authorization_code', code });
+  const t = await token(client, { grant_type: 'authorization_code', code });
   const device = await epic(`${ACCOUNT_BASE}/account/api/public/account/${t.account_id}/deviceAuth`, {
     method: 'POST', headers: { Authorization: `bearer ${t.access_token}` },
   });
-  const saved = { accountId: device.accountId || t.account_id, deviceId: device.deviceId, secret: device.secret, displayName: t.displayName, created: new Date().toISOString() };
+  const saved = { accountId: device.accountId || t.account_id, deviceId: device.deviceId, secret: device.secret, client: client.name,
+                  displayName: t.displayName, created: new Date().toISOString() };
   fs.writeFileSync(AUTH_FILE, JSON.stringify(saved, null, 2), { mode: 0o600 });
   console.log(`\nLogged in as ${t.displayName || saved.accountId}. Login saved to .epic-auth.json (never uploaded to GitHub).`);
 }

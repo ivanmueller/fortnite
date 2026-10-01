@@ -15,7 +15,7 @@ Everything on Windows runs from **`ZoneLab-Data.bat`** (double-click it in the p
 2. Have a **secondary Epic account** ready (a free one is fine). Match IDs come straight from Epic's tournament leaderboards, which only answer to a logged-in account. Epic hasn't published these endpoints for outside use, so keep your main account out of it.
 3. In `ZoneLab-Data.bat`:
    - choose **1** (installs the replay parser);
-   - then choose **2** to log in. It shows a link: open it, log in with the secondary account, and Epic shows a short block of text containing `"authorizationCode"`. Copy it all (or just the 32-character code), paste it back and press Enter. This works once and expires after 5 minutes.
+   - then choose **2** to log in. In your browser, log in at https://www.epicgames.com/account/personal with the secondary account, then open the link the menu prints. Epic shows a short block of text containing `"authorizationCode"`. Copy it all (Ctrl+A, Ctrl+C), paste it back and press Enter. This works once and expires after 5 minutes.
    - The login is saved in `.epic-auth.json` in the project folder, never uploaded to GitHub, and reused from then on. Option **L** revokes it at Epic and deletes it.
 
 ## 2. Test the parser on your own replays
@@ -98,6 +98,7 @@ Anything short of that is a **lead**: worth re-testing with more data, not worth
 | --- | --- |
 | "Not logged in to Epic" or "The saved login no longer works" | Run option 2 again (a password change revokes saved logins) |
 | Option 2 says the authorization code was not found | The code expired or was already used. Open the link again for a fresh one |
+| Option 2 says the client "has been disabled" | Epic switched off that login client. Close the menu, run `set EPIC_CLIENT=switch` in a Command Prompt in the project folder, start `ZoneLab-Data.bat` from that same window, and log in again. Tell me too, so the default can be updated |
 | "Epic asked us to slow down" | The script waits and retries by itself. If it keeps happening, wait 10 minutes |
 | Option 4 finds no match IDs | The window may not have been played yet, or its replays have expired |
 | Option 5 shows "request failed" for every match | Use option 8, and send me the last lines of `data/raw/failed.txt` |
