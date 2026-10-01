@@ -430,6 +430,144 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "loot": Guide(
+        question="How fast and how well do players loot after landing, which drop spots pay off, and does early loot "
+                 "predict placement?",
+        method=[
+            "For each player, over a window after landing (3 minutes by default): time to the first chest, chests opened, "
+            "items taken, weapons and heals taken, the best weapon rarity held, and whether they held both an assault "
+            "rifle and a shotgun.",
+            "Chest openers and item takers come straight from the replay; when it didn't record one, the nearest player "
+            "within 3 m is used.",
+            "Tests use only players still alive at the end of the window, so players eliminated off spawn don't create a "
+            "fake 'little loot, bad finish' link. Each match is summarised once.",
+        ],
+        terms={
+            "Faster first chest, better placement": "Spearman correlation per match between seconds to the first chest "
+                                                    "and placement. Positive: faster chest, better finish.",
+            "More chests in 3 min, better placement": "Correlation per match between chests opened and placement. "
+                                                      "Negative: more chests, better finish.",
+            "More items in 3 min, better placement": "The same for items picked up.",
+            "Better weapon rarity at 3 min, better placement": "The same for the best weapon rarity held (common = 1 "
+                                                              "to legendary = 5). Negative: better weapons, better finish.",
+            "AR and shotgun by 3 min, better placement": "Per match, the average placement of players holding both an "
+                                                         "assault rifle and a shotgun minus everyone else's. Negative: "
+                                                         "the pair finishes better.",
+            "Landings": "Players whose landing was detected.",
+            "Time to first chest": "Median seconds from landing to opening the first chest.",
+            "Chests in 3 min": "Median chests opened in the window, by players who survived it.",
+            "Items taken in 3 min": "Median items picked up in the window.",
+            "AR and shotgun by 3 min": "Share holding both by the end of the window.",
+            "Rare or better weapon by 3 min": "Share holding a rare, epic or legendary weapon by the end of the window.",
+            "Loot by drop spot": "Per named spot: contest, time to first chest, chests, weapon quality, survival of the "
+                                 "window, and placement compared with players of the same Power Rankings band.",
+            "Skill control: placement by early chests within each Power Rankings band": "If more chests go with better "
+                "placement inside each band, looting matters beyond skill.",
+            "Per match": "One summary per match: the page's main claims.",
+            "p": P_VALUE,
+        },
+        charts={
+            "Time from landing to first chest": "How quickly players reach a chest.",
+            "Average placement by chests opened in 3 min": "Lower is better.",
+            "Average placement by best weapon rarity at 3 min": "Lower is better.",
+        },
+        conclude=[
+            "Use 'Loot by drop spot' to weigh what a spot gives (chests, weapon quality) against what it costs (contest, "
+            "survival) and how players of your skill do there.",
+            "A link between loot and placement can also mean strong players loot efficiently: check the skill table.",
+        ],
+        limits=[
+            "Inventories aren't in replays; weapons are measured by what players hold in hand.",
+            "Floor loot that's never touched isn't counted against a spot.",
+        ],
+    ),
+
+    "fights": Guide(
+        question="Which fights should we take? How much do health going in, shooting first and third parties decide "
+                 "fights, and how much storm damage do players take?",
+        method=[
+            "A fight is a run of hits between two teams with gaps under 15 s, with at least 3 hits or ending in an "
+            "elimination. A side loses when a player is eliminated during it (or within 5 s after).",
+            "Health going in is health plus shield 1 s before the first hit, averaged over the side's players.",
+            "A fight is third-partied when another team hits either side during it. Afterwards we check whether the "
+            "winner was eliminated within 60 s.",
+            "Storm damage is health or shield lost outside the storm circle with no player hit nearby.",
+        ],
+        terms={
+            "More health going in wins": "Per match, the share of decided fights with a clear health gap won by the side "
+                                         "with more, tested against 50%.",
+            "First to shoot wins": "Per match, the share of decided fights won by the side that landed the first hit.",
+            "Third-partied fights cost the winner": "Per match, how much more often a winner is eliminated within 60 s "
+                                                    "when a third team joined the fight.",
+            "Storm damage in phases 2–4, worse placement": "Among players who reach phase 5, the correlation between storm "
+                                                           "damage taken in phases 2–4 and placement.",
+            "Fights": "Fights detected from damage.",
+            "Decided": "Share of fights where one side lost a player.",
+            "Median fight length": "Seconds from first to last hit.",
+            "Third-partied": "Share of fights another team joined.",
+            "Median health going in": "Health plus shield 1 s before the first hit.",
+            "Storm damage per player": "Median total storm damage, players who took any.",
+            "Fights by phase": "Fights, typical length and third-party rate in each storm phase (0 = before the first storm).",
+            "Per match": "One summary per match: the page's main claims.",
+            "p": P_VALUE,
+        },
+        charts={
+            "Win rate by health advantage going in": "How often a side wins at each health gap. The dashed line is 50%.",
+            "Third-party rate by phase": "When fights draw a third team.",
+            "Fight length": "How long fights last.",
+            "Storm damage taken, by phase": "Total storm damage across all players in each phase.",
+        },
+        conclude=[
+            "The health-advantage chart gives a 'take or skip' rule: the gap at which the win rate clearly passes 50%.",
+            "Phases with high third-party rates reward short fights and disengaging early.",
+        ],
+        limits=[
+            "Health updates can lag a hit slightly, so health going in is read 1 s early.",
+            "Fights are inferred from damage; a fight with no damage landed isn't seen.",
+        ],
+    ),
+
+    "surge": Guide(
+        question="When does competitive storm surge trigger, who does it hit, and how much damage keeps a player safe?",
+        method=[
+            "Replays don't record surge directly. It appears as 3 or more players inside the safe zone losing health in "
+            "the same second with no player hitting them; ticks within 10 s form one episode.",
+            "For each episode: players alive, players hit, damage per tick, and the damage each alive player had dealt to "
+            "other players before it started.",
+            "Surge targets the lowest damage-dealers, so comparing surged and safe players' damage estimates the "
+            "threshold to stay safe.",
+        ],
+        terms={
+            "Surge hits players who dealt less damage": "Per episode, a rank test of damage dealt by surged vs safe "
+                                                        "players, combined across episodes.",
+            "Surged players finish worse": "Per match, surged players' average placement minus safe players'.",
+            "Matches with in-match data": "Matches that include health and damage.",
+            "Surge episodes": "Surge episodes detected.",
+            "Matches with surge": "Matches with at least one episode.",
+            "Players alive at surge": "Median players alive when an episode starts.",
+            "Players hit per episode": "Median players surged per episode.",
+            "Damage per tick": "Median health or shield lost per surge tick.",
+            "Surge by phase": "Per phase: episodes, players alive and hit, damage per tick, and the damage dealt by the "
+                              "highest-damage surged player and the lowest-damage safe player.",
+            "Per episode": "One test per surge episode, combined.",
+            "Per match": "One summary per match.",
+            "p": P_VALUE,
+        },
+        charts={
+            "Surge episodes by phase": "Which phases trigger surge.",
+            "Chance of being surged by damage dealt beforehand": "How the risk falls as a player deals more damage.",
+        },
+        conclude=[
+            "The 'Most damage dealt by a surged player' column is a practical target: above it, nobody was surged in "
+            "that phase.",
+            "Surge is round-specific: early qualifier rounds may never trigger it. Collect later rounds with option T.",
+        ],
+        limits=[
+            "Detection is inferred from damage patterns; very small surges (fewer than 3 players) aren't caught.",
+            "Damage dealt counts damage to players only.",
+        ],
+    ),
+
     "height": Guide(
         question="Does being higher than your opponents win fights and games, and from which storm phase does it start to matter?",
         method=[

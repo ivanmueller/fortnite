@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -135,3 +135,10 @@ def test_divergence_flags_planted_storm_difference(client):
     assert rows["Phase 2 pull distance (u)"][verdict] == "Divergent"
     assert rows["Players per match"][verdict] == "Similar"
     assert any("storm itself" in w for w in j["warnings"])
+
+
+def test_event_pages_explain_missing_data(client):
+    """Demo data has no in-match events: the pages say how to get them instead of failing."""
+    for a in ("loot", "fights", "surge"):
+        j = client.post(f"/api/analyses/{a}/run", json={"filters": DEMO}).json()
+        assert "option 7" in " ".join(j.get("warnings", []))

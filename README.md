@@ -69,6 +69,9 @@ In the demo, teams that finish lower also tend to rotate late, and better teams 
 | Where eliminations happen | How far eliminations happen from the circle the storm is closing to, by phase |
 | Drop spots | Where players land, how contested it is, how it sits against the bus and first circles, and what it costs: off-spawn eliminations, placement, and a table of every named drop spot |
 | Divergence report | Where does one group of matches (e.g. the Global Championship) differ from another, across every page's measures, with a test for each |
+| Loot | How fast and how well players loot after landing, loot by drop spot, and whether early loot predicts placement |
+| Health and fights | Fights from real damage: health going in, first shot, third parties, storm damage |
+| Surge | When surge triggers, who it hits, and how much damage keeps a player safe |
 | Rotation timing | When do players leave for and reach the next circle, how long are they in the storm, and does rotating late get them eliminated or cost placement? |
 | High ground | Does the higher player win fights, do teams holding height finish better, and from which storm phase? |
 | Matches | The selected matches as a table (CSV download) |
