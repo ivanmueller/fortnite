@@ -1,0 +1,23 @@
+# Secrets
+.env
+
+# Dependencies and builds
+.venv/
+node_modules/
+web/dist/
+__pycache__/
+.pytest_cache/
+pipeline/node/cache.json
+pipeline/extractor/bin/
+pipeline/extractor/obj/
+pipeline/extractor/source/obj/
+pipeline/extractor/vendor/
+
+# Data (large, regenerable). The folder structure and match_ids.csv are kept.
+data/raw/*
+data/parsed/*
+data/tables/*
+data/reports/*
+!data/**/.gitkeep
+data_synthetic/
+data_local/

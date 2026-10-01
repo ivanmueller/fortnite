@@ -1,0 +1,17 @@
+{
+  "name": "fortnite-zone-lab",
+  "private": true,
+  "description": "Fortnite storm research: replay pipeline, statistics API and dashboard.",
+  "scripts": {
+    "setup": "npm install && npm --prefix web install && node scripts/setup-python.mjs",
+    "dev": "concurrently -k -n api,web -c magenta,cyan \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "node scripts/py.mjs -m uvicorn fnlab.main:app --reload --reload-dir api --app-dir api --port 8000",
+    "dev:web": "npm --prefix web run dev",
+    "demo-data": "node scripts/py.mjs pipeline/python/make_synthetic.py --preset demo --sample-dt 3 && node scripts/py.mjs pipeline/python/flatten.py --data-dir data_synthetic",
+    "test": "node scripts/py.mjs -m pytest api/tests -q && npm --prefix web run typecheck",
+    "build": "npm --prefix web run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

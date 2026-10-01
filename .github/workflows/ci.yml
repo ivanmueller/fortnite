@@ -1,0 +1,25 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install
+        run: |
+          pip install -r api/requirements.txt -r pipeline/python/requirements.txt
+          npm ci
+          npm ci --prefix web
+      - name: API tests (builds a small synthetic dataset, runs every analysis)
+        run: python -m pytest api/tests -q
+      - name: Dashboard typecheck and build
+        run: npm run build

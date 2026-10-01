@@ -1,0 +1,238 @@
+// fn-extract: turns Fortnite .replay files into compact "research JSON" files.
+// Usage: dotnet run -c Release -- <file-or-folder> <output-folder> [--sample-sec 1.0] [--mode normal|full] [--overwrite]
+using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using FortniteReplayReader;
+using FortniteReplayReader.Models;
+using Unreal.Core.Models;
+using Unreal.Core.Models.Enums;
+
+var argv = args.ToList();
+if (argv.Count < 2 || argv.Contains("-h") || argv.Contains("--help"))
+{
+    Console.WriteLine("usage: fn-extract <file-or-folder> <output-folder> [--sample-sec 1.0] [--mode normal|full] [--overwrite]");
+    return 1;
+}
+
+string input = argv[0], outDir = argv[1];
+double sampleSec = 1.0;
+var mode = ParseMode.Normal;
+bool overwrite = argv.Contains("--overwrite");
+int si = argv.IndexOf("--sample-sec");
+if (si >= 0 && si + 1 < argv.Count) sampleSec = double.Parse(argv[si + 1], System.Globalization.CultureInfo.InvariantCulture);
+int mi = argv.IndexOf("--mode");
+if (mi >= 0 && mi + 1 < argv.Count && argv[mi + 1].Equals("full", StringComparison.OrdinalIgnoreCase)) mode = ParseMode.Full;
+
+Directory.CreateDirectory(outDir);
+var files = Directory.Exists(input)
+    ? Directory.EnumerateFiles(input, "*.replay").OrderBy(f => f).ToList()
+    : new List<string> { input };
+
+var jsonOpts = new JsonSerializerOptions
+{
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
+    PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+};
+
+int ok = 0, failed = 0;
+foreach (var file in files)
+{
+    var matchId = Path.GetFileNameWithoutExtension(file);
+    var outPath = Path.Combine(outDir, matchId + ".json");
+    if (File.Exists(outPath) && !overwrite) { Console.WriteLine($"skip   {matchId} (exists)"); continue; }
+
+    var sw = Stopwatch.StartNew();
+    try
+    {
+        var reader = new ReplayReader(null, mode);
+        var replay = reader.ReadReplay(file);
+        var doc = Extract.Build(matchId, file, replay, sampleSec);
+        File.WriteAllText(outPath, JsonSerializer.Serialize(doc, jsonOpts));
+        Console.WriteLine($"ok     {matchId}  {sw.Elapsed.TotalSeconds:F1}s  players={doc.Players.Count} zones={doc.Zones.Count} positions={doc.Positions.Rows.Count} bus={doc.Bus.Count}");
+        ok++;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"FAIL   {matchId}: {ex.GetType().Name}: {ex.Message}");
+        File.AppendAllText(Path.Combine(outDir, "failed.txt"), $"{matchId}\t{ex.GetType().Name}: {ex.Message}\n");
+        failed++;
+    }
+}
+Console.WriteLine($"done: {ok} ok, {failed} failed");
+return failed > 0 && ok == 0 ? 2 : 0;
+
+// ---------------------------------------------------------------------------
+static class Extract
+{
+    static double[]? V(FVector? v) => v is null ? null : new[] { v.X, v.Y, v.Z };
+
+    public static ResearchDoc Build(string matchId, string file, FortniteReplay r, double sampleSec)
+    {
+        var doc = new ResearchDoc { MatchId = matchId, SourceFile = Path.GetFileName(file) };
+
+        doc.Replay = new ReplayMeta
+        {
+            LengthMs = r.Info?.LengthInMs,
+            NetworkVersion = r.Info?.NetworkVersion,
+            Changelist = r.Info?.Changelist,
+            Timestamp = r.Info?.Timestamp,
+            IsEncrypted = r.Info?.IsEncrypted,
+            Branch = r.Header?.Branch,
+            HeaderChangelist = r.Header?.Changelist,
+            EngineNetworkVersion = r.Header is null ? null : (int)r.Header.EngineNetworkVersion,
+            Platform = r.Header?.Platform,
+        };
+
+        var g = r.GameData;
+        doc.Game = new GameMeta
+        {
+            SessionId = g?.GameSessionId,
+            Playlist = g?.CurrentPlaylist,
+            MapInfo = g?.MapInfo,
+            TournamentRound = g?.TournamentRound,
+            TeamSize = g?.TeamSize,
+            TotalTeams = g?.TotalTeams,
+            MaxPlayers = g?.MaxPlayers,
+            TotalBots = g?.TotalBots,
+            AircraftStartT = g?.AircraftStartTime,
+            SafeZonesStartT = g?.SafeZonesStartTime,
+            MatchEndT = g?.MatchEndTime,
+            UtcStarted = g?.UtcTimeStartedMatch,
+            WinningTeam = g?.WinningTeam,
+            WinningPlayerIds = g?.WinningPlayerIds?.ToList(),
+        };
+
+        foreach (var b in r.MapData?.BattleBusFlightPaths ?? Enumerable.Empty<BattleBus>())
+        {
+            doc.Bus.Add(new BusRow
+            {
+                Index = b.AircraftIndex,
+                Start = V(b.FlightStartLocation),
+                Yaw = b.FlightStartRotation?.Yaw,
+                Speed = b.FlightSpeed,
+                TimeTillFlightEnd = b.TimeTillFlightEnd,
+                TimeTillDropStart = b.TimeTillDropStart,
+                TimeTillDropEnd = b.TimeTillDropEnd,
+                FlightTimestamp = b.ReplicatedFlightTimestamp,
+            });
+        }
+
+        int zi = 0;
+        foreach (var z in r.MapData?.SafeZones ?? new List<SafeZone>())
+        {
+            doc.Zones.Add(new ZoneRow
+            {
+                Seq = zi++,
+                Radius = z.Radius,
+                StartShrinkT = z.StartShrinkTime,
+                FinishShrinkT = z.FinishShrinkTime,
+                LastCenter = V(z.LastCenter), LastRadius = z.LastRadius,
+                NextCenter = V(z.NextCenter), NextRadius = z.NextRadius,
+                NextNextCenter = V(z.NextNextCenter), NextNextRadius = z.NextNextRadius,
+            });
+        }
+
+        var players = (r.PlayerData ?? Enumerable.Empty<PlayerData>()).ToList();
+        foreach (var p in players)
+        {
+            doc.Players.Add(new PlayerRow
+            {
+                Id = p.Id,
+                PlayerId = p.PlayerId,
+                Name = p.PlayerName,
+                IsBot = p.IsBot,
+                TeamIndex = p.TeamIndex,
+                Placement = p.Placement,
+                Kills = p.Kills,
+                TeamKills = p.TeamKills,
+                DeathT = p.DeathTimeDouble ?? p.DeathTime,
+                DeathCause = p.DeathCause,
+                DeathLocation = V(p.DeathLocation),
+                Disconnected = p.Disconnected,
+                Platform = p.Platform,
+                LocationSamplesRaw = p.Locations?.Count ?? 0,
+                LocationSamplesUntimed = p.Locations?.Count(m => m.ReplicatedMovement?.Location is not null
+                    && (m.ReplicatedWorldTimeSecondsDouble ?? m.ReplicatedWorldTimeSeconds ?? m.LastUpdateTime) is null) ?? 0,
+            });
+
+            // Downsample movement to at most one sample per player per `sampleSec`.
+            double last = double.NegativeInfinity;
+            foreach (var m in p.Locations ?? new List<PlayerMovement>())
+            {
+                var loc = m.ReplicatedMovement?.Location;
+                if (loc is null) continue;
+                double? t = m.ReplicatedWorldTimeSecondsDouble ?? m.ReplicatedWorldTimeSeconds ?? m.LastUpdateTime;
+                if (t is null || double.IsNaN(t.Value)) continue;
+                if (t.Value - last < sampleSec) continue;
+                last = t.Value;
+                var vel = m.ReplicatedMovement?.LinearVelocity;
+                doc.Positions.Rows.Add(new object?[]
+                {
+                    p.Id, Math.Round(t.Value, 2),
+                    Math.Round(loc.X, 1), Math.Round(loc.Y, 1), Math.Round(loc.Z, 1),
+                    vel is null ? null : Math.Round(vel.X, 1), vel is null ? null : Math.Round(vel.Y, 1), vel is null ? null : Math.Round(vel.Z, 1),
+                    m.bIsInAnyStorm, m.bIsDBNO, m.bIsSkydiving,
+                });
+            }
+        }
+
+        foreach (var t in r.TeamData ?? Enumerable.Empty<TeamData>())
+        {
+            doc.Teams.Add(new TeamRow { TeamIndex = t.TeamIndex, Placement = t.Placement, TeamKills = t.TeamKills, PlayerIds = t.PlayerIds?.ToList() });
+        }
+
+        foreach (var k in r.KillFeed ?? new List<KillFeedEntry>())
+        {
+            doc.KillFeed.Add(new KillRow
+            {
+                T = k.ReplicatedWorldTimeSecondsDouble ?? k.ReplicatedWorldTimeSeconds,
+                VictimId = k.PlayerId, FinisherId = k.FinisherOrDowner,
+                Downed = k.IsDowned, Revived = k.IsRevived,
+                Distance = k.Distance, DeathCause = k.DeathCause, Location = V(k.DeathLocation),
+            });
+        }
+
+        foreach (var e in r.Eliminations ?? new List<FortniteReplayReader.Models.Events.PlayerElimination>())
+        {
+            doc.Eliminations.Add(new ElimRow
+            {
+                Time = e.Time, Eliminated = e.Eliminated, Eliminator = e.Eliminator,
+                Knocked = e.Knocked, GunType = e.GunType,
+                EliminatedLocation = V(e.EliminatedInfo?.Location), EliminatorLocation = V(e.EliminatorInfo?.Location),
+            });
+        }
+        return doc;
+    }
+}
+
+// ---- output schema --------------------------------------------------------
+class ResearchDoc
+{
+    public string Schema { get; set; } = "fn-research/1";
+    public string MatchId { get; set; } = "";
+    public string SourceFile { get; set; } = "";
+    public ReplayMeta Replay { get; set; } = new();
+    public GameMeta Game { get; set; } = new();
+    public List<BusRow> Bus { get; set; } = new();
+    public List<ZoneRow> Zones { get; set; } = new();
+    public List<PlayerRow> Players { get; set; } = new();
+    public List<TeamRow> Teams { get; set; } = new();
+    public PositionTable Positions { get; set; } = new();
+    public List<KillRow> KillFeed { get; set; } = new();
+    public List<ElimRow> Eliminations { get; set; } = new();
+}
+class ReplayMeta { public uint? LengthMs { get; set; } public uint? NetworkVersion { get; set; } public uint? Changelist { get; set; } public DateTime? Timestamp { get; set; } public bool? IsEncrypted { get; set; } public string? Branch { get; set; } public uint? HeaderChangelist { get; set; } public int? EngineNetworkVersion { get; set; } public string? Platform { get; set; } }
+class GameMeta { public string? SessionId { get; set; } public string? Playlist { get; set; } public string? MapInfo { get; set; } public int? TournamentRound { get; set; } public int? TeamSize { get; set; } public int? TotalTeams { get; set; } public int? MaxPlayers { get; set; } public int? TotalBots { get; set; } public float? AircraftStartT { get; set; } public float? SafeZonesStartT { get; set; } public float? MatchEndT { get; set; } public DateTime? UtcStarted { get; set; } public uint? WinningTeam { get; set; } public List<int>? WinningPlayerIds { get; set; } }
+class BusRow { public uint Index { get; set; } public double[]? Start { get; set; } public float? Yaw { get; set; } public float Speed { get; set; } public float TimeTillFlightEnd { get; set; } public float TimeTillDropStart { get; set; } public float TimeTillDropEnd { get; set; } public float FlightTimestamp { get; set; } }
+class ZoneRow { public int Seq { get; set; } public float Radius { get; set; } public float StartShrinkT { get; set; } public float FinishShrinkT { get; set; } public double[]? LastCenter { get; set; } public float LastRadius { get; set; } public double[]? NextCenter { get; set; } public float NextRadius { get; set; } public double[]? NextNextCenter { get; set; } public float NextNextRadius { get; set; } }
+class PlayerRow { public int? Id { get; set; } public string? PlayerId { get; set; } public string? Name { get; set; } public bool IsBot { get; set; } public int? TeamIndex { get; set; } public int? Placement { get; set; } public uint? Kills { get; set; } public uint? TeamKills { get; set; } public double? DeathT { get; set; } public int? DeathCause { get; set; } public double[]? DeathLocation { get; set; } public bool? Disconnected { get; set; } public string? Platform { get; set; } public int LocationSamplesRaw { get; set; } public int LocationSamplesUntimed { get; set; } }
+class TeamRow { public int? TeamIndex { get; set; } public int? Placement { get; set; } public uint? TeamKills { get; set; } public List<int?>? PlayerIds { get; set; } }
+class PositionTable
+{
+    public string[] Columns { get; set; } = { "id", "t", "x", "y", "z", "vx", "vy", "vz", "in_storm", "dbno", "skydiving" };
+    public List<object?[]> Rows { get; set; } = new();
+}
+class KillRow { public double? T { get; set; } public int? VictimId { get; set; } public int? FinisherId { get; set; } public bool Downed { get; set; } public bool Revived { get; set; } public float? Distance { get; set; } public int? DeathCause { get; set; } public double[]? Location { get; set; } }
+class ElimRow { public string? Time { get; set; } public string? Eliminated { get; set; } public string? Eliminator { get; set; } public bool Knocked { get; set; } public byte GunType { get; set; } public double[]? EliminatedLocation { get; set; } public double[]? EliminatorLocation { get; set; } }
