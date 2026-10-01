@@ -1,7 +1,9 @@
 # run.ps1 - run pipeline stages on Windows.
 #   .\pipeline\run.ps1 demo                         synthetic data through the whole analysis (no keys, no downloads)
 #   .\pipeline\run.ps1 local [-Count 3]             parse your own newest replays from the Fortnite Demos folder
-#   .\pipeline\run.ps1 test                         check your api-fortnite.com key
+#   .\pipeline\run.ps1 login                        log in to Epic once (saved to .epic-auth.json)
+#   .\pipeline\run.ps1 logout                       revoke and delete the saved Epic login
+#   .\pipeline\run.ps1 test [-Source api-fortnite]  check the Epic login (or the api-fortnite.com key)
 #   .\pipeline\run.ps1 tournaments [-Region EU] [-Search cash] [-Days 30]   recent tournament windows
 #   .\pipeline\run.ps1 find -Window <eventWindowId> [-Pages 10|all]          collect match IDs into data/match_ids.csv
 #   .\pipeline\run.ps1 pilot [-Limit 10] [-Via api-fortnite]                 download -> extract -> flatten -> validate
@@ -9,7 +11,7 @@
 param(
     [Parameter(Position = 0)][string]$Stage = "help",
     [int]$Limit = 10, [int]$Count = 3, [string]$Window, [string]$Season, [string]$Pages = "10",
-    [string]$Region, [string]$Search, [int]$Days = 30, [string]$Via = "epic"
+    [string]$Region, [string]$Search, [int]$Days = 30, [string]$Via = "epic", [string]$Source = "epic"
 )
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)   # repo root
@@ -42,14 +44,16 @@ switch ($Stage) {
         Analyze "data_local"
         Write-Host "These are client replays: expect WARN on track coverage. Tournament server replays should PASS." -ForegroundColor Yellow
     }
-    "test" { Push-Location pipeline/node; node find_matches.js test; Pop-Location }
+    "login" { Push-Location pipeline/node; node epic_auth.js login; if ($LASTEXITCODE -eq 0) { node epic_auth.js status }; Pop-Location }
+    "logout" { Push-Location pipeline/node; node epic_auth.js logout; Pop-Location }
+    "test" { Push-Location pipeline/node; node find_matches.js test --source $Source; Pop-Location }
     "tournaments" {
-        $a = @("tournaments", "--days", $Days)
+        $a = @("tournaments", "--days", $Days, "--source", $Source)
         if ($Region) { $a += @("--region", $Region) }
         if ($Search) { $a += @("--search", $Search) }
         Push-Location pipeline/node; node find_matches.js @a; Pop-Location
     }
-    "find" { if (-not $Window) { throw "Use: .\pipeline\run.ps1 find -Window <eventWindowId>" }; Push-Location pipeline/node; node find_matches.js window $Window --pages $Pages; Pop-Location }
+    "find" { if (-not $Window) { throw "Use: .\pipeline\run.ps1 find -Window <eventWindowId>" }; Push-Location pipeline/node; node find_matches.js window $Window --pages $Pages --source $Source; Pop-Location }
     "pilot" {
         Push-Location pipeline/node; node download.js --limit $Limit --via $Via; Pop-Location
         dotnet (Extractor) data/raw data/parsed --mode full

@@ -12,10 +12,11 @@ Everything on Windows runs from **`ZoneLab-Data.bat`** (double-click it in the p
 ## 1. One-time setup
 
 1. Install the **.NET 10 SDK** from https://dotnet.microsoft.com/download. It's needed to read replay files.
-2. Create a free account at https://api-fortnite.com (no card needed) and copy your API key from its dashboard. It's used only to find which matches a tournament contained.
+2. Have a **secondary Epic account** ready (a free one is fine). Match IDs come straight from Epic's tournament leaderboards, which only answer to a logged-in account. Epic hasn't published these endpoints for outside use, so keep your main account out of it.
 3. In `ZoneLab-Data.bat`:
    - choose **1** (installs the replay parser);
-   - then choose **2** and paste your key. It's saved to `.env`, which is never uploaded to GitHub, and checked straight away.
+   - then choose **2** to log in. It shows a link: open it, log in with the secondary account, and Epic shows a short block of text containing `"authorizationCode"`. Copy it all (or just the 32-character code), paste it back and press Enter. This works once and expires after 5 minutes.
+   - The login is saved in `.epic-auth.json` in the project folder, never uploaded to GitHub, and reused from then on. Option **L** revokes it at Epic and deletes it.
 
 ## 2. Test the parser on your own replays
 
@@ -41,7 +42,7 @@ powershell -ExecutionPolicy Bypass -File .\pipeline\setup.ps1 -FromSource
 
 **Pull tournaments within about 30 days.** Epic deletes tournament replays after roughly a month; option 4 warns when a window's matches are getting close to that.
 
-If option 5 fails for every match, Epic has changed something on the free route. **Option 8** downloads the same replays through api-fortnite.com instead, at 2 credits per match (the free tier gives 15 credits a day; paid credit packs and plans add more).
+If option 5 fails for every match, Epic has changed something on the free route. **Option 8** downloads the same replays through api-fortnite.com instead, at 2 credits per match. It needs a free api-fortnite.com key saved with **option 9** (the free tier gives 15 credits a day; paid credit packs and plans add more).
 
 How much data each page needs before its conclusions are trustworthy (the dashboard checks this for you):
 
@@ -95,8 +96,9 @@ Anything short of that is a **lead**: worth re-testing with more data, not worth
 
 | Problem | What to do |
 | --- | --- |
-| Option 2, 3 or 4 says the key is missing or rejected | Run option 2 again and paste the key from your api-fortnite.com dashboard |
-| Option 3 or 4 says an endpoint "is not on your plan" | Send me the message: api-fortnite.com moves endpoints between plans |
+| "Not logged in to Epic" or "The saved login no longer works" | Run option 2 again (a password change revokes saved logins) |
+| Option 2 says the authorization code was not found | The code expired or was already used. Open the link again for a fresh one |
+| "Epic asked us to slow down" | The script waits and retries by itself. If it keeps happening, wait 10 minutes |
 | Option 4 finds no match IDs | The window may not have been played yet, or its replays have expired |
 | Option 5 shows "request failed" for every match | Use option 8, and send me the last lines of `data/raw/failed.txt` |
 | Processing fails on new replays | Rebuild the parser from source (section 2) |

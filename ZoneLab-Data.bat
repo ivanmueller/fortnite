@@ -16,30 +16,44 @@ echo.
 echo  Zone Lab data
 echo  -------------
 echo   1  One-time setup: install the replay parser (needs the .NET 10 SDK)
-echo   2  Save your api-fortnite.com key (and check it works)
+echo   2  Log in to Epic (one time; use a secondary account)
 echo   3  List tournaments from the last 30 days
 echo   4  Collect match IDs for one tournament window
 echo   5  Download and process the collected matches (free, from Epic)
 echo   6  Process my own recent replays from the Fortnite Demos folder
 echo   7  Rebuild tables and reports from data already downloaded
 echo   8  Download via api-fortnite.com instead (2 credits per match; use if 5 fails)
+echo   9  Save an api-fortnite.com key (only needed for option 8)
+echo   L  Log out of Epic (revokes the saved login)
 echo   Q  Quit
 echo.
 set "choice="
 set /p "choice=Choose a number: "
 if /i "%choice%"=="1" goto :setup
-if /i "%choice%"=="2" goto :key
+if /i "%choice%"=="2" goto :login
 if /i "%choice%"=="3" goto :tournaments
 if /i "%choice%"=="4" goto :find
 if /i "%choice%"=="5" goto :pilot
 if /i "%choice%"=="6" goto :local
 if /i "%choice%"=="7" goto :analyze
 if /i "%choice%"=="8" goto :pilotapi
+if /i "%choice%"=="9" goto :key
+if /i "%choice%"=="l" goto :logout
 if /i "%choice%"=="q" goto :end
 goto :menu
 
 :setup
 %PS% "pipeline\setup.ps1"
+goto :done
+
+:login
+echo.
+echo Use a SECONDARY Epic account, not your main one.
+%PS% "pipeline\run.ps1" login
+goto :done
+
+:logout
+%PS% "pipeline\run.ps1" logout
 goto :done
 
 :key
@@ -48,7 +62,7 @@ set /p "key=Paste your api-fortnite.com API key and press Enter: "
 if "%key%"=="" goto :menu
 > ".env" echo FORTNITE_API_KEY=%key%
 echo Saved to .env (this file is never uploaded to GitHub). Checking it works...
-%PS% "pipeline\run.ps1" test
+%PS% "pipeline\run.ps1" test -Source api-fortnite
 goto :done
 
 :tournaments

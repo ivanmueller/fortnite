@@ -9,7 +9,7 @@ Tournament match IDs → server replays → parsed JSON → research tables → 
 | Replay extractor (C#) | Tested on real replays from v16.10 (2021) and v32.00 (Nov 2024). Parses in 2–5 s each. |
 | `flatten.py`, `validate.py`, `zone_analysis.py` | Tested on those real replays and on 800 synthetic matches. |
 | Zone analysis correctness | Tested: random zones give no false positives; planted bus, edge and persistence patterns are each detected. |
-| `find_matches.js` (api-fortnite.com) | Written against its published OpenAPI spec; tested end to end against a stand-in server with the same response shapes; **not yet run against the live service**. |
+| `epic_auth.js`, `find_matches.js` (Epic) | Login, saved login, tournament list and leaderboard requests follow the fnbr.js library; tested end to end against a stand-in Epic server (including token expiry and a revoked login); **not yet run against Epic itself**. |
 | `download.js` (Epic) | Error handling tested; **real download not run** (the build machine couldn't reach Epic). |
 | `setup.ps1` / `run.ps1` | Written to mirror the tested bash scripts; **not run on Windows**. |
 | `run.sh local` and `run.sh demo` from the repo root | Tested after the move into the monorepo. |
@@ -24,7 +24,8 @@ Two findings shaped the design:
 - Node.js LTS
 - Python 3.10+
 - .NET 10 SDK
-- A free [api-fortnite.com](https://api-fortnite.com) API key (for finding tournament match IDs)
+- A secondary Epic account, for the one-time login that lets the scripts read tournament leaderboards
+- Optional: a free [api-fortnite.com](https://api-fortnite.com) key, only for the paid download fallback
 - Git (only for `-FromSource` builds)
 
 ## Quickstart (Windows PowerShell)
@@ -33,7 +34,7 @@ Two findings shaped the design:
 powershell -ExecutionPolicy Bypass -File .\pipeline\setup.ps1     # once, from the repo root
 .\pipeline\run.ps1 demo                                  # 1. synthetic demo data (same as npm run demo-data)
 .\pipeline\run.ps1 local -Count 3                        # 2. parse your newest replays -> "My replays" in the dashboard
-# add FORTNITE_API_KEY to .env (or use ZoneLab-Data.bat option 2), then:
+# log in to Epic once (ZoneLab-Data.bat option 2, or .\pipeline\run.ps1 login), then:
 .\pipeline\run.ps1 tournaments                           # 3. list event windows
 .\pipeline\run.ps1 find -Window <eventWindowId>          # 4. collect match IDs into data/match_ids.csv
 .\pipeline\run.ps1 pilot -Limit 10                       # 5. download, parse, validate -> "Tournaments" in the dashboard
@@ -47,7 +48,7 @@ Start with step 5 at `-Limit 10`. Open `data/reports/validation.md` before addin
 
 ## How it fits together
 
-1. **`node/find_matches.js`** lists recent tournament windows from api-fortnite.com, then reads a window's leaderboard. Each team's `sessionHistory` lists the matches it played; every `sessionId` is an Epic match ID, appended to `data/match_ids.csv`.
+1. **`node/find_matches.js`** lists recent tournament windows from Epic's events service, then reads a window's leaderboard (add `--source api-fortnite` to use api-fortnite.com's Pro plan instead). Each team's `sessionHistory` lists the matches it played; every `sessionId` is an Epic match ID, appended to `data/match_ids.csv`.
 2. **`node/download.js`** downloads each match's replay and metadata into the repo's `data/raw/`. It can be re-run safely and logs failures to `data/raw/failed.txt`.
 3. **`extractor/` (`fn-extract`)** turns each `.replay` into one compact JSON in `data/parsed/`. Always use `--mode full`, because movement tracks need it.
 4. **`python/flatten.py`** builds the tables in `data/tables/`.

@@ -2,7 +2,7 @@
 # run.sh - pipeline stages on macOS/Linux (same stages as run.ps1).
 #   ./pipeline/run.sh demo                       synthetic data through the whole analysis
 #   ./pipeline/run.sh local <folder-with-.replay-files>
-#   ./pipeline/run.sh test
+#   ./pipeline/run.sh login | logout | test
 #   ./pipeline/run.sh tournaments [extra args, e.g. --region EU --search cash --days 30]
 #   ./pipeline/run.sh find <eventWindowId> [pages|all]
 #   ./pipeline/run.sh pilot [limit] [epic|api-fortnite]
@@ -25,6 +25,8 @@ case "${1:-help}" in
   demo)  node scripts/py.mjs pipeline/python/make_synthetic.py --preset demo --sample-dt 3; analyze data_synthetic ;;
   local) src="${2:?usage: ./run.sh local <folder>}"; mkdir -p data_local/raw; cp "$src"/*.replay data_local/raw/
          dotnet "$(extractor)" data_local/raw data_local/parsed --mode full; analyze data_local ;;
+  login) (cd pipeline/node && node epic_auth.js login && node epic_auth.js status) ;;
+  logout) (cd pipeline/node && node epic_auth.js logout) ;;
   test)  (cd pipeline/node && node find_matches.js test) ;;
   tournaments) shift; (cd pipeline/node && node find_matches.js tournaments "$@") ;;
   find)  (cd pipeline/node && node find_matches.js window "${2:?usage: ./run.sh find <eventWindowId>}" --pages "${3:-10}") ;;

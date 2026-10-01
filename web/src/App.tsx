@@ -142,8 +142,8 @@ function EmptyDataset({ dataset }: { dataset: DatasetKey }) {
     },
     real: {
       title: 'No tournament data yet',
-      body: <>Double-click <code>ZoneLab-Data.bat</code> in the project folder and work through options 1 to 5: setup, your
-        api-fortnite.com key, pick a tournament, collect its match IDs, then download and process them. This page fills in as soon
+      body: <>Double-click <code>ZoneLab-Data.bat</code> in the project folder and work through options 1 to 5: setup, a one-time
+        Epic login, pick a tournament, collect its match IDs, then download and process them. This page fills in as soon
         as the first matches are processed. The full walkthrough is in <code>docs/REAL_DATA.md</code>.</>,
     },
   };

@@ -1,5 +1,6 @@
 # Secrets
 .env
+.epic-auth.json
 
 # Dependencies and builds
 .venv/

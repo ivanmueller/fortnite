@@ -1,7 +1,7 @@
-// find_matches.js - find tournament match IDs with api-fortnite.com.
+// find_matches.js - find tournament match IDs, straight from Epic's tournament service.
 //
 //   node find_matches.js test
-//       Checks your key works (one free request).
+//       Checks the Epic login works (log in first with: node epic_auth.js login).
 //
 //   node find_matches.js tournaments [--region EU] [--search cash] [--days 30] [--upcoming]
 //       Lists tournament windows that finished in the last --days days (default 30,
@@ -14,8 +14,10 @@
 //       Top pages hold the top teams. Their matches cover the strongest lobbies;
 //       --pages all also reaches lower lobbies, at one request per page.
 //
-// Key: FORTNITE_API_KEY in the project's .env (ZoneLab-Data.bat option 2 saves it).
+// Source: Epic directly (default; needs the one-time login from ZoneLab-Data.bat option 2).
+// Add --source api-fortnite to use api-fortnite.com instead (Pro plan, FORTNITE_API_KEY in .env).
 import dotenv from 'dotenv';
+import { EpicError, session } from './epic_auth.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -27,7 +29,9 @@ const TOURNAMENTS_CSV = path.join(ROOT, 'data', 'tournaments.csv');
 const HEADER = 'match_id,event_window_id,region,session_date,is_server_replay,source';
 const BASE = process.env.FORTNITE_API_BASE || 'https://prod.api-fortnite.com';
 const KEY = process.env.FORTNITE_API_KEY;
-const PAUSE_MS = 250; // gentle pacing between requests
+const EVENTS_BASE = process.env.EPIC_EVENTS_BASE || 'https://events-public-service-live.ol.epicgames.com';
+const SOURCE = (process.argv.includes('--source') ? process.argv[process.argv.indexOf('--source') + 1] : process.env.MATCH_SOURCE) || 'epic';
+const PAUSE_MS = SOURCE === 'epic' ? 1000 : 250; // be gentle with Epic: one request per second
 
 const args = process.argv.slice(2);
 const opt = (name, dflt) => {
@@ -51,7 +55,7 @@ async function get(apiPath, query = {}) {
     let detail = text.slice(0, 300);
     try { const j = JSON.parse(text); detail = j.detail || j.title || j.message || detail; } catch { /* not JSON */ }
     const hint = {
-      401: 'The key was rejected. Save it again with ZoneLab-Data.bat option 2.',
+      401: 'The key was rejected. Save it again with ZoneLab-Data.bat option 9.',
       403: 'This endpoint is not on your plan.',
       429: 'Rate limit reached. Wait a while and run it again.',
     }[res.status];
@@ -60,6 +64,58 @@ async function get(apiPath, query = {}) {
   const left = res.headers.get('x-ratelimit-remaining');
   if (left !== null && Number(left) < 50) console.log(`  (requests left today: ${left})`);
   return text ? JSON.parse(text) : null;
+}
+
+// Epic's events service, with one token refresh on 401 and patient retries on 429.
+async function epicGet(apiPath) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const s = await session({ fresh: attempt > 0 });
+    const url = `${EVENTS_BASE}${apiPath.replaceAll('{me}', s.accountId)}`;
+    const res = await fetch(url, { headers: { Authorization: `bearer ${s.accessToken}`, accept: 'application/json' } });
+    const text = await res.text();
+    if (res.ok) return text ? JSON.parse(text) : null;
+    let body = {};
+    try { body = JSON.parse(text); } catch { /* not JSON */ }
+    if (res.status === 401 && attempt === 0) continue;
+    if (res.status === 429 && attempt < 3) {
+      const wait = 30 * (attempt + 1);
+      console.log(`  Epic asked us to slow down; waiting ${wait}s...`);
+      await sleep(wait * 1000);
+      continue;
+    }
+    throw new ApiError(res.status, `Epic ${res.status} ${body.errorCode || ''}: ${body.errorMessage || text.slice(0, 200)}`);
+  }
+  throw new ApiError(429, 'Epic kept rate-limiting. Wait 10 minutes and try again.');
+}
+
+function prettyEventName(eventId) {
+  return eventId.replace(/^epicgames_/, '').replace(/_/g, ' ');
+}
+
+/** All tournament windows the source knows, past and current: {name, region, eventId, eventWindowId, begin, end, round}. */
+async function listAllWindows({ upcoming = false } = {}) {
+  if (SOURCE === 'api-fortnite') {
+    return flattenWindows(await get(upcoming ? '/api/v1/events/global' : '/api/v1/events/global/history'));
+  }
+  const data = await epicGet('/api/v1/events/Fortnite/data/{me}?showPastEvents=true');
+  const rows = [];
+  for (const ev of data?.events || []) {
+    const region = (ev.regions && ev.regions[0]) || (ev.eventId.match(/_(NAC|NAE|NAW|EU|BR|ASIA|OCE|ME)$/i) || [])[1] || '';
+    for (const w of ev.eventWindows || []) {
+      rows.push({ name: prettyEventName(ev.eventId), region, eventId: ev.eventId, eventWindowId: w.eventWindowId,
+                  begin: w.beginTime, end: w.endTime, round: w.round });
+    }
+  }
+  return rows.filter((r) => r.eventId && r.eventWindowId);
+}
+
+/** One leaderboard page: {totalPages, entries[{sessionHistory[{sessionId, endTime}]}]}. */
+async function leaderboardPage(eventId, eventWindowId, page) {
+  if (SOURCE === 'api-fortnite') {
+    return get('/api/v1/events/global/leaderboard', { eventId, eventWindowId, page });
+  }
+  const q = new URLSearchParams({ page, rank: 0, teamAccountIds: '', appId: 'Fortnite', showLiveSessions: 'false' });
+  return epicGet(`/api/v1/leaderboards/Fortnite/${encodeURIComponent(eventId)}/${encodeURIComponent(eventWindowId)}/{me}?${q}`);
 }
 
 // ---------------------------------------------------------------- tournaments
@@ -90,10 +146,9 @@ async function listTournaments() {
   const region = opt('region');
   const search = opt('search');
   const upcoming = opt('upcoming', false) === true;
-  const events = await get(upcoming ? '/api/v1/events/global' : '/api/v1/events/global/history');
   const now = Date.now();
   const since = now - days * 86400000;
-  let rows = flattenWindows(events);
+  let rows = await listAllWindows({ upcoming });
   fs.mkdirSync(path.dirname(TOURNAMENTS_CSV), { recursive: true });
   fs.writeFileSync(TOURNAMENTS_CSV, ['end,region,name,event_id,event_window_id,round',
     ...rows.map((r) => [r.end, r.region, `"${(r.name || '').replace(/"/g, "'")}"`, r.eventId, r.eventWindowId, r.round].join(','))].join('\n') + '\n');
@@ -113,6 +168,7 @@ async function listTournaments() {
     console.log(upcoming ? 'No upcoming windows match.' : `No windows finished in the last ${days} days match. Try --days 60 or drop --region/--search.`);
     return;
   }
+  console.log(`Source: ${SOURCE === 'epic' ? 'Epic' : 'api-fortnite.com'}\n`);
   console.log('ended (UTC)        region  window ID  |  tournament');
   for (const r of rows.slice(0, 80)) {
     console.log(`${(r.end || '').slice(0, 16).replace('T', ' ').padEnd(18)} ${r.region.padEnd(7)} ${r.eventWindowId}  |  ${r.name}`);
@@ -123,8 +179,7 @@ async function listTournaments() {
 
 // ---------------------------------------------------------------- one window
 async function findEventId(windowId) {
-  const events = await get('/api/v1/events/global/history');
-  const hit = flattenWindows(events).find((r) => r.eventWindowId === windowId);
+  const hit = (await listAllWindows()).find((r) => r.eventWindowId === windowId);
   return hit ? { eventId: hit.eventId, region: hit.region } : null;
 }
 
@@ -150,7 +205,7 @@ async function collectWindow(windowId) {
   let page = 0;
   let total = 1;
   while (page < total && page < maxPages) {
-    const board = await get('/api/v1/events/global/leaderboard', { eventId, eventWindowId: windowId, page });
+    const board = await leaderboardPage(eventId, windowId, page);
     total = board?.totalPages ?? 1;
     for (const entry of board?.entries || []) {
       for (const s of entry.sessionHistory || []) {
@@ -174,7 +229,7 @@ async function collectWindow(windowId) {
   const rows = [];
   for (const [id, s] of sessions) {
     if (existing.has(id.toLowerCase())) continue;
-    rows.push([id, windowId, region, (s.end || '').slice(0, 10), 1, 'api-fortnite'].join(','));
+    rows.push([id, windowId, region, (s.end || '').slice(0, 10), 1, SOURCE].join(','));
   }
   if (rows.length) fs.appendFileSync(CSV, `${rows.join('\n')}\n`);
   const teams = [...sessions.values()].map((s) => s.teams).sort((a, b) => a - b);
@@ -189,14 +244,19 @@ async function collectWindow(windowId) {
 }
 
 // ---------------------------------------------------------------- main
-if (!KEY) {
-  console.error('FORTNITE_API_KEY is missing. Run ZoneLab-Data.bat option 2 to save your api-fortnite.com key.');
+if (SOURCE === 'api-fortnite' && !KEY) {
+  console.error('FORTNITE_API_KEY is missing. Save your api-fortnite.com key with ZoneLab-Data.bat option 9.');
   process.exit(1);
 }
 try {
   if (args[0] === 'test') {
-    const season = await get('/api/v1/season');
-    console.log('Key works. Current season:', JSON.stringify(season).slice(0, 200));
+    if (SOURCE === 'api-fortnite') {
+      const season = await get('/api/v1/season');
+      console.log('api-fortnite.com key works. Current season:', JSON.stringify(season).slice(0, 200));
+    } else {
+      const s = await session({ fresh: true });
+      console.log(`Epic login works: ${s.displayName || s.accountId}.`);
+    }
   } else if (args[0] === 'tournaments') await listTournaments();
   else if (args[0] === 'window' && args[1] && !args[1].startsWith('--')) await collectWindow(args[1]);
   else {
@@ -204,6 +264,6 @@ try {
       + '  node find_matches.js window <eventWindowId> [--event <eventId>] [--pages 10|all]');
   }
 } catch (e) {
-  console.error(e instanceof ApiError ? e.message : `Error: ${e.message}`);
+  console.error(e instanceof ApiError || e instanceof EpicError ? e.message : `Error: ${e.message}`);
   process.exit(1);
 }

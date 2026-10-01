@@ -24,5 +24,5 @@ else
     || { echo "The replay parser did not build. Send the errors above."; exit 1; }
 fi
 echo "Replay parser built."
-echo "[4/4] Config"; [[ -f .env ]] || { cp .env.example .env; echo "Created .env - add your FORTNITE_API_KEY (api-fortnite.com)."; }
+echo "[4/4] Config"; [[ -f .env ]] || { cp .env.example .env; echo "Created .env (only needed for the api-fortnite.com fallback)."; }
 echo "Setup done. Next: ./pipeline/run.sh local <folder-with-replays>"
