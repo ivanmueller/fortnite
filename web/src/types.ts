@@ -90,6 +90,7 @@ export interface ChartSpec {
     reverse_y?: boolean;
     zero_label?: string;
     reference_lines?: { axis: 'x' | 'y'; value: number; label?: string }[];
+    horizontal?: boolean;
   };
 }
 

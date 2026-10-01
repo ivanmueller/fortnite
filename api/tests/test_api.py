@@ -124,3 +124,14 @@ def test_drops_detects_landings_and_contest(client):
     labels = {m["label"]: m["value"] for m in j["metrics"]}
     assert int(labels["Landings"].replace(",", "")) > 1000
     assert any(t["name"] == "Contested drops eliminated off spawn more" for t in j["tests"])
+
+
+def test_divergence_flags_planted_storm_difference(client):
+    """Demo season v98 pulls every circle to the edge: the report must flag the storm, not the unrelated measures."""
+    j = client.post("/api/analyses/divergence/run", json={
+        "filters": {**DEMO, "seasons": ["v98.10"]}, "compare": DEMO}).json()
+    rows = {row[1]: row for row in j["tables"][0]["rows"]}
+    verdict = j["tables"][0]["columns"].index("Verdict")
+    assert rows["Phase 2 pull distance (u)"][verdict] == "Divergent"
+    assert rows["Players per match"][verdict] == "Similar"
+    assert any("storm itself" in w for w in j["warnings"])

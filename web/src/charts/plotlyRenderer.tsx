@@ -29,6 +29,10 @@ function traces(spec: ChartSpec): unknown[] {
     const color = colors[i];
     switch (spec.kind) {
       case 'bar':
+        if (spec.options.horizontal) {
+          return { type: 'bar', orientation: 'h', name: s.name, x: nums(s.y), y: s.x, marker: { color } };
+        }
+      // falls through
       case 'stacked_bar':
         return { type: 'bar', name: s.name, x: s.x, y: s.y, marker: { color } };
       case 'line':
@@ -91,6 +95,13 @@ function layout(spec: ChartSpec): Record<string, unknown> {
     barmode: spec.kind === 'stacked_bar' ? 'stack' : spec.kind === 'histogram' ? 'overlay' : 'group',
     bargap: 0.08,
   };
+  if (spec.kind === 'bar' && o.horizontal) {
+    // Sideways bars: measure names down the left, values along the bottom.
+    base.yaxis = { ...axis(o.y_label), type: 'category', automargin: true };
+    base.xaxis = { ...axis(o.x_label), type: 'linear', zeroline: true, zerolinecolor: INK, zerolinewidth: 1.5 };
+    base.margin = { l: 16, r: 24, t: 12, b: 56 };
+    return base;
+  }
   if (spec.kind === 'bar' || spec.kind === 'stacked_bar') {
     // Labels like "10" or "Phase 3" are categories, not numbers; ISO dates stay on a date axis.
     const xs = spec.series.flatMap((s) => s.x ?? []);

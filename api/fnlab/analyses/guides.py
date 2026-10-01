@@ -382,6 +382,54 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "divergence": Guide(
+        question="Where does one group of matches (for example the Global Championship) play out differently from "
+                 "another (for example everything else)?",
+        method=[
+            "Pick the group to study as Selection A (for example the Globals event windows) and the comparison as "
+            "Selection B (leave it open for 'everything else'). Matches in both count for A only.",
+            "Each measure is computed by the same code as its own page, once per match, for both groups: storm pulls, "
+            "rotation by phase type, drops, fights and eliminations.",
+            "The groups are compared with a Mann-Whitney U test on the per-match values, with an effect size showing how "
+            "consistently A sits above or below B.",
+        ],
+        terms={
+            "All measures side by side": "Every measure with A and B medians, effect size, p-value and verdict. "
+                                         "'Mode may explain it' marks team-play measures when the groups play "
+                                         "different modes (for example Duos vs Solos).",
+            "Effect size": "Rank-biserial correlation: +1 means every A match is higher than every B match, −1 every A "
+                           "match lower, 0 no difference. Around ±0.3 is a moderate difference, ±0.5 or more is large.",
+            "Divergent": "p below the threshold: a clear difference.",
+            "Possible": "p below 0.05 but above the threshold: a lead worth checking, not a finding.",
+            "Matches in A": "Matches in the group being studied.",
+            "Matches in B": "Matches in the comparison group, after removing any overlap with A.",
+            "Players per team": "Median team size in each group: 1 for Solos, 2 for Duos.",
+            "Lobby strength": "Median share of each lobby in the Power Rankings top 1,000. LAN events where players used "
+                              "event accounts read near zero.",
+            "Storm": "Storm measures don't depend on how players play, so differences there are about the game's "
+                     "storm settings.",
+            "Rotation": "Rotation measures by phase type, as on the Rotation timing page.",
+            "Drops": "Landing measures, as on the Drop spots page.",
+            "Fights and eliminations": "Fight and elimination measures, as on the High ground and Eliminations pages.",
+            "p": P_VALUE,
+        },
+        charts={
+            "Largest differences (effect size, A vs B)": "The fifteen measures where the groups differ most. Bars to the "
+                "right: A higher; to the left: A lower.",
+        },
+        conclude=[
+            "A Divergent storm measure means the storm itself differed (settings or patch). Rotation and drop differences "
+            "can then follow from it, so read those with the storm in mind.",
+            "When the groups play different modes, team-play divergences need a same-mode comparison before you act on "
+            "them. The October FNCS Solos finals will give elite solo matches to compare like with like.",
+            "Small groups reveal only large differences. A 'Possible' in a 12-match group is a lead, not evidence.",
+        ],
+        limits=[
+            "With dozens of measures tested, a few 'Possible' results are expected by chance.",
+            "Groups can differ in patch, lobby size and mode as well as skill. The Lobby rows show what differs.",
+        ],
+    ),
+
     "height": Guide(
         question="Does being higher than your opponents win fights and games, and from which storm phase does it start to matter?",
         method=[
