@@ -14,8 +14,14 @@ const MATCHES_TAB = '__matches';
 
 export function App() {
   const qc = useQueryClient();
-  const [filters, setFilters] = usePersistent<Filters>('filters', emptyFilters('demo'));
-  const [compare, setCompare] = usePersistent<Filters>('compare', emptyFilters('demo'));
+  const [filters, setFilters] = usePersistent<Filters>('filters', emptyFilters('real'));
+  const [compare, setCompare] = usePersistent<Filters>('compare', emptyFilters('real'));
+  // The demo dataset is kept for automated tests only; move any saved selection off it.
+  useEffect(() => {
+    // Only tournament data is shown now; move any saved selection on the demo or "My replays" data.
+    if (filters.dataset !== 'real') setFilters(emptyFilters('real'));
+    if (compare.dataset !== 'real') setCompare(emptyFilters('real'));
+  }, [filters.dataset, compare.dataset, setFilters, setCompare]);
   const [tab, setTab] = usePersistent<{ id: string }>('tab', { id: 'overview' });
   const [paramsById, setParamsById] = usePersistent<Record<string, Record<string, unknown>>>('params', {});
   const [reloadedAt, setReloadedAt] = useState<string | null>(null);
@@ -37,6 +43,7 @@ export function App() {
   const dataset: DatasetKey = filters.dataset;
   const datasets = health.data
     ? (Object.entries(health.data.datasets) as [DatasetKey, { label: string; available: boolean; matches: number }][])
+        .filter(([key]) => key === 'real')
         .map(([key, d]) => ({ key, label: d.label, available: d.available, matches: d.matches }))
     : undefined;
   const datasetReady = health.data?.datasets[dataset]?.available ?? false;
@@ -83,7 +90,7 @@ export function App() {
 
       <aside className="rail">
         <SelectionPanel title={current?.needs_compare ? 'Selection A' : 'Selection'} filters={filters} onChange={setFilters}
-                        facets={facets.data} count={counts.data?.total} showDataset datasets={datasets} />
+                        facets={facets.data} count={counts.data?.total} showDataset={(datasets?.length ?? 0) > 1} datasets={datasets} />
         {current?.needs_compare && (
           <SelectionPanel title="Compare with B" filters={compareFilters} onChange={(f) => setCompare(f)}
                           facets={facets.data} count={compareCount.data?.total} />
@@ -137,7 +144,7 @@ function EmptyDataset({ dataset }: { dataset: DatasetKey }) {
     },
     local: {
       title: 'No replays of your own yet',
-      body: <>Double-click <code>ZoneLab-Data.bat</code> in the project folder and choose 6 (after the one-time setup, option 1).
+      body: <>Double-click <code>ZoneLab-Data.bat</code> in the project folder and choose 6 to import replay files.
         Your newest replays from the Fortnite Demos folder appear here as soon as they're processed.</>,
     },
     real: {

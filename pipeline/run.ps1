@@ -1,6 +1,6 @@
 # run.ps1 - run pipeline stages on Windows.
 #   .\pipeline\run.ps1 demo                         synthetic data through the whole analysis (no keys, no downloads)
-#   .\pipeline\run.ps1 local [-Count 3]             parse your own newest replays from the Fortnite Demos folder
+#   .\pipeline\run.ps1 import [-Path <folder>] [-Count 0]  import .replay files (default: Fortnite replay folder; 0 = all)
 #   .\pipeline\run.ps1 login                        log in to Epic once (saved to .epic-auth.json)
 #   .\pipeline\run.ps1 logout                       revoke and delete the saved Epic login
 #   .\pipeline\run.ps1 test [-Source api-fortnite]  check the Epic login (or the api-fortnite.com key)
@@ -71,15 +71,23 @@ switch ($Stage) {
         Analyze "data_synthetic"
         Write-Host "Demo seasons: v96 random, v97 pulls toward the bus, v98 pulls hit the edge. Open the dashboard with npm run dev." -ForegroundColor Yellow
     }
-    "local" {
-        $demos = Join-Path $env:LOCALAPPDATA "FortniteGame\Saved\Demos"
-        $files = Get-ChildItem $demos -Filter *.replay | Sort-Object LastWriteTime -Descending | Select-Object -First $Count
-        if (-not $files) { throw "No replays found in $demos" }
-        New-Item -ItemType Directory -Force data_local/raw | Out-Null
-        $files | Copy-Item -Destination data_local/raw
-        dotnet (Extractor) data_local/raw data_local/parsed --mode full
-        Analyze "data_local"
-        Write-Host "These are client replays: expect WARN on track coverage. Tournament server replays should PASS." -ForegroundColor Yellow
+    "import" {
+        # Copy .replay files (a team's archive, or your own replays) into the main data and process them.
+        $from = if ($Path) { $Path } else { Join-Path $env:LOCALAPPDATA "FortniteGame\Saved\Demos" }
+        if (-not (Test-Path $from)) { throw "Folder not found: $from" }
+        $files = Get-ChildItem $from -Filter *.replay -Recurse | Sort-Object LastWriteTime -Descending
+        if ($Count -gt 0) { $files = $files | Select-Object -First $Count }
+        if (-not $files) { throw "No .replay files in $from" }
+        New-Item -ItemType Directory -Force "$Data/raw" | Out-Null
+        $new = 0
+        foreach ($f in $files) {
+            $dest = Join-Path "$Data/raw" $f.Name
+            if (-not (Test-Path $dest)) { Copy-Item $f.FullName $dest; $new++ }
+        }
+        Write-Host "Imported $new new replay files ($($files.Count - $new) already there) from $from" -ForegroundColor Green
+        dotnet (Extractor) "$Data/raw" "$Data/parsed" --mode full
+        Analyze $Data
+        Write-Host "Replays recorded on a player's own PC only see players near them; tournament (server) replays see everyone. Use the 'Server replays only' filter for strategy questions." -ForegroundColor Yellow
     }
     "login" { Push-Location pipeline/node; node epic_auth.js login; if ($LASTEXITCODE -eq 0) { node epic_auth.js status }; Pop-Location }
     "logout" { Push-Location pipeline/node; node epic_auth.js logout; Pop-Location }

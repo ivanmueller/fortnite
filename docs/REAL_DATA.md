@@ -18,15 +18,11 @@ Everything on Windows runs from **`ZoneLab-Data.bat`** (double-click it in the p
    - then choose **2** to log in. In your browser, log in at https://www.epicgames.com/account/personal with the secondary account, then open the link the menu prints. Epic shows a short block of text containing `"authorizationCode"`. Copy it all (Ctrl+A, Ctrl+C), paste it back and press Enter. This works once and expires after 5 minutes.
    - The login is saved in `.epic-auth.json` in the project folder, never uploaded to GitHub, and reused from then on. Option **L** revokes it at Epic and deletes it.
 
-## 2. Test the parser on your own replays
+## 2. Importing replay files
 
-Before pulling tournaments, check the parser reads the current season:
+Option **6** imports `.replay` files into your data from any folder: a pro team's archive of past tournaments, or your own matches (press Enter for the Fortnite replay folder). They're processed like downloaded matches.
 
-1. Play or spectate a match so Fortnite saves a replay.
-2. In `ZoneLab-Data.bat`, choose **6**.
-3. Open the dashboard and pick **My replays** in the left rail.
-
-Expect warnings about coverage. Replays recorded on your machine only include players near you, which is why tournament server replays are the real source.
+Replays recorded on a player's own PC only see players near them; tournament (server) replays see everyone. For strategy questions, use the dashboard's **Server replays only** filter.
 
 If processing fails on the current season, the parser hasn't caught up with the latest patch yet. Build it from its newest source instead. In PowerShell, from the project folder:
 

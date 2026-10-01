@@ -41,13 +41,9 @@ The page text lives in `api/fnlab/analyses/guides.py`, so it can be edited in on
 
 ## Datasets
 
-Switch between them in the left rail.
+The dashboard shows your tournament data (`data/tables`, or the folder chosen with data menu option D). Fill it with `ZoneLab-Data.bat` (see `docs/REAL_DATA.md`). Replay files from elsewhere, such as a team's archive, go in with option 6.
 
-| Dataset | Folder | How to fill it |
-| --- | --- | --- |
-| Tournaments | `data/tables` | `pipeline/run.ps1 find` then `pilot` (see `pipeline/README.md`) |
-| My replays | `data_local/tables` | `pipeline/run.ps1 local`, which parses your newest replays from the Fortnite Demos folder |
-| Demo | `data_synthetic/tables` | `npm run demo-data` |
+The synthetic demo data (`data_synthetic/tables`, `npm run demo-data`) is used only by the automated tests.
 
 The demo seasons have planted behaviour, so you can check the analyses find what's there:
 

@@ -25,7 +25,7 @@ echo   V  Preview which matches option 5 downloads next
 echo   W  Download every match from one tournament window (e.g. a LAN event)
 echo   S  Survey one replay: list every kind of data it contains
 echo   G  Update the parser's definitions from the newest survey (new season), then run 1
-echo   6  Process my own recent replays from the Fortnite Demos folder
+echo   6  Import replay files into your data (from a team archive, or your own matches)
 echo   7  Re-process everything already downloaded (after an update)
 echo   8  Download via api-fortnite.com instead (2 credits per match; use if 5 fails)
 echo   9  Save an api-fortnite.com key (only needed for option 8)
@@ -43,7 +43,7 @@ if /i "%choice%"=="2" goto :login
 if /i "%choice%"=="3" goto :tournaments
 if /i "%choice%"=="4" goto :find
 if /i "%choice%"=="5" goto :pilot
-if /i "%choice%"=="6" goto :local
+if /i "%choice%"=="6" goto :import
 if /i "%choice%"=="7" goto :analyze
 if /i "%choice%"=="8" goto :pilotapi
 if /i "%choice%"=="9" goto :key
@@ -155,10 +155,14 @@ set /p "limit=How many matches to download this run [10]: "
 %PS% "pipeline\run.ps1" pilot -Limit %limit%
 goto :done
 
-:local
-set "count=3"
-set /p "count=How many of your newest replays [3]: "
-%PS% "pipeline\run.ps1" local -Count %count%
+:import
+echo.
+echo Imports .replay files into your data: a team's replay archive, or your own matches.
+set "ifrom="
+set /p "ifrom=Folder with .replay files (Enter for the Fortnite replay folder): "
+set "icount=0"
+set /p "icount=How many of the newest files (Enter for all): "
+if "%ifrom%"=="" (%PS% "pipeline\run.ps1" import -Count %icount%) else (%PS% "pipeline\run.ps1" import -Path "%ifrom%" -Count %icount%)
 goto :done
 
 :analyze
