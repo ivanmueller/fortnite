@@ -114,4 +114,6 @@ def test_rotation_excludes_players_eliminated_before_the_shrink(client):
     j = client.post("/api/analyses/rotation/run", json={"filters": DEMO}).json()
     labels = {m["label"]: m["value"] for m in j["metrics"]}
     assert "Eliminated before the shrink" in labels and "Rotations" in labels
-    assert any(t["name"] == "Late rotators eliminated more" for t in j["tests"])
+    assert any(t["name"] == "Behind eliminated more than Ahead" for t in j["tests"])
+    phase_table = j["tables"][0]
+    assert "Type" in phase_table["columns"] and "Players per km²" in phase_table["columns"]

@@ -252,58 +252,68 @@ GUIDES: dict[str, Guide] = {
     ),
 
     "rotation": Guide(
-        question="When should you rotate? Do players who reach the next circle later get eliminated more and finish worse?",
+        question="When should you rotate? Do players who reach the next circle later than comparable players get "
+                 "eliminated more and finish worse, and how does that change from early shrinking circles to "
+                 "endgame moving zones?",
         method=[
-            "A rotation is one player, in one storm phase, who is outside the next circle when it's revealed (the "
-            "moment the previous shrink finishes) and still alive when the storm starts moving.",
-            "Departure: first moment they've closed a meaningful part of the gap (a quarter of it, at least 50 m). "
-            "Arrival: first moment they're inside the next circle, measured from the storm starting to close.",
-            "Storm time is reconstructed second by second from each player's position and the storm's timing, because "
-            "Season 42 replays don't record it.",
-            "Timing class: early (inside before the storm moves), with the storm (arrived during the shrink with under "
-            "5 s in the storm), late (5 s or more in the storm, or never arrived).",
-            "Players eliminated before the storm moved aren't classified: their timing never played out, and counting "
-            "them as late would bias the comparison.",
+            "A rotation is one player, in one storm phase, who is outside the next circle when it appears (the moment "
+            "the previous shrink finishes) and still alive when the storm starts moving.",
+            "Phases are analysed by type. Shrinking: the next circle sits inside the current one. Moving (with wait): "
+            "the circle moves past the old edge after a pause. Moving (continuous): it keeps moving with no pause.",
+            "Timing is relative, because arriving before the storm moves is impossible in moving zones. Within each match "
+            "and phase, each player is compared with the first player to reach the circle, and with players who started "
+            "a similar distance out (arrival time fitted against starting distance).",
+            "Timing class: Ahead, Typical or Behind = thirds of that distance-adjusted timing within the match and "
+            "phase. Players who never reached the circle are Behind.",
+            "Storm time is reconstructed second by second, because Season 42 replays don't record it. Density is "
+            "players alive per km² of circle, and players within 100 m of each player when the circle appears.",
         ],
         terms={
-            "Later arrival, worse placement": "Within each match and phase, a Spearman rank correlation between "
-                                              "arrival time and final placement, averaged per match and tested against "
-                                              "zero. Positive means later arrivals finish worse.",
-            "Late rotators eliminated more": "Per match, the share of late rotators eliminated during the shrink minus "
-                                             "the share of early rotators, tested against zero.",
-            "Per match": "One summary per match: the page's main claims.",
-            "Arrival vs placement by phase": "The arrival correlation within each phase, to find when timing matters.",
-            "Eliminated during the shrink: late vs early": "Fisher's exact test per phase on elimination counts.",
+            "Later than players at a similar distance, worse placement": "Within each match and phase, a Spearman "
+                "correlation between distance-adjusted arrival time and final placement, averaged per match and tested "
+                "against zero. Positive: arriving later than comparable players goes with finishing worse.",
+            "Behind eliminated more than Ahead": "Per match, the share of Behind players eliminated during the shrink "
+                                                 "minus the share of Ahead players, tested against zero.",
+            "Starting farther out, worse placement": "Spearman correlation between distance outside the next circle "
+                                                     "at the reveal and final placement, per match.",
+            "Per match": "All phase types together, one summary per match: the page's main claims.",
+            "Shrinking": "The same tests within shrinking phases only.",
+            "Moving (with wait)": "The same tests within moving phases that start after a pause.",
+            "Moving (continuous)": "The same tests within continuous moving zones (late endgame).",
             "Rotations": "Player-phases where a rotation was needed and the player was alive when the storm moved.",
             "Eliminated before the shrink": "Rotating players eliminated before the storm moved. Reported, not classified.",
-            "Early / with storm / late": "Share of rotations in each timing class.",
-            "Median departure": "Typical seconds between the next circle appearing and the player moving toward it.",
-            "Median arrival": "Typical arrival relative to the storm starting to close; negative is before.",
-            "Median storm time (late)": "Typical storm seconds for late rotations.",
+            "Median distance outside": "Typical distance outside the next circle when it appeared.",
+            "Median lag behind first in": "Typical seconds between the first player reaching the circle and each "
+                                          "other rotating player reaching it.",
+            "Took storm": "Share of rotations with at least 2 seconds in the storm.",
+            "Phase by phase: what each phase looks like and how players rotate": "Phase type, wait, circle size, players "
+                "alive, density, and how far out, how far behind the first arrival and how long in the storm the typical "
+                "rotating player was.",
             "Skill control: average placement by timing within each Power Rankings band": "Placement by timing class "
-                "inside each skill band. If late rotators finish worse within a band, timing matters beyond skill.",
+                "inside each skill band. If Behind players finish worse within a band, timing matters beyond skill.",
             "p": P_VALUE,
         },
         charts={
-            "Eliminated during the shrink, by rotation timing": "One line per timing class. A gap between Late and Early "
-                "in a phase is the cost of rotating late in that phase.",
-            "Average final placement by rotation timing": "Lower is better. Read with the skill-control table below it.",
-            "When players arrive, by how they finished": "Median arrival per phase for top-10, 11th–50th and 51st-or-"
-                "lower finishers. Lines below zero arrived before the storm moved.",
-            "Arrival relative to the shrink starting": "Every arrival, in seconds from the storm starting to close. Left "
-                "of the dashed line is early.",
+            "Seconds behind the first player in, by how they finished": "Median lag behind the first arrival per phase, "
+                "for top-10, 11th–50th and 51st-or-lower finishers. A gap between lines is how much earlier better "
+                "finishers get in.",
+            "Eliminated during the shrink, by timing vs comparable players": "One line per class. The gap between Behind "
+                "and Ahead in a phase is the cost of falling behind there.",
+            "Storm time, by how they finished": "Average storm seconds per phase by finishing tier.",
+            "Average final placement by timing vs comparable players": "Lower is better. Read with the skill-control table.",
         },
         conclude=[
-            "The phase table and the elimination chart show where rotating late costs the most. Those are the phases "
-            "to plan rotations earliest.",
-            "Early-game storm does little damage, so many players take it deliberately: a high late share in phases 2–4 "
-            "is a choice, not a mistake. Judge lateness by its elimination cost, phase by phase.",
+            "Compare phase types separately: endgame continuous zones and early shrinking circles reward different "
+            "timing, and pooling them can hide both.",
+            "The phase table shows how crowded each phase is: a timing effect that appears only in dense phases is "
+            "about third-party risk, not the storm.",
             "Check the skill-control table before concluding anything about timing itself.",
         ],
         limits=[
-            "Storm time is reconstructed and accurate to a few seconds; sampling is about once per second.",
+            "Storm time is reconstructed (accurate to a few seconds) and measures time in the storm, not damage taken: "
+            "replay health data isn't extracted yet.",
             "Associations, not causes: strong players both rotate well and win fights.",
-            "Solo play only so far; team rotations in duos and trios will need a team-level version.",
+            "Solo play only so far; duos and trios will need team-level rotations.",
         ],
     ),
 

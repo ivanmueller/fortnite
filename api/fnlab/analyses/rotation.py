@@ -1,17 +1,25 @@
 """
-Rotation timing: when players leave for the next circle, when they arrive, how long
-they spend in the storm, and how that relates to being eliminated and to placement.
+Rotation timing, measured relative to the lobby and the phase type.
 
-For each storm phase and each living player outside the next circle when it's revealed:
-  reveal       the previous shrink finishing (that's when the next circle appears)
-  departure    first moment they've closed a meaningful part of the gap to the next circle
-  arrival      first moment they're inside the next circle, relative to the storm starting
-               to close (negative = arrived before the storm moved)
-  storm time   seconds outside the storm circle, which is reconstructed second by second:
-               the current circle until the shrink starts, then moving and shrinking
-               linearly to the next circle (Season 42 replays don't record storm status)
-  timing class early (inside before the shrink starts), with the storm (arrived during the
-               shrink with under 5 s in the storm), late (5 s+ in the storm or never arrived)
+Phases differ in kind, so they're analysed by type:
+  shrinking            the next circle sits inside the current one
+  moving (with wait)   the circle moves past the old edge after a pause
+  moving (continuous)  the circle keeps moving with no pause (late endgame)
+In moving phases almost nobody can arrive "before the storm moves", so timing is
+measured against the other players in the same match and phase, not against the clock.
+
+For each player who must rotate (outside the next circle when it's revealed) and is
+alive when the storm starts moving:
+  outside_m          distance outside the next circle at the reveal
+  lag_first_s        seconds behind the first player to reach that circle
+  arrival_pct        arrival order among rotators in that match and phase (0 = first in)
+  timing_resid_s     arrival time vs what's typical for players starting as far out
+                     (linear fit of arrival on distance within the match and phase);
+                     positive = later than players at a similar distance
+  timing class       Ahead / Typical / Behind: thirds of timing_resid_s within the match
+                     and phase; players who never reached the circle are Behind
+  storm_s            seconds outside the storm circle, reconstructed second by second
+  neighbours_100m    other living players within 100 m at the reveal
 """
 from __future__ import annotations
 
@@ -25,14 +33,15 @@ from ..stats import spearman, ttest_mean
 from ..store import df
 from . import ALPHA_PARAM, Context, Param, register
 
-CLASSES = ["Early", "With the storm", "Late"]
-STORM_LATE_S = 5.0
-PHASE_GROUPS = {"all": None, "early": (2, 4), "mid": (5, 7), "late": (8, 99)}
+CLASSES = ["Ahead", "Typical", "Behind"]
+TYPES = ["Shrinking", "Moving (with wait)", "Moving (continuous)"]
+MIN_GROUP = 6      # rotators needed in a match-phase to rank them
+MIN_POINT = 10     # chart points based on fewer players are left out
 
 
-def _rotations(ctx: Context, phase_sql: str) -> pd.DataFrame:
-    """One row per (match, phase, player) with timing measures. Positions are cm; output in m and s."""
-    r = df(ctx.con, f"""
+def _player_phases(ctx: Context) -> pd.DataFrame:
+    """One row per (match, phase, player) tracked in the phase window. Positions are cm; output in m and s."""
+    return df(ctx.con, """
         WITH z AS (
             SELECT z.match_id, z.phase, z.cur_x, z.cur_y, z.cur_r, z.next_x, z.next_y, z.next_r,
                    z.start_shrink_t, z.finish_shrink_t,
@@ -40,20 +49,23 @@ def _rotations(ctx: Context, phase_sql: str) -> pd.DataFrame:
             FROM zones z JOIN sel USING (match_id)
         ),
         zz AS (
-            SELECT * FROM z
+            SELECT *,
+                   sqrt(power(next_x - cur_x, 2) + power(next_y - cur_y, 2)) > cur_r - next_r + 100 AS moving
+            FROM z
             WHERE reveal_t IS NOT NULL AND cur_x IS NOT NULL AND start_shrink_t >= reveal_t
-              AND finish_shrink_t > start_shrink_t {phase_sql}
+              AND finish_shrink_t > start_shrink_t
         ),
         p AS (SELECT p.match_id, p.id, p.t, p.x, p.y FROM positions p JOIN sel USING (match_id)),
         s AS (
-            SELECT zz.match_id, zz.phase, p.id, p.t, zz.next_r, zz.reveal_t, zz.start_shrink_t, zz.finish_shrink_t,
+            SELECT zz.match_id, zz.phase, p.id, p.t, p.x, p.y, zz.next_r, zz.cur_r, zz.reveal_t,
+                   zz.start_shrink_t, zz.finish_shrink_t, zz.moving,
                    sqrt(power(p.x - zz.next_x, 2) + power(p.y - zz.next_y, 2)) AS d_next,
                    greatest(0, least(1, (p.t - zz.start_shrink_t) / (zz.finish_shrink_t - zz.start_shrink_t))) AS f,
-                   p.x, p.y, zz.cur_x, zz.cur_y, zz.cur_r, zz.next_x, zz.next_y
+                   zz.cur_x, zz.cur_y, zz.next_x, zz.next_y
             FROM zz JOIN p ON p.match_id = zz.match_id AND p.t >= zz.reveal_t AND p.t <= zz.finish_shrink_t
         ),
         s2 AS (
-            SELECT match_id, phase, id, t, d_next, next_r, reveal_t, start_shrink_t, finish_shrink_t,
+            SELECT *,
                    sqrt(power(x - (cur_x + f * (next_x - cur_x)), 2) + power(y - (cur_y + f * (next_y - cur_y)), 2))
                        > (cur_r + f * (next_r - cur_r)) AS in_storm,
                    first_value(d_next) OVER (PARTITION BY match_id, phase, id ORDER BY t) AS d_reveal
@@ -61,47 +73,117 @@ def _rotations(ctx: Context, phase_sql: str) -> pd.DataFrame:
         )
         SELECT match_id, phase, id,
                min(t) AS first_t, max(t) AS last_t, count(*) AS n,
+               arg_min(x, t) AS x0, arg_min(y, t) AS y0,
                any_value(d_reveal) / 100 AS d_reveal_m, any_value(next_r) / 100 AS next_r_m,
-               any_value(reveal_t) AS reveal_t, any_value(start_shrink_t) AS start_t, any_value(finish_shrink_t) AS finish_t,
+               any_value(cur_r) / 100 AS cur_r_m, any_value(moving) AS moving,
+               any_value(reveal_t) AS reveal_t, any_value(start_shrink_t) AS start_t,
+               any_value(finish_shrink_t) AS finish_t,
                min(t) FILTER (WHERE d_next <= next_r) AS entry_t,
                min(t) FILTER (WHERE d_next <= d_reveal - greatest(5000, 0.25 * (d_reveal - next_r))) AS depart_t,
                count(*) FILTER (WHERE in_storm) AS storm_n
         FROM s2 GROUP BY 1, 2, 3
     """)
+
+
+def _neighbours(g: pd.DataFrame, radius_cm: float = 10000) -> np.ndarray:
+    xy = g[["x0", "y0"]].to_numpy(float)
+    dist = np.hypot(xy[:, None, 0] - xy[None, :, 0], xy[:, None, 1] - xy[None, :, 1])
+    return (dist <= radius_cm).sum(axis=1) - 1
+
+
+def _resid(g: pd.DataFrame) -> pd.Series:
+    """Arrival time vs what's typical for the starting distance, within one match-phase."""
+    a = g.dropna(subset=["arrival_rel_s"])
+    out = pd.Series(np.inf, index=g.index)  # never arrived: behind everyone
+    if len(a) >= 3 and a["outside_m"].std() > 0:
+        slope, icept = np.polyfit(a["outside_m"], a["arrival_rel_s"], 1)
+        out.loc[a.index] = a["arrival_rel_s"] - (icept + slope * a["outside_m"])
+    elif len(a):
+        out.loc[a.index] = a["arrival_rel_s"] - a["arrival_rel_s"].median()
+    return out
+
+
+def rotations(ctx: Context) -> tuple[pd.DataFrame, pd.DataFrame, int]:
+    """(rotations, phase context, players eliminated before the shrink)."""
+    r = _player_phases(ctx)
     if r.empty:
-        return r
+        return r, r, 0
     players = df(ctx.con, "SELECT * FROM players JOIN sel USING (match_id)")
     keep = ["match_id", "id", "is_bot", "death_t", "placement"] + [c for c in ("team_placement", "pr_rank") if c in players]
     r = r.merge(players[keep], on=["match_id", "id"], how="left")
     r = r[~r["is_bot"].fillna(False).astype(bool)]
     r["final"] = r["team_placement"] if "team_placement" in r else r["placement"]
-    r = r[(r["first_t"] - r["reveal_t"]) <= 5]                      # alive and tracked at the reveal
-    r = r[r["d_reveal_m"] > r["next_r_m"]].copy()                   # had to rotate
-    dt = ((r["last_t"] - r["first_t"]) / (r["n"] - 1).clip(lower=1)).clip(upper=5)
-    r["storm_s"] = r["storm_n"] * dt
-    r["arrival_rel_s"] = r["entry_t"] - r["start_t"]
-    r["depart_delay_s"] = r["depart_t"] - r["reveal_t"]
-    # Compare like with like: only players still alive when the storm starts moving are classified,
-    # and "eliminated" means during the shrink, for every class. Otherwise anyone eliminated
-    # before the shrink would count as "never arrived" = late, biasing the comparison.
-    alive_at_start = r["death_t"].isna() | (r["death_t"] >= r["start_t"])
-    r.attrs["dropped_before_shrink"] = int((~alive_at_start).sum())
-    r = r[alive_at_start].copy()
-    r["died_in_phase"] = r["death_t"].between(r["start_t"], r["finish_t"] + 1)
-    early = r["entry_t"] < r["start_t"]
-    with_storm = (r["entry_t"] >= r["start_t"]) & (r["storm_s"] < STORM_LATE_S)
-    r["timing"] = np.select([early, with_storm], CLASSES[:2], CLASSES[2])
-    r["outside_m"] = r["d_reveal_m"] - r["next_r_m"]
-    return r
+    wait = r["start_t"] - r["reveal_t"]
+    r["type"] = np.select([~r["moving"].astype(bool), wait > 1], TYPES[:2], TYPES[2])
+
+    # Everyone alive and tracked at the reveal: phase context and local density.
+    alive = r[((r["first_t"] - r["reveal_t"]) <= 5) & (r["death_t"].isna() | (r["death_t"] >= r["reveal_t"]))].copy()
+    alive["neighbours_100m"] = 0
+    for _, g in alive.groupby(["match_id", "phase"]):
+        alive.loc[g.index, "neighbours_100m"] = _neighbours(g)
+    ctxt = alive.groupby(["match_id", "phase"]).agg(
+        type=("type", "first"), alive=("id", "size"), cur_r_m=("cur_r_m", "first"), next_r_m=("next_r_m", "first"),
+        wait_s=("start_t", "first")).reset_index()
+    ctxt["wait_s"] = ctxt["wait_s"] - alive.groupby(["match_id", "phase"])["reveal_t"].first().to_numpy()
+    ctxt["per_km2"] = ctxt["alive"] / (np.pi * (ctxt["cur_r_m"] / 1000) ** 2)
+
+    # Rotators: outside the next circle at the reveal and alive when the storm moves.
+    rot = alive[alive["d_reveal_m"] > alive["next_r_m"]].copy()
+    alive_at_start = rot["death_t"].isna() | (rot["death_t"] >= rot["start_t"])
+    dropped = int((~alive_at_start).sum())
+    rot = rot[alive_at_start].copy()
+    dt = ((rot["last_t"] - rot["first_t"]) / (rot["n"] - 1).clip(lower=1)).clip(upper=5)
+    rot["storm_s"] = rot["storm_n"] * dt
+    rot["outside_m"] = rot["d_reveal_m"] - rot["next_r_m"]
+    rot["arrival_rel_s"] = rot["entry_t"] - rot["start_t"]
+    rot["depart_delay_s"] = rot["depart_t"] - rot["reveal_t"]
+    rot["died_in_shrink"] = rot["death_t"].between(rot["start_t"], rot["finish_t"] + 1)
+    grp = rot.groupby(["match_id", "phase"])
+    rot["n_rot"] = grp["id"].transform("size")
+    rot["lag_first_s"] = rot["entry_t"] - grp["entry_t"].transform("min")
+    rot["first_in"] = rot["lag_first_s"] == 0
+    rot["arrival_pct"] = grp["entry_t"].rank(pct=True, na_option="bottom")
+    rot["timing_resid_s"] = grp.apply(_resid, include_groups=False).reset_index(level=[0, 1], drop=True)
+    pct = rot.groupby(["match_id", "phase"])["timing_resid_s"].rank(pct=True, method="average")
+    rot["timing"] = np.where(rot["n_rot"] < MIN_GROUP, None,
+                             np.select([pct <= 1 / 3, pct <= 2 / 3], CLASSES[:2], CLASSES[2]))
+    return rot.dropna(subset=["final"]), ctxt, dropped
+
+
+def _tests(r: Result, d: pd.DataFrame, group: str, alpha: float) -> None:
+    """Distance-adjusted timing vs placement, and elimination of Behind vs Ahead, per match."""
+    c = d.dropna(subset=["timing"])
+    rho = c[np.isfinite(c["timing_resid_s"])].groupby(["match_id", "phase"]).apply(
+        lambda g: spearman(g["timing_resid_s"], g["final"]) if len(g) >= 4 else np.nan, include_groups=False)
+    t = ttest_mean(rho.groupby(level="match_id").mean().dropna(), 0.0)
+    if t["n"] >= 3:
+        r.test(group, "Later than players at a similar distance, worse placement", t["n"],
+               f"mean rho {t['mean']:+.2f}", t["p"], alpha, "Arriving later than comparable players goes with finishing worse")
+
+    def gap(g):
+        a, b = g[g["timing"] == "Ahead"], g[g["timing"] == "Behind"]
+        return b["died_in_shrink"].mean() - a["died_in_shrink"].mean() if len(a) >= 2 and len(b) >= 2 else np.nan
+    gaps = c.groupby("match_id").apply(gap, include_groups=False).dropna()
+    t2 = ttest_mean(gaps, 0.0)
+    if t2["n"] >= 3:
+        rb = c.loc[c["timing"] == "Behind", "died_in_shrink"].mean()
+        ra = c.loc[c["timing"] == "Ahead", "died_in_shrink"].mean()
+        r.test(group, "Behind eliminated more than Ahead", t2["n"], f"{rb:.0%} of Behind vs {ra:.0%} of Ahead",
+               t2["p"], alpha, "Falling behind comparable players is where eliminations happen")
+    drho = d.groupby(["match_id", "phase"]).apply(
+        lambda g: spearman(g["outside_m"], g["final"]) if len(g) >= 4 else np.nan, include_groups=False)
+    t3 = ttest_mean(drho.groupby(level="match_id").mean().dropna(), 0.0)
+    if t3["n"] >= 3:
+        r.test(group, "Starting farther out, worse placement", t3["n"], f"mean rho {t3['mean']:+.2f}", t3["p"], alpha,
+               "Being far from the next circle when it appears goes with finishing worse")
 
 
 @register("rotation", "Rotation timing",
-          "When players leave for the next circle, when they arrive, how long they spend in the storm, "
-          "and how that relates to being eliminated and to final placement.",
+          "When players reach the next circle compared with the rest of the lobby and with players starting as far "
+          "out, by phase type (shrinking, moving, continuous), and how that relates to eliminations and placement.",
           params=[ALPHA_PARAM,
-                  Param("phases", "Phases", "select", "all",
-                        [{"value": "all", "label": "All phases"}, {"value": "early", "label": "Early (2–4)"},
-                         {"value": "mid", "label": "Mid (5–7)"}, {"value": "late", "label": "Late (8+)"}]),
+                  Param("type", "Phase type", "select", "all",
+                        [{"value": "all", "label": "All phase types"}] + [{"value": t, "label": t} for t in TYPES]),
                   Param("players", "Players", "select", "all",
                         [{"value": "all", "label": "All players"},
                          {"value": "ranked", "label": "Power Rankings top 10,000 only"},
@@ -110,123 +192,105 @@ def _rotations(ctx: Context, phase_sql: str) -> pd.DataFrame:
 def run(ctx: Context) -> Result:
     alpha = float(ctx.params.get("alpha", 0.005))
     r = Result()
-    rng = PHASE_GROUPS.get(ctx.params.get("phases", "all"))
-    phase_sql = "" if rng is None else f"AND phase BETWEEN {rng[0]} AND {rng[1]}"
-    d = _rotations(ctx, phase_sql)
+    d, ph, dropped = rotations(ctx)
+    if d.empty:
+        r.headline = "No rotations to analyse in this selection."
+        return r
+    want = ctx.params.get("type", "all")
+    if want in TYPES:
+        d, ph = d[d["type"] == want], ph[ph["type"] == want]
     who = ctx.params.get("players", "all")
-    if not d.empty and who != "all":
+    if who != "all":
         if "pr_rank" not in d or d["pr_rank"].isna().all():
             r.warnings.append("Power Rankings aren't downloaded, so the Players setting was ignored (data menu option P).")
         else:
             d = d[d["pr_rank"].notna()] if who == "ranked" else d[d["pr_rank"].isna()]
     if d.empty:
-        r.headline = "No rotations to analyse in this selection."
+        r.headline = "No rotations of this kind in the selection."
         return r
-    dropped = d.attrs.get("dropped_before_shrink", 0)
-    d = d.dropna(subset=["final"])
 
-    # ---- main tests (per match, so linked rotations within a match don't inflate significance)
-    arrived = d.dropna(subset=["arrival_rel_s"])
-    rhos = arrived.groupby(["match_id", "phase"]).apply(
-        lambda g: spearman(g["arrival_rel_s"], g["final"]) if len(g) >= 4 else np.nan, include_groups=False)
-    t_arr = ttest_mean(rhos.groupby(level="match_id").mean().dropna(), 0.0)
-    r.test("Per match", "Later arrival, worse placement", t_arr["n"], f"mean rho {t_arr.get('mean', np.nan):+.2f}",
-           t_arr["p"], alpha, "Players who reach the next circle later finish worse")
+    # ---- tests: overall per match (main claim), then by phase type
+    _tests(r, d, "Per match", alpha)
+    for t in TYPES:
+        sub = d[d["type"] == t]
+        if sub["match_id"].nunique() >= 5 and want == "all":
+            _tests(r, sub, t, alpha)
 
-    def rate_gap(g):
-        e, l = g[g["timing"] == "Early"], g[g["timing"] == "Late"]
-        return l["died_in_phase"].mean() - e["died_in_phase"].mean() if len(e) >= 3 and len(l) >= 3 else np.nan
-    gaps = d.groupby("match_id").apply(rate_gap, include_groups=False).dropna()
-    t_gap = ttest_mean(gaps, 0.0)
-    late_rate = d.loc[d["timing"] == "Late", "died_in_phase"].mean()
-    early_rate = d.loc[d["timing"] == "Early", "died_in_phase"].mean()
-    r.test("Per match", "Late rotators eliminated more", t_gap["n"],
-           f"{late_rate:.0%} of late vs {early_rate:.0%} of early rotators eliminated during the shrink",
-           t_gap["p"], alpha, "Late rotations are where players get eliminated")
+    # ---- numbers
+    c = d.dropna(subset=["timing"])
+    rb = c.loc[c["timing"] == "Behind", "died_in_shrink"].mean()
+    ra = c.loc[c["timing"] == "Ahead", "died_in_shrink"].mean()
+    r.headline = (f"Across {len(d):,} rotations, players who fell behind others starting as far out were eliminated "
+                  f"during the shrink {rb:.0%} of the time, against {ra:.0%} for those ahead.")
+    r.metric("Rotations", f"{len(d):,}", "A player outside the next circle when it appeared and alive when the storm "
+             "started moving, in one phase")
+    r.metric("Eliminated before the shrink", f"{dropped:,}",
+             "Rotating players eliminated before the storm moved; not classified")
+    r.metric("Median distance outside", f"{d['outside_m'].median():.0f} m")
+    r.metric("Median lag behind first in", f"{d['lag_first_s'].median():.0f} s")
+    r.metric("Took storm", f"{(d['storm_s'] >= 2).mean():.0%}", "Share of rotations with 2+ seconds in the storm")
 
-    # ---- per phase
-    for ph, rh in rhos.groupby(level="phase"):
-        t = ttest_mean(rh.dropna(), 0.0)
-        if t["n"] >= 5:
-            r.test("Arrival vs placement by phase", f"Phase {int(ph)}", t["n"], f"mean rho {t['mean']:+.2f}", t["p"], alpha)
-    for ph, g in d.groupby("phase"):
-        e, l = g[g["timing"] == "Early"], g[g["timing"] == "Late"]
-        if len(e) >= 10 and len(l) >= 10:
-            table = [[int(l["died_in_phase"].sum()), int((~l["died_in_phase"]).sum())],
-                     [int(e["died_in_phase"].sum()), int((~e["died_in_phase"]).sum())]]
-            p = sps.fisher_exact(table).pvalue
-            r.test("Eliminated during the shrink: late vs early", f"Phase {int(ph)}", len(e) + len(l),
-                   f"late {l['died_in_phase'].mean():.0%} vs early {e['died_in_phase'].mean():.0%}", p, alpha)
-
-    # ---- headline and numbers
-    share = d["timing"].value_counts(normalize=True)
-    r.headline = (f"Across {len(d):,} rotations, {share.get('Late', 0):.0%} were late; late rotators were eliminated "
-                  f"during the shrink {late_rate:.0%} of the time, against {early_rate:.0%} for early ones.")
-    r.metric("Rotations", f"{len(d):,}", "A player outside the next circle when it was revealed and still alive when "
-             "the storm started moving, in one phase")
-    r.metric("Eliminated before the shrink", f"{dropped:,}", "Rotating players eliminated before the storm moved; not "
-             "classified, because their timing never played out")
-    r.metric("Early / with storm / late", " / ".join(f"{share.get(c, 0):.0%}" for c in CLASSES))
-    r.metric("Median departure", f"{d['depart_delay_s'].median():.0f} s after reveal")
-    r.metric("Median arrival", f"{arrived['arrival_rel_s'].median():+.0f} s vs shrink start",
-             "Negative: arrived before the storm started moving")
-    r.metric("Median storm time (late)", f"{d.loc[d['timing'] == 'Late', 'storm_s'].median():.0f} s")
+    # ---- context table: what each phase looks like
+    ctx_t = (ph.groupby("phase").agg(type=("type", lambda s: s.mode().iat[0]), wait=("wait_s", "median"),
+                                     radius=("cur_r_m", "median"), alive=("alive", "median"), density=("per_km2", "median"))
+             .join(d.groupby("phase").agg(rotating=("id", "size"), outside=("outside_m", "median"),
+                                          neighbours=("neighbours_100m", "median"), lag=("lag_first_s", "median"),
+                                          storm=("storm_s", "median"), took=("storm_s", lambda s: (s >= 2).mean())))
+             .reset_index())
+    ctx_t = ctx_t.rename(columns={
+        "phase": "Phase", "type": "Type", "wait": "Wait (s)", "radius": "Circle radius (m)", "alive": "Players alive",
+        "density": "Players per km²", "rotating": "Rotations", "outside": "Median distance outside (m)",
+        "neighbours": "Median players within 100 m", "lag": "Median lag behind first in (s)",
+        "storm": "Median storm time (s)", "took": "Took storm"})
+    ctx_t["Took storm"] = (ctx_t["Took storm"] * 100).round(0).astype("Int64").astype(str) + "%"
+    r.table("Phase by phase: what each phase looks like and how players rotate", ctx_t.round(1))
 
     # ---- charts
-    MIN_POINT = 10  # chart points based on fewer players than this are left out
-    grp = d.groupby(["phase", "timing"])["died_in_phase"]
-    rate = grp.mean().where(grp.size() >= MIN_POINT).unstack()
-    r.chart("line", "Eliminated during the shrink, by rotation timing",
-            [dict(name=c, x=[int(p) for p in rate.index], y=(rate[c] * 100).round(1).tolist()) for c in CLASSES if c in rate],
+    tier = pd.cut(d["final"], [0, 10, 50, 999], labels=["Top 10", "11th–50th", "51st or lower"])
+    g = d.assign(tier=tier).groupby(["phase", "tier"], observed=False)["lag_first_s"]
+    lag = g.median().where(g.size() >= MIN_POINT).unstack()
+    r.chart("line", "Seconds behind the first player in, by how they finished",
+            [dict(name=str(t), x=[int(p) for p in lag.index], y=lag[t].round(0).tolist()) for t in lag.columns],
+            x_label="Phase", y_label="Median seconds behind the first arrival")
+    g = c.groupby(["phase", "timing"])["died_in_shrink"]
+    rate = g.mean().where(g.size() >= MIN_POINT).unstack()
+    r.chart("line", "Eliminated during the shrink, by timing vs comparable players",
+            [dict(name=k, x=[int(p) for p in rate.index], y=(rate[k] * 100).round(1).tolist()) for k in CLASSES if k in rate],
             x_label="Phase", y_label="% eliminated while the storm closed")
-    place = d.groupby("timing")["final"].mean().reindex(CLASSES)
-    r.chart("bar", "Average final placement by rotation timing",
+    g = d.assign(tier=tier).groupby(["phase", "tier"], observed=False)["storm_s"]
+    st = g.mean().where(g.size() >= MIN_POINT).unstack()
+    r.chart("line", "Storm time, by how they finished",
+            [dict(name=str(t), x=[int(p) for p in st.index], y=st[t].round(1).tolist()) for t in st.columns],
+            x_label="Phase", y_label="Average seconds in the storm")
+    place = c.groupby("timing")["final"].mean().reindex(CLASSES)
+    r.chart("bar", "Average final placement by timing vs comparable players",
             [dict(name="Average placement", x=CLASSES, y=place.round(1).tolist())], y_label="Average placement (lower is better)")
-    arrived = arrived.assign(tier=pd.cut(arrived["final"], [0, 10, 50, 999], labels=["Top 10", "11th–50th", "51st or lower"]))
-    ga = arrived.groupby(["phase", "tier"], observed=False)["arrival_rel_s"]
-    med = ga.median().where(ga.size() >= MIN_POINT).unstack()
-    r.chart("line", "When players arrive, by how they finished",
-            [dict(name=str(t), x=[int(p) for p in med.index], y=med[t].round(0).tolist()) for t in med.columns],
-            x_label="Phase", y_label="Median arrival vs shrink start (s)")
-    r.chart("histogram", "Arrival relative to the shrink starting",
-            [dict(name="Rotations", values=arrived["arrival_rel_s"].clip(-120, 120).tolist())], bins=48, range=[-120, 120],
-            x_label="Seconds from the storm starting to close (negative = earlier)",
-            y_label="Rotations", reference_lines=[dict(axis="x", value=0, label="Shrink starts")])
 
-    # ---- tables
-    by_phase = d.groupby("phase").agg(
-        rotations=("id", "size"), outside_m=("outside_m", "median"), depart=("depart_delay_s", "median"),
-        arrival=("arrival_rel_s", "median"), storm=("storm_s", "median"),
-        late=("timing", lambda s: (s == "Late").mean()))
-    by_phase = by_phase.reset_index().rename(columns={
-        "phase": "Phase", "rotations": "Rotations", "outside_m": "Median distance outside (m)",
-        "depart": "Median departure (s after reveal)", "arrival": "Median arrival (s vs shrink start)",
-        "storm": "Median storm time (s)", "late": "Late share"})
-    by_phase["Late share"] = (by_phase["Late share"] * 100).round(0).astype(int).astype(str) + "%"
-    r.table("Phase by phase", by_phase.round(0))
     if "pr_rank" in d and d["pr_rank"].notna().any():
-        band = pd.cut(d["pr_rank"].fillna(10**7), [0, 1000, 10000, 10**8],
+        band = pd.cut(c["pr_rank"].fillna(10**7), [0, 1000, 10000, 10**8],
                       labels=["PR top 1,000", "PR 1,001–10,000", "Unranked"])
-        sk = d.assign(band=band).groupby(["band", "timing"], observed=False)["final"].mean().unstack().reindex(columns=CLASSES)
-        sk = sk.round(1).reset_index().rename(columns={"band": "Skill band"})
-        sk.columns = ["Skill band"] + [f"{c}: avg placement" for c in CLASSES]
+        sk = c.assign(band=band).groupby(["band", "timing"], observed=False)["final"].mean().unstack().reindex(columns=CLASSES)
+        sk = sk.round(1).reset_index()
+        sk.columns = ["Skill band"] + [f"{k}: avg placement" for k in CLASSES]
         r.table("Skill control: average placement by timing within each Power Rankings band", sk)
-        r.notes.insert(0, "Skill control: if late rotators finish worse within each Power Rankings band, timing matters "
+        r.notes.insert(0, "Skill control: if Behind players finish worse within each Power Rankings band, timing matters "
                           "beyond skill. If the gap only appears between bands, it's skill showing.")
 
     conclude(r, ctx, strategy=True, primary=["Per match"], alpha=alpha, recommended=100, single_season=False,
-             takeaway_found="Rotation timing is linked to outcome: " + "; ".join(
+             takeaway_found="Rotation timing, compared with players starting as far out, is linked to outcome: " + "; ".join(
                  t["reading"].lower() for t in r.tests if t["group"] == "Per match" and t["significant"]) + ".",
-             takeaway_none="No consistent link between rotation timing and outcome in this selection.",
-             next_found=["Check the skill-control table: the effect should hold within each Power Rankings band.",
-                         "Find the phases where the late/early elimination gap is widest: that's where to rotate first.",
-                         "Use the Players setting to repeat the tests within one skill band."],
-             next_none=["Try one phase group at a time: an effect confined to mid-game phases can be diluted."])
+             takeaway_none="No consistent link between distance-adjusted rotation timing and outcome in this selection.",
+             next_found=["Expand each phase type: the effect may hold in shrinking phases but not in continuous moving zones.",
+                         "Check the skill-control table before concluding anything about timing itself.",
+                         "Use the phase table to see how crowded each phase is when the effect appears."],
+             next_none=["Pick one phase type at a time: effects in different kinds of phase can cancel out."])
     r.notes += [
-        f"Chart points based on fewer than {MIN_POINT} players are left out; the tables show every phase.",
-        "Storm status is reconstructed from positions and storm timings, because Season 42 replays don't record it. "
-        "Treat storm time as accurate to a few seconds.",
-        "Only players outside the next circle when it was revealed count as rotating; players already inside are left out.",
+        "Timing is relative: within each match and phase, players are compared with the first arrival and with others "
+        "who started a similar distance out. Arriving 'before the storm moves' is impossible in continuous moving zones, "
+        "so it isn't used.",
+        f"Chart points based on fewer than {MIN_POINT} players are left out; tables show every phase.",
+        "Storm time is reconstructed from positions and storm timings (Season 42 replays don't record it), so it's "
+        "accurate to a few seconds. It's time in the storm, not damage: replay health data isn't extracted yet.",
         "Associations, not causes: strong players both rotate well and win fights. Use the skill controls.",
     ]
     return r
