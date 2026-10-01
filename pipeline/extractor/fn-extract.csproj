@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- Builds against the FortniteReplayReader NuGet package (Shiqan/FortniteReplayDecompressor). -->
-  <!-- If NuGet lags behind a new Fortnite season, run setup with -FromSource / --from-source, -->
-  <!-- which builds source/fn-extract.source.csproj against the latest GitHub source instead.  -->
+  <!-- If NuGet lags behind a new Fortnite season, setup builds source/fn-extract.source.csproj -->
+  <!-- against the latest GitHub source instead (automatically, or with setup.ps1 -FromSource). -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
