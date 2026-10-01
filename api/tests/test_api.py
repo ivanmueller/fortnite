@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -117,3 +117,10 @@ def test_rotation_excludes_players_eliminated_before_the_shrink(client):
     assert any(t["name"] == "Behind eliminated more than Ahead" for t in j["tests"])
     phase_table = j["tables"][0]
     assert "Type" in phase_table["columns"] and "Players per km²" in phase_table["columns"]
+
+
+def test_drops_detects_landings_and_contest(client):
+    j = client.post("/api/analyses/drops/run", json={"filters": DEMO}).json()
+    labels = {m["label"]: m["value"] for m in j["metrics"]}
+    assert int(labels["Landings"].replace(",", "")) > 1000
+    assert any(t["name"] == "Contested drops eliminated off spawn more" for t in j["tests"])

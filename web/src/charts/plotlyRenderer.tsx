@@ -58,6 +58,11 @@ function traces(spec: ChartSpec): unknown[] {
         return { type: 'box', name: s.name, y: nums(s.values), boxpoints: false,
                  marker: { color }, line: { color, width: 1.5 }, fillcolor: color + '33' };
       case 'map_points':
+        if (s.text) {  // labelled reference points, e.g. named places
+          return { type: 'scatter', mode: 'markers+text', name: s.name, x: s.x, y: s.y, text: s.text,
+                   textposition: 'top center', textfont: { ...FONT, size: 10, color: INK },
+                   marker: { color: INK, size: 6, symbol: 'diamond' }, hoverinfo: 'text' };
+        }
         return { type: 'scattergl', mode: 'markers', name: s.name, x: s.x, y: s.y,
                  marker: { color, size: 4, opacity: 0.55 } };
       default:

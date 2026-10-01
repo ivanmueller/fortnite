@@ -70,6 +70,7 @@ export type ChartKind = 'bar' | 'stacked_bar' | 'line' | 'histogram' | 'polar_hi
 
 export interface Series {
   name: string;
+  text?: string[];
   x?: (string | number)[];
   y?: (number | null)[];
   values?: (number | null)[];

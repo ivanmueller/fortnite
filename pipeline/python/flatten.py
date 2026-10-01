@@ -25,6 +25,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+from landings import build_landings
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]  # repo root
@@ -447,6 +448,10 @@ def main() -> None:
         out["players"] = pl.merge(best, on=["match_id", "team_index"], how="left")
         if not out["teams"].empty:
             out["teams"] = out["teams"].merge(best, on=["match_id", "team_index"], how="left")
+
+    out["landings"] = build_landings(out, data)
+    if (data / "pois.csv").exists():
+        out["pois"] = pd.read_csv(data / "pois.csv")
 
     for name, df in out.items():
         fmt = write_table(df, tables_dir / name)

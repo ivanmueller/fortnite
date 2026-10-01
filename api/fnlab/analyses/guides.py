@@ -317,6 +317,71 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "drops": Guide(
+        question="Where should we drop? How much does a contested drop cost, how much does landing far from the first "
+                 "circles cost, and which named spots work best for players of a given skill?",
+        method=[
+            "Landing is detected from movement, because Season 42 replays don't record the skydive: the first moment a "
+            "player stays at the same height (under 3 m/s vertically for 3 seconds) after descending at least 50 m "
+            "from where they appeared after the bus. The pre-game warm-up island is ignored.",
+            "Contest: players from other teams landing within 150 m (contested) and within 300 m. With Power Rankings "
+            "downloaded, also how many of those are in the top 1,000.",
+            "Context: distance from the exact bus route, and distance outside the first and second storm circles at "
+            "landing. Named places come from the current map (data menu option M).",
+            "Outcomes: eliminated within 2 minutes of landing (off spawn), eliminations in the first 3 minutes, and final "
+            "placement. Tests summarise each match once.",
+        ],
+        terms={
+            "Contested drops eliminated off spawn more": "Per match, the off-spawn elimination rate of contested landings "
+                                                         "minus uncontested ones, tested against zero.",
+            "More opponents nearby, worse placement": "Spearman correlation per match between opponents within 300 m "
+                                                      "and final placement. Positive: more contest, worse finish.",
+            "Landing far from zone 2, worse placement": "Spearman correlation per match between distance outside the "
+                                                        "second circle at landing and final placement.",
+            "Strong opponents nearby, worse placement": "The same, counting only Power Rankings top-1,000 opponents.",
+            "Early eliminations, better placement": "Among players who survive the landing, Spearman correlation between "
+                                                    "eliminations in the first 3 minutes and placement. Negative: "
+                                                    "winning the spawn fight goes with finishing better.",
+            "Farther from the bus, less contested": "Spearman correlation per match between distance from the bus line "
+                                                    "and opponents within 300 m. Negative: farther drops are quieter.",
+            "Per match": "One summary per match: the page's main claims.",
+            "Spawn fights": "What happens to players who survive a landing fight.",
+            "Bus route": "How the bus line shapes where contest happens.",
+            "Landings": "Players whose landing was detected.",
+            "Contested": "Another team landed within 150 m.",
+            "Eliminated off spawn": "Eliminated within 2 minutes of landing.",
+            "Median nearest opponent": "Typical distance to the closest player from another team at landing.",
+            "Median glide": "Typical seconds from appearing after the bus to landing.",
+            "Landed inside zone 2": "Share of landings already inside the second safe circle.",
+            "Drop spots": "One row per named spot with enough landings: contest, off-spawn risk, early eliminations, "
+                          "placement, placement compared with what players of the same Power Rankings band usually get "
+                          "(negative = better), how often it's in zone 1, distance to zone 2 and to the bus line.",
+            "Skill control: placement by contest within each Power Rankings band": "Average placement for contested and "
+                "uncontested landings inside each skill band. If contest costs placement within a band, it isn't just "
+                "weaker players getting caught in fights.",
+            "p": P_VALUE,
+        },
+        charts={
+            "Eliminated off spawn by opponents within 150 m": "How off-spawn risk rises with each extra nearby opponent.",
+            "Average placement by opponents within 150 m": "Lower is better.",
+            "Average placement by distance outside zone 2 at landing": "Lower is better. 'Zone luck' from the drop.",
+            "Where players land": "Every landing, survived or eliminated off spawn, with named places labelled. The map "
+                                  "may appear rotated or mirrored compared with the in-game map; the labels show where "
+                                  "things are.",
+        },
+        conclude=[
+            "For drop planning, read the Drop spots table: a good spot combines low off-spawn risk, a strong 'vs expected "
+            "for skill' and decent zone luck. Contest is the price; zone luck and loot (not measured yet) are the payoff.",
+            "Filter to strong lobbies for pro planning: early qualifier drops are less deliberate.",
+            "Check the skill-control table before blaming contest itself.",
+        ],
+        limits=[
+            "Loot isn't measured: chests and materials aren't in the extracted data yet.",
+            "Contest is proximity, not confirmed fights; teammates aren't counted as opponents.",
+            "Spot names come from the current map only; older-season matches show no names.",
+        ],
+    ),
+
     "height": Guide(
         question="Does being higher than your opponents win fights and games, and from which storm phase does it start to matter?",
         method=[

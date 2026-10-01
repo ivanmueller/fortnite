@@ -97,6 +97,7 @@ switch ($Stage) {
         Analyze $Data
     }
     "analyze" { Analyze $Data }
+    "pois" { Push-Location pipeline/node; node pois.js; Pop-Location; if ($LASTEXITCODE -eq 0) { Analyze $Data } }
     "plan" { Push-Location pipeline/node; node download.js --plan; Pop-Location }
     "pr" {
         Push-Location pipeline/node; node find_matches.js powerrankings --pages $(if ($Pages -eq "10") { "all" } else { $Pages }); Pop-Location

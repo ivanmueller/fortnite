@@ -15,7 +15,8 @@ import pandas as pd
 from .config import DATASETS
 from .filters import Filters
 
-TABLES = ["matches", "players", "teams", "zones", "zone_offsets", "bus", "positions", "kills", "eliminations"]
+TABLES = ["matches", "players", "teams", "zones", "zone_offsets", "bus", "positions", "kills", "eliminations",
+          "landings", "pois"]
 
 
 def tables_dir(dataset: str) -> Path:

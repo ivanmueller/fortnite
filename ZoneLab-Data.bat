@@ -27,6 +27,7 @@ echo   7  Re-process everything already downloaded (after an update)
 echo   8  Download via api-fortnite.com instead (2 credits per match; use if 5 fails)
 echo   9  Save an api-fortnite.com key (only needed for option 8)
 echo   P  Download Epic Power Rankings (top 10,000 players, about 7 minutes)
+echo   M  Download the current map's place names (for the Drop spots page)
 echo   D  Store downloaded data somewhere else (e.g. another drive)
 echo   K  Keep or delete raw replays after processing (saves about 95%% of disk space)
 echo   L  Log out of Epic (revokes the saved login)
@@ -46,6 +47,7 @@ if /i "%choice%"=="9" goto :key
 if /i "%choice%"=="l" goto :logout
 if /i "%choice%"=="d" goto :datadir
 if /i "%choice%"=="p" goto :pr
+if /i "%choice%"=="m" goto :pois
 if /i "%choice%"=="v" goto :plan
 if /i "%choice%"=="w" goto :pilotwindow
 if /i "%choice%"=="k" goto :keepraw
@@ -113,6 +115,10 @@ goto :done
 
 :plan
 %PS% "pipeline\run.ps1" plan
+goto :done
+
+:pois
+%PS% "pipeline\run.ps1" pois
 goto :done
 
 :pilotwindow
