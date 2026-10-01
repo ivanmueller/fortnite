@@ -119,6 +119,6 @@ def conclude(r: Result, ctx, *, primary: list[str], alpha: float, recommended: i
     if any(c["label"] == "One season" and not c["ok"] for c in checks):
         steps.insert(0, "Filter to a single season, then repeat.")
     if status == "found" and ctx.filters.dataset != "demo":
-        steps.append("Confirm on a different season or period (Compare two periods) before treating it as a rule.")
+        steps.append("Confirm on a different season or period (Compare page) before treating it as a rule.")
     r.conclusion = dict(status=status, title=title, summary=summary, evidence=evidence,
                         reliability=checks, next_steps=steps)

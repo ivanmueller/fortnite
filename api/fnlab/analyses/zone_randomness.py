@@ -78,7 +78,9 @@ def run(ctx: Context) -> Result:
     r.test(g, "Direction vs bus", r_bus["n"], f"{fmt(r_bus['mean_deg'], 0)}° from bus, R {fmt(r_bus['R'])}",
            r_bus["p"], alpha, "Pulls relate to the bus heading")
     r.test(g, "Keeps previous direction", r_turn["n"], f"turn {fmt(r_turn['mean_deg'], 0)}°, R {fmt(r_turn['R'])}",
-           r_turn["p"], alpha, "Each pull tends to follow the last")
+           r_turn["p"], alpha, ("Each zone tends to keep moving the same way as the last one",
+                                "Zones tend to reverse the direction of the previous pull"),
+           direction=np.cos(np.radians(r_turn.get("mean_deg", 0) or 0)))
 
     # Per-phase tests: each phase occurs once per match, so these are independent too.
     for ph, gz in z.groupby("phase"):
@@ -112,6 +114,11 @@ def run(ctx: Context) -> Result:
             bins=24)
     us = z["u"].dropna()
     if len(us):
+        edge = z[z["u"].notna() & ((z["kind"] == "shrinking") if "kind" in z else True)].groupby("phase")["u"].mean()
+        if len(edge):
+            r.chart("bar", "How far toward the edge each zone lands",
+                    [dict(name="Toward the edge", x=[f"Zone {int(p)}" for p in edge.index], y=(edge * 100).round(0).tolist())],
+                    y_label="% of the way from centre to edge", reference_lines=[dict(axis="y", value=50, label="Random")])
         r.chart("histogram", "Pull distance u", [dict(name="Shrinking zones", values=us.tolist())],
                 bins=10, range=[0, 1], x_label="u = (distance moved / max allowed)²", y_label="Pulls",
                 reference_lines=[dict(axis="y", value=len(us) / 10, label="If random")])
@@ -120,7 +127,7 @@ def run(ctx: Context) -> Result:
              takeaway_found="Storm pulls are not random in this selection: " + "; ".join(found) + ".",
              takeaway_none="Storm pulls look random on all four measures: distance, compass direction, relation to "
                            "the bus and persistence.",
-             next_found=["Expand the phases to find when the effect starts.",
+             next_found=["Open Details: the zone-by-zone results show where the effect starts.",
                          "Open Storm pull geometry to see how large it is in each phase.",
                          "Repeat per region: a pattern specific to one area can drive the pooled result."],
              next_none=["Repeat per region or per event window; an effect specific to one part of the map can hide in pooled data."])

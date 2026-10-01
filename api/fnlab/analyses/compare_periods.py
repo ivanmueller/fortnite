@@ -9,7 +9,7 @@ from . import ALPHA_PARAM, Context, register
 from .zone_randomness import load_pulls, per_match
 
 
-@register("compare_periods", "Compare two periods",
+@register("compare_periods", "Compare storm between periods",
           "Did storm behaviour change? Compares the main selection (A) with a second selection (B), "
           "for example two seasons or before and after a patch.",
           params=[ALPHA_PARAM], needs_compare=True, min_matches=3)

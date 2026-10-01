@@ -26,7 +26,7 @@ Set-Location (Split-Path $PSScriptRoot -Parent)   # repo root
 
 function Extractor {
     foreach ($p in "pipeline/extractor/bin/source/ZoneLab.ReplayReader.dll", "pipeline/extractor/bin/nuget/ZoneLab.ReplayReader.dll") { if (Test-Path $p) { return $p } }
-    throw "The replay parser needs rebuilding after an update. Run ZoneLab-Data.bat option 1."
+    throw "The replay parser needs rebuilding after an update. Run Vantage-Data.bat option 1."
 }
 # Where downloaded tournament data lives: ZONELAB_DATA_DIR in .env, or data\ in the project.
 function DataDir {
@@ -178,7 +178,7 @@ switch ($Stage) {
         foreach ($f in "match_ids.csv", "tournaments.csv") { if (Test-Path "$old\$f") { Move-Item "$old\$f" "$new\$f" -Force } }
         SetEnvValue "ZONELAB_DATA_DIR" $new
         Write-Host "Downloaded data now lives in $new (moved from $old). Saved in .env." -ForegroundColor Green
-        Write-Host "Restart Start-ZoneLab.bat so the dashboard reads the new location." -ForegroundColor Yellow
+        Write-Host "Restart Start-Vantage.bat so the dashboard reads the new location." -ForegroundColor Yellow
     }
     default { Get-Content $PSCommandPath | Select-Object -Skip 1 -First 7 }
 }

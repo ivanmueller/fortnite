@@ -77,7 +77,8 @@ def run(ctx: Context) -> Result:
     ep, per = surge_episodes(ctx)
     r.metric("Matches with in-match data", f"{n_matches:,}")
     if ep.empty:
-        r.headline = f"No surge detected in {n_matches:,} matches."
+        r.headline = (f"No surge detected in {n_matches:,} matches. Surge only triggers in some competitive rounds (usually later "
+                      "rounds and finals), so this fills in as those matches are collected.")
         r.metric("Surge episodes", "0")
         r.notes += [
             "Surge only triggers in some competitive rounds, when more players are alive than the round allows at a "
@@ -108,14 +109,16 @@ def run(ctx: Context) -> Result:
         comb = sps.combine_pvalues(ps, method="stouffer").pvalue
         r.test("Per episode", "Surge hits players who dealt less damage", len(ps),
                f"surged median {per.loc[per['surged'], 'dealt'].median():.0f} vs safe {per.loc[~per['surged'], 'dealt'].median():.0f}",
-               float(comb), alpha, "Surge targets the lowest damage-dealers, so dealing damage before it is protection")
+               float(comb), alpha, ("Surge targets the lowest damage-dealers, so dealing damage before it is protection",
+                                   "Surged players had not dealt less damage than safe players"),
+               direction=per.loc[~per["surged"], "dealt"].median() - per.loc[per["surged"], "dealt"].median())
     gap = per.groupby("match_id").apply(
         lambda g: g.loc[g["surged"], "final"].mean() - g.loc[~g["surged"], "final"].mean()
         if g["surged"].sum() >= 2 and (~g["surged"]).sum() >= 2 else np.nan, include_groups=False).dropna()
     if len(gap) >= 3:
         t = sps.ttest_1samp(gap, 0.0)
         r.test("Per match", "Surged players finish worse", len(gap), f"{gap.mean():+.1f} places on average", float(t.pvalue), alpha,
-               "Being surged goes with finishing worse")
+               ("Being surged goes with finishing worse", "Being surged did not go with finishing worse"), direction=gap.mean())
 
     # ---- per phase: when it triggers and how much damage was enough
     by = ep.groupby("phase").agg(episodes=("episode", "size"), alive=("alive", "median"), hit=("surged", "median"),

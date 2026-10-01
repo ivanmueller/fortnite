@@ -1,12 +1,12 @@
 import type { Guide } from '../types';
 
 /** "About this page": the research question, method, how to conclude, and limits. */
-export function GuidePanel({ guide, open, onToggle, summary }: {
-  guide: Guide; open: boolean; onToggle: (open: boolean) => void; summary?: string;
+export function GuidePanel({ guide, open, onToggle, summary, label = 'How this is measured' }: {
+  guide: Guide; open: boolean; onToggle: (open: boolean) => void; summary?: string; label?: string;
 }) {
   return (
     <details className="guide" open={open} onToggle={(e) => onToggle((e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>About this page</summary>
+      <summary>{label}</summary>
       <div className="guide__body">
         {guide.question !== summary && <p className="guide__question">{guide.question}</p>}
         <div className="guide__cols">

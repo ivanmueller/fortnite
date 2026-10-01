@@ -28,6 +28,33 @@ def run(ctx: Context) -> Result:
         return r
     z["u"] = z["u"].clip(0, 1)
     phases = sorted(z["phase"].unique())
+
+    # ---- Where the next zone goes: each pull drawn relative to the current zone (radius 1), rotated so
+    # the previous pull points up. Clusters show how far zones move and whether they keep going the same way.
+    zz = z.sort_values(["match_id", "phase"]).copy()
+    zz["prev_angle"] = zz.groupby("match_id")["angle_deg"].shift(1)
+    zz = zz.dropna(subset=["prev_angle", "dx", "dy", "cur_r"])
+    if len(zz):
+        rot = np.radians(90 - zz["prev_angle"])
+        zz["rx"] = (zz["dx"] * np.cos(rot) - zz["dy"] * np.sin(rot)) / zz["cur_r"]
+        zz["ry"] = (zz["dx"] * np.sin(rot) + zz["dy"] * np.cos(rot)) / zz["cur_r"]
+        kinds = zz["zone_type"] if "zone_type" in zz else np.where(zz["kind"] == "moving", "moving", "shrinking")
+        order = [("shrinking", "Shrinking zones"), ("50/50", "50/50 zones"), ("shifted", "Shifted zones"), ("moving", "Moving zones")]
+        series = [dict(name=label, x=zz.loc[kinds == k, "rx"].round(3).tolist(), y=zz.loc[kinds == k, "ry"].round(3).tolist())
+                  for k, label in order if (kinds == k).any()]
+        r.chart("map_points", "Where the next zone goes", series, x_label="Current zone widths (sideways)",
+                y_label="Current zone widths (previous pull = up)", circles=[dict(x=0, y=0, r=1, label="Current zone")],
+                marker_size=8)
+
+    # ---- Where endgames land: the last zone of each match, with named places when the map is known.
+    last = z.sort_values("phase").groupby("match_id").tail(1)
+    end_series = [dict(name="Final zone centres", x=last["next_x"].round(0).tolist(), y=last["next_y"].round(0).tolist())]
+    have = {t for (t,) in ctx.con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
+    if "pois" in have:
+        pois = df(ctx.con, "SELECT * FROM pois WHERE kind = 'poi'")
+        if len(pois):
+            end_series.append(dict(name="Named places", x=pois["x"].tolist(), y=pois["y"].tolist(), text=pois["name"].tolist()))
+    r.chart("map_points", "Where endgames land", end_series, x_label="Map X", y_label="Map Y", marker_size=9)
     r.chart("box", "Distribution by zone",
             [dict(name=f"Zone {int(p)}", values=z.loc[z.phase == p, metric].tolist()) for p in phases],
             y_label=label)
@@ -69,6 +96,21 @@ def run(ctx: Context) -> Result:
                           "The game sets how far those circles move; only the direction can vary, so test direction, not distance.")
     med = z.groupby("phase")[metric].median()
     r.headline = f"{desc}: median {med.min():.2f} to {med.max():.2f} across zones."
+    if "zone_type" in z.columns:
+        # Plain-language zone rules, e.g. "Zones 2–4 shrink; zones 5–6 are 50/50s; ..."
+        words = {"shrinking": "shrink inside the current zone", "50/50": "are 50/50s (half in, half out)",
+                 "shifted": "shift fully outside after a wait", "moving": "keep moving with no wait"}
+        modes = z.groupby("phase")["zone_type"].agg(lambda t: t.mode().iat[0])
+        runs, start, prev = [], None, None
+        for ph, t in modes.items():
+            if t != prev:
+                if prev is not None:
+                    runs.append((start, last, prev))
+                start, prev = ph, t
+            last = ph
+        runs.append((start, last, prev))
+        parts = [f"zone{'s' if a != b else ''} {int(a)}{'–' + str(int(b)) if a != b else ''} {words.get(t, t)}" for a, b, t in runs]
+        r.headline = (parts[0][0].upper() + parts[0][1:] + "; " + "; ".join(parts[1:]) + ".") if parts else r.headline
     r.metric("Storm pulls", f"{len(z):,}")
     r.metric("Zones", len(phases))
     r.metric(f"Overall median", f"{z[metric].median():.2f}", label)

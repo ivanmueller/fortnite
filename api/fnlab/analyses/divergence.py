@@ -138,7 +138,8 @@ def run(ctx: Context) -> Result:
     if overlap:
         r.notes.append(f"{overlap} matches were in both selections; they count for A only.")
     if n_a < 3 or n_b < 3:
-        r.headline = f"Each group needs at least 3 matches (A has {n_a}, B has {n_b} after removing overlap)."
+        r.headline = (f"Choose different matches for each group: for example, pick an event window in Group A and leave Group B "
+                      f"open for everything else. Each group needs at least 3 matches (A has {n_a}, B has {n_b} after removing overlap).")
         return r
 
     with _as_selection(con, "coh_a"):

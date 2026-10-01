@@ -1,12 +1,13 @@
-// Chart colours. Categorical series use distinct hues; ordered series (phases) run
-// from safe-zone teal (early) to storm violet (late), so order reads at a glance.
+// Chart colours. Categorical series use distinct hues; ordered series (zones) run
+// from light teal (early) to deep navy (endgame), so order reads at a glance.
 export const INK = '#18202E';
 export const MUTED = '#5C6779';
 export const GRID = '#D5DCE5';
-export const VIOLET = '#5B2E91';
-export const TEAL = '#1E7F8C';
+export const ACCENT = '#0F766E';
+export const NAVY = '#0F3B5F';
+export const TEAL = '#3B5B8C';
 
-export const CATEGORICAL = [VIOLET, TEAL, '#B26B00', '#4A5A70', '#A23B5A', '#5E7A1F', '#2F6FB0', '#8A5A2B'];
+export const CATEGORICAL = [ACCENT, '#D08A12', TEAL, '#C2504A', '#2B8CC4', '#6B8E23', '#64748B', '#8A5A2B'];
 
 function mix(a: string, b: string, t: number): string {
   const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
@@ -15,10 +16,10 @@ function mix(a: string, b: string, t: number): string {
 }
 
 export function seriesColors(names: string[]): string[] {
-  const ordered = names.length > 2 && names.every((n) => /^Phase \d+$/.test(n));
-  if (ordered) return names.map((_, i) => mix(TEAL, VIOLET, names.length === 1 ? 1 : i / (names.length - 1)));
+  const ordered = names.length > 2 && names.every((n) => /^(Phase|Zone) \d+$/.test(n));
+  if (ordered) return names.map((_, i) => mix('#7FC8C0', NAVY, names.length === 1 ? 1 : i / (names.length - 1)));
   // Height tiers are ordered too: low ground pale, high ground strongest.
-  const tiers: Record<string, string> = { 'Low ground': '#9AA6B6', 'Mid ground': TEAL, 'High ground': VIOLET };
+  const tiers: Record<string, string> = { 'Low ground': '#A9B4C2', 'Mid ground': '#5B8DB8', 'High ground': ACCENT };
   if (names.length > 1 && names.every((n) => n in tiers)) return names.map((n) => tiers[n]);
   return names.map((_, i) => CATEGORICAL[i % CATEGORICAL.length]);
 }

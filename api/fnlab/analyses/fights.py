@@ -119,11 +119,13 @@ def run(ctx: Context) -> Result:
     if t["n"] >= 3:
         r.test("Per match", "More health going in wins", t["n"],
                f"{adv['higher_hp_won'].mean():.0%} of {len(adv):,} fights with a {min_gap:g}+ HP gap", t["p"], alpha,
-               "The side with more health and shield at the start wins more often")
+               ("The side with more health and shield at the start wins more often",
+                "The side with more health and shield at the start wins less often"), direction=t.get("mean"), null=0.5)
     t = ttest_mean(dec.groupby("match_id")["first_won"].mean(), 0.5)
     if t["n"] >= 3:
         r.test("Per match", "First to shoot wins", t["n"], f"{dec['first_won'].mean():.0%} of {len(dec):,} decided fights",
-               t["p"], alpha, "The side that lands the first hit wins more often")
+               t["p"], alpha, ("The side that lands the first hit wins more often", "The side that lands the first hit wins less often"),
+               direction=t.get("mean"), null=0.5)
     tp = dec.dropna(subset=["winner_died_after"])
 
     def tp_gap(g):
@@ -136,7 +138,8 @@ def run(ctx: Context) -> Result:
         rb = tp.loc[~tp["third_party"], "winner_died_after"].mean()
         r.test("Per match", "Third-partied fights cost the winner", t["n"],
                f"winner eliminated within {AFTER_S} s: {ra:.0%} when third-partied vs {rb:.0%}", t["p"], alpha,
-               "Winning a fight a third team joined is more often followed by elimination")
+               ("Winning a fight a third team joined is more often followed by elimination",
+                "Winning a fight a third team joined is less often followed by elimination"), direction=t.get("mean"))
     drops = unexplained_drops(ctx.con)
     if not drops.empty:
         storm = drops[drops["in_storm"] == True]  # noqa: E712
@@ -152,7 +155,9 @@ def run(ctx: Context) -> Result:
         t = ttest_mean(rho, 0.0)
         if t["n"] >= 3:
             r.test("Per match", "Storm damage in zones 2–4, worse placement", t["n"], f"mean rho {t['mean']:+.2f}", t["p"], alpha,
-                   "Among players who reach zone 5, those who took more storm damage in zones 2–4 finish worse")
+                   ("Among players who reach zone 5, those who took more storm damage in zones 2–4 finish worse",
+                    "Among players who reach zone 5, those who took more storm damage in zones 2–4 finish better"),
+                   direction=t.get("mean"))
         by_phase = storm.groupby(["phase"]).agg(players=("id", "nunique"), damage=("lost", "sum"))
         r.chart("bar", "Storm damage taken, by zone",
                 [dict(name="Total storm damage", x=[f"Zone {int(p)}" for p in by_phase.index], y=by_phase["damage"].round(0).tolist())],

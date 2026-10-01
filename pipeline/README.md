@@ -34,7 +34,7 @@ Two findings shaped the design:
 powershell -ExecutionPolicy Bypass -File .\pipeline\setup.ps1     # once, from the repo root
 .\pipeline\run.ps1 demo                                  # 1. synthetic demo data (same as npm run demo-data)
 .\pipeline\run.ps1 local -Count 3                        # 2. parse your newest replays -> "My replays" in the dashboard
-# log in to Epic once (ZoneLab-Data.bat option 2, or .\pipeline\run.ps1 login), then:
+# log in to Epic once (Vantage-Data.bat option 2, or .\pipeline\run.ps1 login), then:
 .\pipeline\run.ps1 tournaments                           # 3. list event windows
 .\pipeline\run.ps1 find -Window <eventWindowId>          # 4. collect match IDs into data/match_ids.csv
 .\pipeline\run.ps1 pilot -Limit 10                       # 5. download, parse, validate -> "Tournaments" in the dashboard
@@ -93,7 +93,7 @@ The tests cover distance (Kolmogorov–Smirnov), compass direction, direction re
 | Extractor fails on new-season replays | `setup.ps1 -FromSource` builds against the latest GitHub source, which updates faster than NuGet. |
 | `positions=0` | Run the extractor with `--mode full`. |
 | Validation warns "looks like a client replay" | Normal for your own Demos-folder replays. For tournament research, use server replays (`is_server_replay=1`). |
-| Download auth errors | Epic may have revoked the downloader's built-in client. Download through api-fortnite.com instead (`pilot -Via api-fortnite`, or ZoneLab-Data.bat option 8). |
+| Download auth errors | Epic may have revoked the downloader's built-in client. Download through api-fortnite.com instead (`pilot -Via api-fortnite`, or Vantage-Data.bat option 8). |
 | No matches found for a window | It may not have been played yet, or be older than about 30 days. Use `-Pages all` to read every lobby. |
 | Epic download fails for every match | Download through api-fortnite.com instead: `pilot -Via api-fortnite` (2 credits per match). |
 

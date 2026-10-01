@@ -1,7 +1,7 @@
 @echo off
 setlocal
-title Zone Lab data
-rem Double-click for a menu of data steps. Advanced: ZoneLab-Data.bat pilot -Limit 50 (passes arguments to pipeline\run.ps1).
+title Vantage data
+rem Double-click for a menu of data steps. Advanced: Vantage-Data.bat pilot -Limit 50 (passes arguments to pipeline\run.ps1).
 cd /d "%~dp0"
 set "PS=powershell -NoProfile -ExecutionPolicy Bypass -File"
 
@@ -13,7 +13,7 @@ if not "%~1"=="" (
 :menu
 cls
 echo.
-echo  Zone Lab data
+echo  Vantage data
 echo  -------------
 echo   1  One-time setup: install the replay parser (needs the .NET 10 SDK)
 echo   2  Log in to Epic (one time; use a secondary account)

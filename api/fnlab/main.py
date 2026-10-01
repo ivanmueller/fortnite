@@ -87,6 +87,13 @@ def matches(q: MatchQuery):
     return clean(dict(total=n, columns=list(rows.columns), rows=rows.astype(object).where(rows.notna(), None).values.tolist()))
 
 
+@app.get("/api/pages")
+def pages():
+    """The dashboard's pages: which analyses each one groups, and what each section features."""
+    from .pages import PAGES
+    return PAGES
+
+
 @app.get("/api/analyses")
 def analyses():
     return [dict(id=a.id, title=a.title, summary=a.summary, needs_compare=a.needs_compare,

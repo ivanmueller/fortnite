@@ -68,7 +68,7 @@ function traces(spec: ChartSpec): unknown[] {
                    marker: { color: INK, size: 6, symbol: 'diamond' }, hoverinfo: 'text' };
         }
         return { type: 'scattergl', mode: 'markers', name: s.name, x: s.x, y: s.y,
-                 marker: { color, size: 4, opacity: 0.55 } };
+                 marker: { color, size: spec.options.marker_size ?? 4, opacity: spec.options.marker_size ? 0.8 : 0.55 } };
       default:
         return {};
     }
@@ -107,6 +107,10 @@ function layout(spec: ChartSpec): Record<string, unknown> {
     const xs = spec.series.flatMap((s) => s.x ?? []);
     const isDate = xs.length > 0 && xs.every((x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}/.test(x));
     if (!isDate) (base.xaxis as Record<string, unknown>).type = 'category';
+    else {
+      (base.xaxis as Record<string, unknown>).tickformat = '%b %d';
+      if (new Set(xs).size <= 3) (base.xaxis as Record<string, unknown>).type = 'category';
+    }
   }
   if (spec.kind === 'stacked_bar') (base.legend as Record<string, unknown>).traceorder = 'normal';
   if (spec.kind === 'polar_histogram') {
@@ -123,6 +127,16 @@ function layout(spec: ChartSpec): Record<string, unknown> {
   }
   if (spec.kind === 'map_points') {
     (base.yaxis as Record<string, unknown>).scaleanchor = 'x';
+    if (o.range) {
+      (base.xaxis as Record<string, unknown>).range = o.range;
+      (base.yaxis as Record<string, unknown>).range = o.range;
+    }
+    if (o.circles?.length) {
+      base.shapes = o.circles.map((c) => ({ type: 'circle', xref: 'x', yref: 'y', x0: c.x - c.r, x1: c.x + c.r,
+        y0: c.y - c.r, y1: c.y + c.r, line: { color: INK, width: 1.5, dash: 'dot' } }));
+      base.annotations = o.circles.filter((c) => c.label).map((c) => ({ x: c.x, y: c.y + c.r, text: c.label,
+        showarrow: false, yanchor: 'bottom', font: { ...FONT, size: 11, color: MUTED } }));
+    }
     base.legend = { font: { ...FONT, size: 11 }, x: 1.02, y: 1 };
     base.margin = { l: 56, r: 100, t: 12, b: 48 };
   }

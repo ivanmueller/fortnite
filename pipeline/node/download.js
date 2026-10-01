@@ -33,7 +33,7 @@ import downloader from 'fortnite-replay-downloader';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'); // repo root
 dotenv.config({ path: path.join(ROOT, '.env') });
-const DATA = process.env.ZONELAB_DATA_DIR || path.join(ROOT, 'data'); // ZoneLab-Data.bat option D changes this
+const DATA = process.env.ZONELAB_DATA_DIR || path.join(ROOT, 'data'); // Vantage-Data.bat option D changes this
 const RAW = path.join(DATA, 'raw');
 const CSV = path.join(DATA, 'match_ids.csv');
 fs.mkdirSync(RAW, { recursive: true });
@@ -46,7 +46,7 @@ const WITH_CHECKPOINTS = args.includes('--with-checkpoints');
 const via = args.includes('--via') ? args[args.indexOf('--via') + 1] : 'epic';
 const API_BASE = process.env.FORTNITE_API_BASE || 'https://prod.api-fortnite.com';
 if (via === 'api-fortnite' && !process.env.FORTNITE_API_KEY) {
-  console.error('FORTNITE_API_KEY is missing. Run ZoneLab-Data.bat option 2 first.');
+  console.error('FORTNITE_API_KEY is missing. Run Vantage-Data.bat option 2 first.');
   process.exit(1);
 }
 
@@ -186,5 +186,5 @@ for (const [n, matchId] of todo.entries()) {
 console.log(`done: ${ok}/${todo.length} downloaded`);
 if (via === 'epic' && ok === 0 && todo.length) {
   console.log('Nothing downloaded from Epic. If every match failed the same way, try the fallback: '
-    + 'ZoneLab-Data.bat option 8 (api-fortnite.com, 2 credits per match).');
+    + 'Vantage-Data.bat option 8 (api-fortnite.com, 2 credits per match).');
 }

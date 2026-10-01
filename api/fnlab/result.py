@@ -51,7 +51,12 @@ class Result:
     def metric(self, label: str, value, detail: str | None = None) -> None:
         self.metrics.append(dict(label=label, value=value, detail=detail))
 
-    def test(self, group: str, name: str, n: int, value: str, p: float, alpha: float, reading: str = "") -> None:
+    def test(self, group: str, name: str, n: int, value: str, p: float, alpha: float,
+             reading: str | tuple[str, str] = "", direction: float | None = None, null: float = 0.0) -> None:
+        """reading may be (if the measured value is above `null`, if below); `direction` is that value,
+        so the plain-language reading always matches what the data shows."""
+        if isinstance(reading, tuple):
+            reading = reading[0] if direction is not None and np.isfinite(direction) and direction > null else reading[1]
         sig = p is not None and np.isfinite(p) and p < alpha
         self.tests.append(dict(group=group, name=name, n=int(n), value=value, p=p, significant=bool(sig), reading=reading))
 

@@ -161,7 +161,9 @@ def _tests(r: Result, d: pd.DataFrame, group: str, alpha: float) -> None:
     t = ttest_mean(rho.groupby(level="match_id").mean().dropna(), 0.0)
     if t["n"] >= 3:
         r.test(group, "Later than players at a similar distance, worse placement", t["n"],
-               f"mean rho {t['mean']:+.2f}", t["p"], alpha, "Arriving later than comparable players goes with finishing worse")
+               f"mean rho {t['mean']:+.2f}", t["p"], alpha, ("Arriving later than comparable players goes with finishing worse",
+                                                             "Arriving later than comparable players goes with finishing better"),
+               direction=t.get("mean"))
 
     def gap(g):
         a, b = g[g["timing"] == "Ahead"], g[g["timing"] == "Behind"]
@@ -172,13 +174,15 @@ def _tests(r: Result, d: pd.DataFrame, group: str, alpha: float) -> None:
         rb = c.loc[c["timing"] == "Behind", "died_in_shrink"].mean()
         ra = c.loc[c["timing"] == "Ahead", "died_in_shrink"].mean()
         r.test(group, "Behind eliminated more than Ahead", t2["n"], f"{rb:.0%} of Behind vs {ra:.0%} of Ahead",
-               t2["p"], alpha, "Falling behind comparable players is where eliminations happen")
+               t2["p"], alpha, ("Falling behind comparable players is where eliminations happen",
+                                "Falling behind comparable players did not lead to more eliminations here"), direction=t2.get("mean"))
     drho = d.groupby(["match_id", "phase"]).apply(
         lambda g: spearman(g["outside_m"], g["final"]) if len(g) >= 4 else np.nan, include_groups=False)
     t3 = ttest_mean(drho.groupby(level="match_id").mean().dropna(), 0.0)
     if t3["n"] >= 3:
         r.test(group, "Starting farther out, worse placement", t3["n"], f"mean rho {t3['mean']:+.2f}", t3["p"], alpha,
-               "Being far from the next circle when it appears goes with finishing worse")
+               ("Being far from the next zone when it appears goes with finishing worse",
+                "Being far from the next zone when it appears goes with finishing better"), direction=t3.get("mean"))
 
 
 @register("rotation", "Rotation timing",
@@ -283,10 +287,10 @@ def run(ctx: Context) -> Result:
              takeaway_found="Rotation timing, compared with players starting as far out, is linked to outcome: " + "; ".join(
                  t["reading"].lower() for t in r.tests if t["group"] == "Per match" and t["significant"]) + ".",
              takeaway_none="No consistent link between distance-adjusted rotation timing and outcome in this selection.",
-             next_found=["Expand each zone type: the effect may hold in shrinking zones but not in 50/50s or moving zones.",
+             next_found=["Open Details: the results by zone type show where the effect holds (shrinking, 50/50, shifted, moving).",
                          "Check the skill-control table before concluding anything about timing itself.",
                          "Use the phase table to see how crowded each phase is when the effect appears."],
-             next_none=["Pick one zone type at a time: effects in different kinds of zone can cancel out."])
+             next_none=["Open Details: effects in different kinds of zone can cancel out when pooled."])
     r.notes += [
         "Timing is relative: within each match and phase, players are compared with the first arrival and with others "
         "who started a similar distance out. Arriving 'before the storm moves' is impossible in continuous moving zones, "

@@ -126,7 +126,8 @@ def run(ctx: Context) -> Result:
             lambda g: spearman(-g["height_pct"], g["placement"]), include_groups=False)
         allt = ttest_mean(rhos.groupby(level="match_id").mean().dropna(), 0.0)
         r.test("Standing, per match", "Higher teams finish better", allt["n"], f"mean rho {allt.get('mean', np.nan):+.2f}",
-               allt["p"], alpha, "Teams holding height at shrink start place better")
+               allt["p"], alpha, ("Teams holding height when the storm starts closing place better",
+                                  "Teams holding height when the storm starts closing place worse"), direction=allt.get("mean"))
         for ph, rh in rhos.groupby(level="phase"):
             tt = ttest_mean(rh.dropna(), 0.0)
             if tt["n"] >= 5:
@@ -183,10 +184,10 @@ def run(ctx: Context) -> Result:
     conclude(r, ctx, strategy=True, primary=["Fights, per match", "Standing, per match"], alpha=alpha, recommended=100,
              single_season=False,
              takeaway_found=("Height is linked to winning" + (f", in fights from {first.lower()} onward" if first else "")
-                             + ". Check both main tests below: fights and final placement."),
+                             + "."),
              takeaway_none="No consistent advantage for the higher player or team in this selection.",
-             next_found=["Expand Fights by zone and Standing by zone to see when the advantage starts.",
-                         "Raise the 'level' setting: an effect that survives larger height gaps is more robust."],
+             next_found=["Open Details: the zone-by-zone results show when the height advantage starts.",
+                         "Compare with Fight outcomes: health going in can explain part of a height advantage."],
              next_none=["Try a single late phase or a smaller fight distance: height may matter only in close endgame fights."])
     r.notes += [
         "Height is relative: the winner vs the player they beat, or each team vs the other teams in the same match at "

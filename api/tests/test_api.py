@@ -142,3 +142,17 @@ def test_event_pages_explain_missing_data(client):
     for a in ("loot", "fights", "surge"):
         j = client.post(f"/api/analyses/{a}/run", json={"filters": DEMO}).json()
         assert "option 7" in " ".join(j.get("warnings", []))
+
+
+def test_pages_point_at_real_analyses(client):
+    """Every dashboard section must name a registered analysis, and featured charts must exist on demo data."""
+    ids = {a["id"] for a in client.get("/api/analyses").json()}
+    pages = client.get("/api/pages").json()
+    assert [p["id"] for p in pages][:2] == ["overview", "storm"]
+    for p in pages:
+        for s in p["sections"]:
+            assert s["analysis"] in ids, s["analysis"]
+    storm = next(p for p in pages if p["id"] == "storm")["sections"][0]
+    j = client.post(f"/api/analyses/{storm['analysis']}/run", json={"filters": DEMO}).json()
+    titles = {c["title"] for c in j["charts"]}
+    assert all(c in titles for c in storm["charts"] if c != "Where endgames land" or "pois" in titles)

@@ -81,7 +81,7 @@ let cached = null; // { accessToken, accountId, displayName, expiresAt }
 export async function session({ fresh = false } = {}) {
   if (!fresh && cached && Date.parse(cached.expiresAt) - Date.now() > 60_000) return cached;
   const auth = savedAuth();
-  if (!auth) throw new EpicError(0, 'not_logged_in', 'Not logged in to Epic. Run ZoneLab-Data.bat option 2 first.');
+  if (!auth) throw new EpicError(0, 'not_logged_in', 'Not logged in to Epic. Run Vantage-Data.bat option 2 first.');
   try {
     const t = await token(clientFor(auth.client || 'ios'), { grant_type: 'device_auth', account_id: auth.accountId, device_id: auth.deviceId, secret: auth.secret });
     cached = { accessToken: t.access_token, accountId: t.account_id, displayName: t.displayName || auth.displayName, expiresAt: t.expires_at };

@@ -1,6 +1,6 @@
-# Zone Lab
+# Vantage
 
-Statistical research on competitive Fortnite storm behaviour. The repo has three parts:
+Competitive Fortnite analytics from tournament replays: storm behaviour, drops and loot, rotations, fights and surge, built for tier-1 teams. The repo has three parts:
 
 - **Replay pipeline** (`pipeline/`): tournament match IDs → server replays → parsed JSON → research tables.
 - **Analysis API** (`api/`, Python): runs statistical tests on whatever matches you select.
@@ -18,7 +18,7 @@ npm run dev         # starts the API (port 8000) and dashboard (port 5173), and 
 
 The dashboard opens in your default browser. If that isn't Chrome, open `http://localhost:5173` in Chrome yourself.
 
-**On Windows, double-click `Start-ZoneLab.bat` instead.** It runs setup and creates the demo data the first time, starts both servers, and opens Chrome when the dashboard is ready. If Zone Lab is already running, it just opens the dashboard. Close its window to stop everything. For a desktop shortcut, right-click the file and choose *Send to → Desktop (create shortcut)*.
+**On Windows, double-click `Start-Vantage.bat` instead.** It runs setup and creates the demo data the first time, starts both servers, and opens Chrome when the dashboard is ready. If Vantage is already running, it just opens the dashboard. Close its window to stop everything. For a desktop shortcut, right-click the file and choose *Send to → Desktop (create shortcut)*.
 
 ### Live updates
 
@@ -28,7 +28,7 @@ The dashboard opens in your default browser. If that isn't Chrome, open `http://
 
 ## Real data and conclusions
 
-**[docs/REAL_DATA.md](docs/REAL_DATA.md)** walks through it end to end: setup, pulling tournament replays, checking quality, working through the pages, and deciding what counts as a finding. On Windows, double-click **`ZoneLab-Data.bat`** for a numbered menu of every data step.
+**[docs/REAL_DATA.md](docs/REAL_DATA.md)** walks through it end to end: setup, pulling tournament replays, checking quality, working through the pages, and deciding what counts as a finding. On Windows, double-click **`Vantage-Data.bat`** for a numbered menu of every data step.
 
 Every page explains itself:
 
@@ -41,7 +41,7 @@ The page text lives in `api/fnlab/analyses/guides.py`, so it can be edited in on
 
 ## Datasets
 
-The dashboard shows your tournament data (`data/tables`, or the folder chosen with data menu option D). Fill it with `ZoneLab-Data.bat` (see `docs/REAL_DATA.md`). Replay files from elsewhere, such as a team's archive, go in with option 6.
+The dashboard shows your tournament data (`data/tables`, or the folder chosen with data menu option D). Fill it with `Vantage-Data.bat` (see `docs/REAL_DATA.md`). Replay files from elsewhere, such as a team's archive, go in with option 6.
 
 The synthetic demo data (`data_synthetic/tables`, `npm run demo-data`) is used only by the automated tests.
 
@@ -55,22 +55,17 @@ In the demo, teams that finish lower also tend to rotate late, and better teams 
 
 ## Analyses
 
-| Page | Question it answers |
-| --- | --- |
-| Dataset overview | What's in this selection: matches over time, seasons, regions, phases recorded |
-| Is the storm random? | Do pulls depart from randomness in distance, compass direction, relation to the bus, or persistence? |
-| Storm pull geometry | How far and how much each phase's circle moves, and where next circles land |
-| Compare two periods | Did storm behaviour change between selection A and selection B (e.g. two seasons, before and after a patch)? |
-| Position vs placement | Where were teams, relative to the closing circle, when it started to shrink, and how did they finish? |
-| Where eliminations happen | How far eliminations happen from the circle the storm is closing to, by phase |
-| Drop spots | Where players land, how contested it is, how it sits against the bus and first circles, and what it costs: off-spawn eliminations, placement, and a table of every named drop spot |
-| Divergence report | Where does one group of matches (e.g. the Global Championship) differ from another, across every page's measures, with a test for each |
-| Loot | How fast and how well players loot after landing, loot by drop spot, and whether early loot predicts placement |
-| Health and fights | Fights from real damage: health going in, first shot, third parties, storm damage |
-| Surge | When surge triggers, who it hits, and how much damage keeps a player safe |
-| Rotation timing | When do players leave for and reach the next circle, how long are they in the storm, and does rotating late get them eliminated or cost placement? |
-| High ground | Does the higher player win fights, do teams holding height finish better, and from which storm phase? |
-| Matches | The selected matches as a table (CSV download) |
+| Page | Question it answers | Sections |
+| --- | --- | --- |
+| Overview | What data is in the selection? | The data, plus the full match list |
+| Storm | How do zones behave, and where will the next one go? | Zone rules (zone types, where the next zone goes, where endgames land); Is zone placement random? |
+| Drops and loot | Where should we land? | Drop spots; Loot |
+| Rotations | When and where should we move? | Rotation timing; Positioning |
+| Fights | Which fights should we take? | Fight outcomes; High ground; Where eliminations happen |
+| Surge | How much damage keeps a player safe from surge? | Surge |
+| Compare | How does group A differ from group B? | A vs B, across every measure |
+
+Each section leads with a plain-language takeaway, a confidence badge (Strong evidence, Some evidence, No clear pattern, Not enough data yet), a few key numbers and its most useful charts. Tests, full tables and method notes are under "Details and method". Pages are defined in `api/fnlab/pages.py`.
 
 Each analysis shows a headline, key numbers, and the evidence: one p-value track per statistical test, with the threshold marked. Below that come charts, tables and notes on how to read the results.
 

@@ -62,30 +62,34 @@ def run(ctx: Context) -> Result:
     rc, ru = d.loc[d["contested"], "off_spawn"].mean(), d.loc[~d["contested"], "off_spawn"].mean()
     r.test("Per match", "Contested drops eliminated off spawn more", t["n"],
            f"{rc:.0%} of contested vs {ru:.0%} of uncontested eliminated within 2 min", t["p"], alpha,
-           "Landing within 150 m of an opponent raises the risk of an early elimination")
+           ("Landing within 150 m of an opponent raises the risk of an early elimination",
+            "Landing near an opponent did not raise the risk of an early elimination here"), direction=t.get("mean"))
     for col, name, reading in [
-        ("opp_300m", "More opponents nearby, worse placement", "Landing near more opponents goes with finishing worse"),
-        ("outside_zone2_m", "Landing far from zone 2, worse placement", "Landing far outside the second circle goes with finishing worse"),
-        ("opp_top1000_300m", "Strong opponents nearby, worse placement", "Landing near Power Rankings top-1,000 players goes with finishing worse"),
+        ("opp_300m", "More opponents nearby, worse placement", "Landing near more opponents goes with finishing"),
+        ("outside_zone2_m", "Landing far from zone 2, worse placement", "Landing far outside zone 2 goes with finishing"),
+        ("opp_top1000_300m", "Strong opponents nearby, worse placement", "Landing near Power Rankings top-1,000 players goes with finishing"),
     ]:
         if col in d and d[col].notna().any() and (col != "opp_top1000_300m" or has_pr):
             rho = _per_match_rho(d.dropna(subset=[col]), col)
             tt = ttest_mean(rho, 0.0)
             if tt["n"] >= 3:
-                r.test("Per match", name, tt["n"], f"mean rho {tt['mean']:+.2f}", tt["p"], alpha, reading)
+                r.test("Per match", name, tt["n"], f"mean rho {tt['mean']:+.2f}", tt["p"], alpha,
+                       (f"{reading} worse", f"{reading} better"), direction=tt.get("mean"))
     surv = d[~d["off_spawn"]]
     rho = _per_match_rho(surv, "early_kills")
     tt = ttest_mean(rho, 0.0)
     if tt["n"] >= 3:
         r.test("Spawn fights", "Early eliminations, better placement", tt["n"], f"mean rho {tt['mean']:+.2f}", tt["p"], alpha,
-               "Among players who survive the landing, those with early eliminations finish better (negative rho)")
+               ("Among players who survive the landing, those with early eliminations finish worse",
+                "Among players who survive the landing, those with early eliminations finish better"), direction=tt.get("mean"))
     if "bus_offset_m" in d and d["bus_offset_m"].notna().any():
         rho = d.dropna(subset=["bus_offset_m"]).groupby("match_id").apply(
             lambda g: spearman(g["bus_offset_m"], g["opp_300m"]) if len(g) >= 8 else np.nan, include_groups=False).dropna()
         tt = ttest_mean(rho, 0.0)
         if tt["n"] >= 3:
             r.test("Bus route", "Farther from the bus, less contested", tt["n"], f"mean rho {tt['mean']:+.2f}", tt["p"], alpha,
-                   "Drops farther from the bus line have fewer opponents nearby (negative rho)")
+                   ("Drops farther from the bus line have more opponents nearby",
+                    "Drops farther from the bus line have fewer opponents nearby"), direction=tt.get("mean"))
 
     # ---- numbers
     r.headline = (f"{len(d):,} landings: {d['contested'].mean():.0%} contested within 150 m; contested players were "
@@ -118,7 +122,7 @@ def run(ctx: Context) -> Result:
             "Eliminated off spawn": (p["off_spawn"] * 100).round(0).astype(int).astype(str) + "%",
             "Early elims": p["early_kills"].round(2),
             "Avg placement": p["placement"].round(1),
-            "vs expected for skill": p["vs_skill"].round(1),
+            "Placement vs similar players": p["vs_skill"].round(1),
             "In zone 1": (p["in_z1"] * 100).round(0).astype(int).astype(str) + "%",
             "Median outside zone 2 (m)": p["out_z2"].round(0),
             "Median from bus line (m)": p["bus"].round(0),
@@ -155,7 +159,7 @@ def run(ctx: Context) -> Result:
         pois = df(ctx.con, "SELECT * FROM pois WHERE kind = 'poi'")
         if len(pois):
             series.append(dict(name="Named places", x=pois["x"].tolist(), y=pois["y"].tolist(), text=pois["name"].tolist()))
-    r.chart("map_points", "Where players land", series, x_label="X (Unreal units)", y_label="Y (Unreal units)")
+    r.chart("map_points", "Where players land", series, x_label="Map X", y_label="Map Y")
 
     if has_pr:
         sk = d.assign(band=_skill_band(d["pr_rank"]), contest=np.where(d["contested"], "Contested", "Uncontested")) \

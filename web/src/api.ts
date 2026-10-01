@@ -1,4 +1,4 @@
-import type { AnalysisInfo, AnalysisResult, DatasetKey, Facets, Filters, Health, MatchList } from './types';
+import type { AnalysisInfo, AnalysisResult, DatasetKey, Facets, Filters, Health, MatchList, PageInfo } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -30,6 +30,7 @@ export const api = {
   health: () => request<Health>('/api/health'),
   facets: (dataset: DatasetKey) => request<Facets>(`/api/facets?dataset=${dataset}`),
   analyses: () => request<AnalysisInfo[]>('/api/analyses'),
+  pages: () => request<PageInfo[]>('/api/pages'),
   matches: (filters: Filters, limit = 200) =>
     request<MatchList>('/api/matches', { method: 'POST', body: JSON.stringify({ filters: cleanFilters(filters), limit }) }),
   run: (id: string, filters: Filters, params: Record<string, unknown>, compare?: Filters) =>

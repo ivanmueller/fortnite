@@ -1,7 +1,7 @@
 @echo off
 setlocal
-title Zone Lab
-rem Double-click to start Zone Lab and open the dashboard in Chrome.
+title Vantage
+rem Double-click to start Vantage and open the dashboard in Chrome.
 rem Close this window (or press Ctrl+C) to stop it.
 cd /d "%~dp0"
 
@@ -13,7 +13,7 @@ where node >nul 2>nul || (
 
 rem Already running? Just open the dashboard instead of starting a second copy.
 netstat -ano | findstr /r /c:":5173 .*LISTENING" >nul && (
-  echo Zone Lab is already running. Opening the dashboard...
+  echo Vantage is already running. Opening the dashboard...
   call :open
   exit /b 0
 )
@@ -28,18 +28,12 @@ if defined NEEDS_SETUP (
   call npm run setup || goto :failed
 )
 
-rem No demo data yet: create it so every page has something to show.
-if not exist "data_synthetic\tables\matches.parquet" (
-  echo Creating demo data...
-  call npm run demo-data || goto :failed
-)
-
 rem Open Chrome as soon as the dashboard answers (falls back to the default browser).
 start "" /b powershell -NoProfile -ExecutionPolicy Bypass -Command "for($i=0;$i -lt 120;$i++){try{Invoke-WebRequest 'http://localhost:5173' -UseBasicParsing -TimeoutSec 1 | Out-Null; break}catch{Start-Sleep -Milliseconds 500}}; try{Start-Process chrome 'http://localhost:5173' -ErrorAction Stop}catch{Start-Process 'http://localhost:5173'}"
 
 rem Stop Vite opening a second tab in the default browser.
 set BROWSER=none
-echo Starting Zone Lab at http://localhost:5173
+echo Starting Vantage at http://localhost:5173
 echo Close this window or press Ctrl+C to stop it.
 echo.
 call npm run dev

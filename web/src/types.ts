@@ -91,6 +91,8 @@ export interface ChartSpec {
     zero_label?: string;
     reference_lines?: { axis: 'x' | 'y'; value: number; label?: string }[];
     horizontal?: boolean;
+    circles?: { x: number; y: number; r: number; label?: string }[];
+    marker_size?: number;
   };
 }
 
@@ -124,3 +126,14 @@ export interface AnalysisResult {
 }
 
 export interface MatchList { total: number; columns: string[]; rows: unknown[][] }
+
+export interface SectionInfo {
+  analysis: string;
+  title: string;
+  question: string;
+  charts: string[];
+  table: { title: string; columns: string[] | null } | null;
+  metrics: string[];
+}
+
+export interface PageInfo { id: string; title: string; question: string; needs_compare?: boolean; sections: SectionInfo[] }

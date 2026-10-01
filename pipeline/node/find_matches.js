@@ -26,7 +26,7 @@
 //       as a tournament leaderboard (event epicgames_dreamyparadox, window dreamyparadox,
 //       as of Oct 2026; found in fortnite.com/competitive/power-rankings page data).
 //
-// Source: Epic directly (default; needs the one-time login from ZoneLab-Data.bat option 2).
+// Source: Epic directly (default; needs the one-time login from Vantage-Data.bat option 2).
 // Add --source api-fortnite to use api-fortnite.com instead (Pro plan, FORTNITE_API_KEY in .env).
 import dotenv from 'dotenv';
 import { EpicError, session } from './epic_auth.js';
@@ -36,7 +36,7 @@ import { fileURLToPath } from 'url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'); // repo root
 dotenv.config({ path: path.join(ROOT, '.env') });
-const DATA = process.env.ZONELAB_DATA_DIR || path.join(ROOT, 'data'); // ZoneLab-Data.bat option D changes this
+const DATA = process.env.ZONELAB_DATA_DIR || path.join(ROOT, 'data'); // Vantage-Data.bat option D changes this
 const CSV = path.join(DATA, 'match_ids.csv');
 const TOURNAMENTS_CSV = path.join(DATA, 'tournaments.csv');
 const RANKS_CSV = path.join(DATA, 'player_ranks.csv'); // leaderboard rank of every player read, per window
@@ -74,7 +74,7 @@ async function get(apiPath, query = {}) {
     let detail = text.slice(0, 300);
     try { const j = JSON.parse(text); detail = j.detail || j.title || j.message || detail; } catch { /* not JSON */ }
     const hint = {
-      401: 'The key was rejected. Save it again with ZoneLab-Data.bat option 9.',
+      401: 'The key was rejected. Save it again with Vantage-Data.bat option 9.',
       403: 'This endpoint is not on your plan.',
       429: 'Rate limit reached. Wait a while and run it again.',
     }[res.status];
@@ -374,7 +374,7 @@ function saveRanks(windowId, ranks) {
 
 // ---------------------------------------------------------------- main
 if (SOURCE === 'api-fortnite' && !KEY) {
-  console.error('FORTNITE_API_KEY is missing. Save your api-fortnite.com key with ZoneLab-Data.bat option 9.');
+  console.error('FORTNITE_API_KEY is missing. Save your api-fortnite.com key with Vantage-Data.bat option 9.');
   process.exit(1);
 }
 try {

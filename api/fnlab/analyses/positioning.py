@@ -61,7 +61,8 @@ def run(ctx: Context) -> Result:
     rhos = team.groupby(["match_id", "phase"]).apply(lambda g: spearman(g["d"], g["placement"]), include_groups=False)
     allt = ttest_mean(rhos.groupby(level="match_id").mean().dropna(), 0.0)
     r.test("Per match", "Distance vs placement", allt["n"], f"mean rho {allt['mean']:+.2f}", allt["p"], alpha,
-           "Positive rho: farther from the closing circle goes with a worse placement")
+           ("Teams farther from the closing zone finish worse", "Teams farther from the closing zone finish better"),
+           direction=allt.get("mean"))
     for ph, rh in rhos.groupby(level="phase"):
         t = ttest_mean(rh.dropna(), 0.0)
         if t["n"] >= 5:
@@ -77,21 +78,26 @@ def run(ctx: Context) -> Result:
              "Distance vs placement, averaged per match")
 
     conclude(r, ctx, strategy=True, primary=["Per match"], alpha=alpha, recommended=100, single_season=False,
-             takeaway_found=(f"Teams farther from the closing circle finish worse (mean rho {allt['mean']:+.2f})."
+             takeaway_found=("Teams farther from the closing zone finish worse than rivals alive at the same moment."
                              if allt.get("mean", 0) > 0 else
-                             f"Teams farther from the closing circle finish better (mean rho {allt['mean']:+.2f})."),
+                             "Teams farther from the closing zone finish better than rivals alive at the same moment."),
              takeaway_none="No consistent link between distance from the closing circle and final placement.",
              next_found=["Find the phase where the tier lines separate most: that's when positioning differs most "
                          "between strong and weak finishers.",
                          "Compare with Where eliminations happen for the same phases."],
              next_none=["Try a single phase: an effect confined to late phases can be diluted across all phases."])
     team["bucket"] = pd.cut(team["d"], BUCKETS, labels=BUCKET_LABELS, right=False)
-    bk = team.groupby("bucket", observed=False).agg(placement=("placement", "mean"), teams=("placement", "size"))
-    shown = bk["placement"].where(bk["teams"] >= MIN_BUCKET)
-    r.chart("bar", "Average placement by distance from the closing circle",
-            [dict(name="Average placement", x=BUCKET_LABELS, y=shown.round(2).tolist())],
-            x_label="Distance from next circle's center, in next-circle radii (≤ 1 = inside)",
-            y_label="Average placement (lower is better)")
+    # Compare each team only with rivals alive at the same moment (same match, same zone): pooling zones would
+    # mix late-game survivors (far in radius terms, finishing high) with early-game teams and reverse the picture.
+    team["rivals_ahead"] = team.groupby(["match_id", "phase"])["placement"].rank(pct=True, method="average")
+    bk = team.groupby("bucket", observed=False).agg(placement=("placement", "mean"), teams=("placement", "size"),
+                                                    ahead=("rivals_ahead", "mean"))
+    shown = (bk["ahead"] * 100).where(bk["teams"] >= MIN_BUCKET)
+    r.chart("bar", "How teams finished, by distance from the closing zone",
+            [dict(name="Rivals who finished ahead", x=BUCKET_LABELS, y=shown.round(0).tolist())],
+            x_label="Distance from the next zone's centre, in zone widths (1 or less = inside)",
+            y_label="% of rivals alive then who finished ahead",
+            reference_lines=[dict(axis="y", value=50, label="Average")])
     tiers = team.groupby(["phase", "tier"], observed=False)["d"].apply(lambda s: (s <= 1).mean()).unstack()
     r.chart("line", "Share of teams inside the closing circle at shrink start",
             [dict(name=str(t), x=[int(p) for p in tiers.index], y=(tiers[t] * 100).round(1).tolist()) for t in tiers.columns],

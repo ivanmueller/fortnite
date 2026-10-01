@@ -10,7 +10,7 @@ from __future__ import annotations
 from ..guide import Guide
 
 P_VALUE = ("Probability of a result at least this extreme if there were no real effect. Smaller is stronger "
-           "evidence. Results count as significant only below the threshold chosen at the top of the page.")
+           "evidence. Results count only below a strict bar of 0.005, because each page tests many things at once.")
 
 GUIDES: dict[str, Guide] = {
     "overview": Guide(
@@ -65,7 +65,7 @@ GUIDES: dict[str, Guide] = {
             "Per-match tests summarise each match once, so linked pulls within a match don't inflate significance. "
             "Per-phase tests use one pull per match.",
             "Late in a match the storm becomes a moving zone: the new circle drifts past the old edge. Distance tests "
-            "use shrinking zones only; direction tests use whichever zones the Zones setting picks.",
+            "use shrinking zones only; direction tests use all zones.",
             "The bus route comes from the bus itself when the replay records it (exact). Otherwise it's fitted from "
             "where players first skydive, and matches with a loose fit are left out of bus tests.",
         ],
@@ -95,6 +95,9 @@ GUIDES: dict[str, Guide] = {
                                                       "means pulls follow the bus.",
             "Turn from previous pull": "How far each pull turned from the one before. A bulge at 0° means pulls keep "
                                        "going the same way.",
+            "How far toward the edge each zone lands": "For shrinking zones: how far the next zone's centre sits from the "
+                "middle of the current zone toward its edge, as a percentage of the room it has. 50% is what random "
+                "placement would give; higher means zones hug the edge.",
             "Pull distance u": "Bars should sit flat at the dashed line if pulls are random. A tall last bar means "
                                "pulls hit the circle's edge; tall first bars mean they stay central.",
         },
@@ -141,6 +144,12 @@ GUIDES: dict[str, Guide] = {
             "Distribution by zone": "Box plots: the line is the median, the box holds the middle half of pulls, the "
                                      "whiskers the typical range. A flat line instead of a box means that phase moves "
                                      "the same amount in every match: set by the game, not random.",
+            "Where the next zone goes": "Each dot is one zone's next position, drawn as if the current zone were the dotted "
+                "circle and the previous pull pointed straight up. Dots near the top edge: the zone kept going the same way "
+                "toward the edge. Dots below the circle: the zone reversed. Dots outside the circle: it moved beyond the old "
+                "edge (50/50s, shifted and moving zones).",
+            "Where endgames land": "The final zone of each match on the map, with named places. Clusters show areas where "
+                                   "endgames tend to end up this season.",
             "Where next circles land": "Each dot is a next-circle center, coloured by zone. Compare positions only "
                                        "within one season; the map changes between seasons.",
         },
@@ -581,7 +590,7 @@ GUIDES: dict[str, Guide] = {
         method=[
             "Height is always relative. Raw elevation mostly reflects terrain, so it's compared with nearby opponents.",
             "Fights: for each knock or elimination, the winner's height at that moment is compared with the victim's. "
-            "Fights where the gap is smaller than the 'level' setting are left out; for the rest, the question is how "
+            "Fights where the height gap is under 3 m are left out; for the rest, the question is how "
             "often the higher player won. 50% means height made no difference.",
             "Standing: when each storm starts closing, the teams in that match are ranked by average height into "
             "thirds (low, mid and high ground) and their final placements compared.",
@@ -597,7 +606,7 @@ GUIDES: dict[str, Guide] = {
             "Standing, per match": "One correlation per match: the main claim about standing.",
             "Standing by zone": "The same correlation within each phase. Shows when holding height starts to matter.",
             "Fights matched": "Knocks and eliminations where the winner's position at that moment is known.",
-            "Clear height gap": "Fights where the height difference exceeds the 'level' setting.",
+            "Clear height gap": "Fights where the height difference is more than 3 m.",
             "Median height gap": "Typical height difference between winner and victim, over all matched fights.",
             "Team snapshots": "One per team per phase, counting teams with a living player.",
             "p": P_VALUE,

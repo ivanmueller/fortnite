@@ -108,14 +108,18 @@ def run(ctx: Context) -> Result:
             lambda g: spearman(g[col], g["final"]) if g[col].nunique() > 1 and len(g) >= 8 else np.nan, include_groups=False)
         return ttest_mean(rho.dropna(), 0.0)
     for col, name, reading in [
-        ("first_chest_s", "Faster first chest, better placement", "Players who open their first chest sooner finish better"),
-        ("chests", f"More chests in {mins}, better placement", "Opening more chests early goes with finishing better (negative rho)"),
-        ("items", f"More items in {mins}, better placement", "Taking more items early goes with finishing better (negative rho)"),
-        ("best_rarity", f"Better weapon rarity at {mins}, better placement", "Holding higher-rarity weapons early goes with finishing better (negative rho)"),
+        ("first_chest_s", "Faster first chest, better placement", ("Players who open their first chest sooner finish better",
+                                                                   "Players who open their first chest sooner finish worse")),
+        ("chests", f"More chests in {mins}, better placement", ("Opening more chests early goes with finishing worse",
+                                                               "Opening more chests early goes with finishing better")),
+        ("items", f"More items in {mins}, better placement", ("Taking more items early goes with finishing worse",
+                                                             "Taking more items early goes with finishing better")),
+        ("best_rarity", f"Better weapon rarity at {mins}, better placement", ("Holding higher-rarity weapons early goes with finishing worse",
+                                                                             "Holding higher-rarity weapons early goes with finishing better")),
     ]:
         t = per_match(col)
         if t["n"] >= 3:
-            r.test("Per match", name, t["n"], f"mean rho {t['mean']:+.2f}", t["p"], alpha, reading)
+            r.test("Per match", name, t["n"], f"mean rho {t['mean']:+.2f}", t["p"], alpha, reading, direction=t.get("mean"))
     gap = s.groupby("match_id").apply(
         lambda g: g.loc[g["ar_and_shotgun"], "final"].mean() - g.loc[~g["ar_and_shotgun"], "final"].mean()
         if g["ar_and_shotgun"].sum() >= 2 and (~g["ar_and_shotgun"]).sum() >= 2 else np.nan, include_groups=False).dropna()
@@ -123,7 +127,8 @@ def run(ctx: Context) -> Result:
     if t["n"] >= 3:
         r.test("Per match", f"AR and shotgun by {mins}, better placement", t["n"],
                f"{t['mean']:+.1f} places on average", t["p"], alpha,
-               "Players holding both an assault rifle and a shotgun early finish better (negative = better)")
+               ("Players holding both an assault rifle and a shotgun early finish worse",
+                "Players holding both an assault rifle and a shotgun early finish better"), direction=t.get("mean"))
 
     # ---- numbers
     r.headline = (f"{len(d):,} landings: median {d['first_chest_s'].median():.0f} s to the first chest and "
@@ -150,9 +155,9 @@ def run(ctx: Context) -> Result:
             f"AR and shotgun by {mins}": g.apply(lambda x: x.loc[x["survived_window"], "ar_and_shotgun"].mean(), include_groups=False),
             "Survived the window": g["survived_window"].mean(),
             "Avg placement": g["final"].mean().round(1),
-            "vs expected for skill": g["vs_skill"].mean().round(1),
+            "Placement vs similar players": g["vs_skill"].mean().round(1),
         })
-        spot = spot[spot["Landings"] >= MIN_SPOT].sort_values("vs expected for skill")
+        spot = spot[spot["Landings"] >= MIN_SPOT].sort_values("Placement vs similar players")
         for c in ("Contested", f"Rare+ weapon by {mins}", f"AR and shotgun by {mins}", "Survived the window"):
             spot[c] = (spot[c] * 100).round(0).astype("Int64").astype(str) + "%"
         r.table("Loot by drop spot", spot.reset_index().rename(columns={"poi": "Drop spot"}))
@@ -185,7 +190,7 @@ def run(ctx: Context) -> Result:
              takeaway_none="No consistent link between early looting and placement in this selection.",
              next_found=["Use 'Loot by drop spot' to weigh a spot's loot against its contest.",
                          "Check the skill-control table: the effect should hold within each Power Rankings band."],
-             next_none=["Try strong lobbies only, and the 2- and 5-minute windows."])
+             next_none=["Try strong lobbies only, using the Lobby strength filter."])
     r.notes += [
         f"Tests use players who survived the first {mins} after landing, so early eliminations don't fake the link.",
         "Items count what a player picked up; a few takers are inferred from proximity when the replay didn't record them.",
