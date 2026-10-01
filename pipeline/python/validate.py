@@ -67,8 +67,11 @@ def check_match(mid, m, players, zones, bus, pos) -> list[tuple[str, str, str]]:
 
     placed = humans.dropna(subset=["placement"])
     missing_place = len(humans) - len(placed)
+    inferred = int(humans["placement_inferred"].fillna(False).astype(bool).sum()) if "placement_inferred" in humans else 0
+    note = f" (winner's placement filled in from the end of the match)" if inferred else ""
     out.append(("PASS" if missing_place == 0 else "WARN", "placements present",
-                "all humans have a placement" if missing_place == 0 else f"{missing_place} humans missing placement"))
+                ("all humans have a placement" if missing_place == 0 else
+                 f"{missing_place} humans missing placement (likely left early)") + note))
     if not placed.empty:
         # Disconnected players keep the placement from when they left, so only
         # connected players are expected to agree.

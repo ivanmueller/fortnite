@@ -207,6 +207,41 @@ def bus_row(match_id: str, doc: dict, pos: pd.DataFrame) -> dict:
                 direction_known=direction_known)
 
 
+# --------------------------------------------------------------------------- missing winners
+def infer_missing_winners(out: dict) -> None:
+    """
+    Some replays end before the winner's placement is written. If a match has no
+    placement 1, and exactly one human without a placement was still being tracked at
+    the end of the match (the replay records the winner "leaving" as the match ends, so
+    a death time within 5 s of the end counts as alive), that player is the winner.
+    Anyone else without a placement (for example players who left early) stays blank.
+    Adds players.placement_inferred (True where the placement was filled in here).
+    """
+    pl, pos = out["players"], out["positions"]
+    if pl.empty:
+        return
+    pl["placement_inferred"] = False
+    last_seen = pos.groupby(["match_id", "id"])["t"].max() if not pos.empty else pd.Series(dtype=float)
+    pos_end = pos.groupby("match_id")["t"].max() if not pos.empty else pd.Series(dtype=float)
+    game_end = out["matches"].set_index("match_id")["match_end_t"] if "match_end_t" in out["matches"] else pd.Series(dtype=float)
+    for mid, g in pl[~pl["is_bot"].astype(bool)].groupby("match_id"):
+        ends = [v for v in (pos_end.get(mid), game_end.get(mid)) if v is not None and pd.notna(v)]
+        if (g["placement"] == 1).any() or not ends:
+            continue
+        end = max(ends)
+        alive = g[g["placement"].isna() & (g["death_t"].isna() | (g["death_t"] >= end - 5))]
+        alive = alive[[last_seen.get((mid, i), -1e9) >= end - 30 for i in alive["id"]]]
+        if len(alive) == 1:
+            idx = alive.index[0]
+            pl.loc[idx, "placement"] = 1
+            pl.loc[idx, "placement_inferred"] = True
+            # Teams table: give the winner's team placement 1 too.
+            t = out["teams"]
+            if not t.empty:
+                t.loc[(t["match_id"] == mid) & (t["team_index"] == pl.loc[idx, "team_index"]), "placement"] = 1
+    out["players"] = pl
+
+
 # --------------------------------------------------------------------------- lobby strength
 RANK_TIERS = (100, 500, 1000)
 
@@ -400,6 +435,7 @@ def main() -> None:
             out[name] = pd.DataFrame(rows)
     out["zone_offsets"] = add_zone_features(out["zones"]) if not out["zones"].empty else pd.DataFrame()
 
+    infer_missing_winners(out)
     add_lobby_strength(out, data)
 
     # Team placement = best placement of any human on the team. Players who
