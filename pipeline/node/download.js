@@ -7,6 +7,7 @@
 //   node download.js --with-checkpoints      also download checkpoints (see below)
 //   node download.js --plan                  show the download order and stop
 //   node download.js --order list            download in list order instead of strongest lobbies first
+//   node download.js --min-top1000 3         only matches with at least 3 Power Rankings top-1,000 players seen
 //   node download.js --window <eventWindowId> download every match from one tournament window, in any order
 //                                            (for events whose players aren't in Power Rankings, e.g. LAN accounts)
 //
@@ -102,6 +103,16 @@ const waiting = ids.filter((id) => !fs.existsSync(path.join(RAW, `${id}.replay`)
 if (byStrength && strength.size) {
   // Stable sort: by PR top-1,000 count, then PR top-10,000, then leaderboard players seen.
   waiting.sort((a, b) => { const x = score(a), y = score(b); return (y[0] - x[0]) || (y[1] - x[1]) || (y[2] - x[2]); });
+}
+const minTop = args.includes('--min-top1000') ? Number(args[args.indexOf('--min-top1000') + 1]) : 0;
+if (minTop > 0) {
+  if (!prRank.size) {
+    console.log('--min-top1000 needs Power Rankings: run data menu option P first. Ignoring the threshold.');
+  } else {
+    const before = waiting.length;
+    for (let i = waiting.length - 1; i >= 0; i -= 1) if (score(waiting[i])[0] < minTop) waiting.splice(i, 1);
+    console.log(`${waiting.length} of ${before} waiting matches have at least ${minTop} Power Rankings top-1,000 players.`);
+  }
 }
 const todo = waiting.slice(0, limit);
 if (onlyWindow && todo.length) {

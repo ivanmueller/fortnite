@@ -37,6 +37,8 @@ case "${1:-help}" in
   analyze) analyze "$DATA" "${2:-}" ;;
   pois) (cd pipeline/node && node pois.js) && analyze "$DATA" ;;
   survey) f=$(ls -t "$DATA"/raw/${2:-}*.replay | head -1); mkdir -p "$DATA/reports/survey"; dotnet "$(extractor)" "$f" "$DATA/reports/survey" --survey --overwrite ;;
+  weekly) (cd pipeline/node && node find_matches.js weekly --days "${2:-7}" && node download.js --limit "${3:-100}" --min-top1000 "${4:-3}"); dotnet "$(extractor)" "$DATA/raw" "$DATA/parsed" --mode full; analyze "$DATA" ;;
+  genexports) s=$(ls -t "$DATA"/reports/survey/*.survey.json | head -1); python3 pipeline/python/gen_exports.py "$s" ${PARSER_SRC:+--parser-src "$PARSER_SRC"} ;;
   plan) (cd pipeline/node && node download.js --plan) ;;
   pr) (cd pipeline/node && node find_matches.js powerrankings --pages "${2:-all}"); analyze "$DATA" ;;
   reparse) dotnet "$(extractor)" "$DATA/raw" "$DATA/parsed" --mode full --overwrite; analyze "$DATA" ;;

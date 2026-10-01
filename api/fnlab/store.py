@@ -16,7 +16,7 @@ from .config import DATASETS
 from .filters import Filters
 
 TABLES = ["matches", "players", "teams", "zones", "zone_offsets", "bus", "positions", "kills", "eliminations",
-          "landings", "pois"]
+          "landings", "pois", "health", "damage", "chests", "pickups", "weapons_held", "builds"]
 
 
 def tables_dir(dataset: str) -> Path:

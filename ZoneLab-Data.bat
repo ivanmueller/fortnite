@@ -19,10 +19,12 @@ echo   1  One-time setup: install the replay parser (needs the .NET 10 SDK)
 echo   2  Log in to Epic (one time; use a secondary account)
 echo   3  List tournaments from the last 30 days
 echo   4  Collect match IDs for one tournament window
+echo   T  Weekly tier-1 collection: find, download and process this week's high-tier matches
 echo   5  Download and process the collected matches (strongest lobbies first)
 echo   V  Preview which matches option 5 downloads next
 echo   W  Download every match from one tournament window (e.g. a LAN event)
 echo   S  Survey one replay: list every kind of data it contains
+echo   G  Update the parser's definitions from the newest survey (new season), then run 1
 echo   6  Process my own recent replays from the Fortnite Demos folder
 echo   7  Re-process everything already downloaded (after an update)
 echo   8  Download via api-fortnite.com instead (2 credits per match; use if 5 fails)
@@ -50,14 +52,56 @@ if /i "%choice%"=="d" goto :datadir
 if /i "%choice%"=="p" goto :pr
 if /i "%choice%"=="m" goto :pois
 if /i "%choice%"=="v" goto :plan
-if /i "%choice%"=="w" goto :survey
+if /i "%choice%"=="w" goto :weekly
+echo.
+echo Tip: refresh Power Rankings first (option P) if you haven't this week; the lobby filter uses them.
+set "wdays=7"
+set /p "wdays=Windows that ended in the last how many days [7]: "
+set "wregion="
+set /p "wregion=Regions, comma-separated, e.g. NAC,EU (Enter for all): "
+set "wlimit=100"
+set /p "wlimit=Most matches to download this run [100]: "
+set "wmin=3"
+set /p "wmin=Only lobbies with at least how many PR top-1,000 players [3]: "
+set "wargs=weekly -Days %wdays% -Limit %wlimit% -MinTop %wmin%"
+if not "%wregion%"=="" set "wargs=%wargs% -Region %wregion%"
+%PS% "pipeline\run.ps1" %wargs%
+goto :done
+
+:genexports
+%PS% "pipeline\run.ps1" genexports
+goto :done
+
+:survey
 set "sid="
 set /p "sid=Match ID to survey (Enter for the newest download): "
 if "%sid%"=="" (%PS% "pipeline\run.ps1" survey) else (%PS% "pipeline\run.ps1" survey -Path "%sid%")
 goto :done
 
 :pilotwindow
-if /i "%choice%"=="s" goto :survey
+if /i "%choice%"=="s" goto :weekly
+echo.
+echo Tip: refresh Power Rankings first (option P) if you haven't this week; the lobby filter uses them.
+set "wdays=7"
+set /p "wdays=Windows that ended in the last how many days [7]: "
+set "wregion="
+set /p "wregion=Regions, comma-separated, e.g. NAC,EU (Enter for all): "
+set "wlimit=100"
+set /p "wlimit=Most matches to download this run [100]: "
+set "wmin=3"
+set /p "wmin=Only lobbies with at least how many PR top-1,000 players [3]: "
+set "wargs=weekly -Days %wdays% -Limit %wlimit% -MinTop %wmin%"
+if not "%wregion%"=="" set "wargs=%wargs% -Region %wregion%"
+%PS% "pipeline\run.ps1" %wargs%
+goto :done
+
+:genexports
+%PS% "pipeline\run.ps1" genexports
+goto :done
+
+:survey
+if /i "%choice%"=="t" goto :weekly
+if /i "%choice%"=="g" goto :genexports
 if /i "%choice%"=="k" goto :keepraw
 if /i "%choice%"=="q" goto :end
 goto :menu
@@ -118,7 +162,9 @@ set /p "count=How many of your newest replays [3]: "
 goto :done
 
 :analyze
-%PS% "pipeline\run.ps1" reparse
+set "rid="
+set /p "rid=Match ID to re-process (Enter for every downloaded match): "
+if "%rid%"=="" (%PS% "pipeline\run.ps1" reparse) else (%PS% "pipeline\run.ps1" reparse -Path "%rid%")
 goto :done
 
 :plan
@@ -127,6 +173,26 @@ goto :done
 
 :pois
 %PS% "pipeline\run.ps1" pois
+goto :done
+
+:weekly
+echo.
+echo Tip: refresh Power Rankings first (option P) if you haven't this week; the lobby filter uses them.
+set "wdays=7"
+set /p "wdays=Windows that ended in the last how many days [7]: "
+set "wregion="
+set /p "wregion=Regions, comma-separated, e.g. NAC,EU (Enter for all): "
+set "wlimit=100"
+set /p "wlimit=Most matches to download this run [100]: "
+set "wmin=3"
+set /p "wmin=Only lobbies with at least how many PR top-1,000 players [3]: "
+set "wargs=weekly -Days %wdays% -Limit %wlimit% -MinTop %wmin%"
+if not "%wregion%"=="" set "wargs=%wargs% -Region %wregion%"
+%PS% "pipeline\run.ps1" %wargs%
+goto :done
+
+:genexports
+%PS% "pipeline\run.ps1" genexports
 goto :done
 
 :survey

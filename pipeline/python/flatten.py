@@ -26,6 +26,7 @@ from pathlib import Path
 
 import numpy as np
 from landings import build_landings
+import events as match_events
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]  # repo root
@@ -351,6 +352,7 @@ def main() -> None:
             ids_info = df_ids.set_index("match_id").to_dict("index")
 
     T = {k: [] for k in ["matches", "players", "teams", "zones", "bus", "positions", "kills", "eliminations"]}
+    EV: dict[str, list] = {k: [] for k in match_events.TABLES}
     files = sorted(parsed.glob("*.json"))
     if not files:
         raise SystemExit(f"No parsed JSON files found in {parsed}")
@@ -372,6 +374,9 @@ def main() -> None:
             team_of = {pl["id"]: pl.get("team_index") for pl in players}
             pos["team_index"] = pos["id"].map(team_of)
             T["positions"].append(pos)
+
+        for name, frame in match_events.collect(doc, mid).items():
+            EV[name].append(frame)
 
         humans = [pl for pl in players if not pl.get("is_bot")]
         T["matches"].append(dict(
@@ -436,6 +441,7 @@ def main() -> None:
             out[name] = pd.DataFrame(rows)
     out["zone_offsets"] = add_zone_features(out["zones"]) if not out["zones"].empty else pd.DataFrame()
 
+    match_events.finish(out, EV)
     infer_missing_winners(out)
     add_lobby_strength(out, data)
 

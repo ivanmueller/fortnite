@@ -60,9 +60,11 @@ foreach (var file in files)
             ok++;
             continue;
         }
-        var reader = new ZoneLabReader(mode);
+        // Full mode decodes health, damage and pickups; capture them alongside the usual tables.
+        var reader = new ZoneLabReader(mode) { Events = mode == ParseMode.Full ? new EventCapture() : null };
         var replay = reader.ReadReplay(file);
         var doc = Extract.Build(matchId, file, replay, sampleSec, reader.Buses);
+        doc.Events = reader.Events?.Tables();
         File.WriteAllText(outPath, JsonSerializer.Serialize(doc, jsonOpts));
         Console.WriteLine($"ok     {matchId}  {sw.Elapsed.TotalSeconds:F1}s  players={doc.Players.Count} zones={doc.Zones.Count} positions={doc.Positions.Rows.Count} bus={doc.Bus.Count}");
         ok++;
@@ -248,7 +250,8 @@ static class Extract
 // ---- output schema --------------------------------------------------------
 class ResearchDoc
 {
-    public string Schema { get; set; } = "fn-research/1";
+    public string Schema { get; set; } = "fn-research/2";
+    public MatchEvents? Events { get; set; }
     public string MatchId { get; set; } = "";
     public string SourceFile { get; set; } = "";
     public ReplayMeta Replay { get; set; } = new();
@@ -312,11 +315,30 @@ class ZoneLabReader : ReplayReader
         }
     }
 
+    // ---- in-match events (Events.cs)
+    public EventCapture? Events { get; set; }
+
+    protected override void OnChannelOpened(uint channelIndex, Unreal.Core.Models.NetworkGUID? actor)
+    {
+        base.OnChannelOpened(channelIndex, actor);
+        Events?.ChannelOpened(channelIndex, actor);
+    }
+
+    // The reader decodes why a channel closed but doesn't pass it on; catch it here.
+    public override bool ReceivedSequencedBunch(Unreal.Core.Models.DataBunch bunch)
+    {
+        if (bunch.bClose && Events is not null)
+            Events.ChannelClosed(bunch.ChIndex, bunch.CloseReason == Unreal.Core.Models.Enums.ChannelCloseReason.Destroyed);
+        return base.ReceivedSequencedBunch(bunch);
+    }
+
     public override void ReadNetFieldExports(Unreal.Core.FArchive archive) { base.ReadNetFieldExports(archive); CaptureSchema(); }
     public override void ReceiveNetFieldExportsCompat(Unreal.Core.FBitArchive bitArchive) { base.ReceiveNetFieldExportsCompat(bitArchive); CaptureSchema(); }
 
     protected override void OnExportRead(uint channelIndex, INetFieldExportGroup? exportGroup)
     {
+        if (Events is not null && exportGroup is not null)
+            Events.Read(channelIndex, exportGroup, ch => ch < Channels.Length ? Channels[ch]?.Actor?.Location : null);
         if (SurveyEnabled && exportGroup is not null)
         {
             var t = exportGroup.GetType();

@@ -52,6 +52,12 @@ powershell -ExecutionPolicy Bypass -File .\pipeline\setup.ps1 -FromSource
 
 **Drop spot names.** Choose **M** to download the current map's named places from fortnite-api.com (free, no key). The Drop spots page uses them to name each landing area. Re-run M at the start of each season, because the map changes.
 
+**Weekly tier-1 routine.** Replays expire after about 30 days, so collect every week:
+1. **P**: refresh Power Rankings (they update weekly).
+2. **T**: weekly collection. It finds every high-tier window that ended in the last 7 days (FNCS, division cups, finals, cash cups, official events; mobile and Zero Build cups are skipped), collects their match IDs, downloads only lobbies with at least 3 Power Rankings top-1,000 players (strongest first), and processes them. LAN events whose players use event accounts won't pass the lobby filter: download those with **W**.
+
+**In-match events.** Processed matches now include health and shields, damage (who hit whom, how hard), chest opens, every item spawned and picked up, the weapon in each player's hands, and player-built pieces. When a new season adds new build pieces, weapons or chests, run **S** on a new match, then **G**, then **1**.
+
 **Power Rankings (recommended).** Choose **P** to download Epic's Power Rankings: the official cross-event skill rating for the top 10,000 players, read from the same Epic leaderboard service as match IDs (about 7 minutes). Every player then gets their PR rank and rating, and lobby strength becomes the share of each lobby in the PR top 1,000, which is comparable across rounds, regions and weeks. Rankings update weekly, so re-run P now and then.
 
 **Session ranks (fallback).** Option 4 also saves every player's rank from the leaderboard pages it reads (`player_ranks.csv`). Each match then gets a *lobby strength*: the share of its players ranked in that tournament's top 1,000. The dashboard's **Lobby strength** filter keeps only strong lobbies. Use it for strategy questions (positioning, fights, height), where mixed-skill lobbies blur decisions with skill gaps; storm and bus questions can use every lobby. Read at least 10 pages so the top 1,000 is covered. To add ranks to matches you already have, run option 4 again on their window, then option 7.

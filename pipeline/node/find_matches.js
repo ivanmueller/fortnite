@@ -14,6 +14,12 @@
 //       Top pages hold the top teams. Their matches cover the strongest lobbies;
 //       --pages all also reaches lower lobbies, at one request per page.
 //
+//   node find_matches.js weekly [--days 7] [--region NAC,EU] [--include fncs,div,final,cash,official]
+//                              [--exclude mobile,_zb,creative] [--pages 10]
+//       Collects match IDs from every high-tier tournament window that ended in the last
+//       --days days (FNCS, division cups, finals, cash cups, official events; mobile and
+//       Zero Build cups left out by default). Same as running 'window' on each.
+//
 //   node find_matches.js powerrankings [--pages all|N] [--event <eventId> --window <windowId>]
 //       Downloads Epic's Power Rankings (top 10,000 players, 25 per page) to
 //       power_rankings.csv: real account IDs with PR rank and rating. Epic publishes PR
@@ -203,8 +209,40 @@ function readExisting() {
     .filter((l) => l && !l.startsWith('#')).map((l) => l.split(',')[0].trim().toLowerCase()));
 }
 
-async function collectWindow(windowId) {
-  let eventId = typeof opt('event') === 'string' ? opt('event') : null;
+async function weekly() {
+  const days = Number(opt('days', 7));
+  const list = (v, d) => (typeof v === 'string' ? v : d).split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const include = list(opt('include'), 'fncs,div,final,cash,official,champion');
+  const exclude = list(opt('exclude'), 'mobile,_zb,zb_,creative,ranked');
+  const regions = list(opt('region'), '').map((r) => r.toUpperCase());
+  const now = Date.now();
+  const wins = (await listAllWindows()).filter((w) => {
+    const end = Date.parse(w.end);
+    const id = `${w.eventId} ${w.eventWindowId}`.toLowerCase();
+    return Number.isFinite(end) && end <= now && end >= now - days * 86400000
+      && include.some((k) => id.includes(k)) && !exclude.some((k) => id.includes(k))
+      && (!regions.length || regions.includes(String(w.region).toUpperCase()));
+  });
+  const unique = [...new Map(wins.map((w) => [w.eventWindowId, w])).values()]
+    .sort((a, b) => Date.parse(a.end) - Date.parse(b.end));
+  if (!unique.length) {
+    console.log(`No high-tier windows ended in the last ${days} days (include: ${include.join(', ')}; exclude: ${exclude.join(', ')}).`);
+    return;
+  }
+  console.log(`${unique.length} high-tier windows ended in the last ${days} days:`);
+  for (const w of unique) console.log(`  ${w.end.slice(0, 10)}  ${String(w.region).padEnd(5)} ${w.eventWindowId}`);
+  for (const w of unique) {
+    console.log(`\n== ${w.eventWindowId}`);
+    try {
+      await collectWindow(w.eventWindowId, w.eventId);
+    } catch (e) {
+      console.log(`  skipped: ${e.message}`);
+    }
+  }
+}
+
+async function collectWindow(windowId, knownEventId) {
+  let eventId = knownEventId || (typeof opt('event') === 'string' ? opt('event') : null);
   let region = null;
   if (!eventId) {
     const found = await findEventId(windowId);
@@ -350,6 +388,7 @@ try {
     }
   } else if (args[0] === 'tournaments') await listTournaments();
   else if (args[0] === 'powerrankings') await downloadPowerRankings();
+  else if (args[0] === 'weekly') await weekly();
   else if (args[0] === 'window' && args[1] && !args[1].startsWith('--')) await collectWindow(args[1]);
   else {
     console.log('usage:\n  node find_matches.js test\n  node find_matches.js tournaments [--region EU] [--search text] [--days 30] [--upcoming]\n'

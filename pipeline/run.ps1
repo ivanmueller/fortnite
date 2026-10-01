@@ -12,12 +12,14 @@
 #   .\pipeline\run.ps1 datadir -Path D:\ZoneLabData move downloaded data to another folder/drive and use it from now on
 #   .\pipeline\run.ps1 keepraw -Value yes|no        keep raw .replay files after processing (default yes)
 #   .\pipeline\run.ps1 survey [-Path <match id>]       list every data type in one replay
+#   .\pipeline\run.ps1 weekly [-Days 7] [-Region NAC,EU] [-Limit 100] [-MinTop 3]   collect, download and process the week's high-tier matches
+#   .\pipeline\run.ps1 genexports                    update extractor definitions from the newest survey (then option 1)
 #   .\pipeline\run.ps1 plan                         preview which matches option 5 downloads next (strongest lobbies first)
 #   .\pipeline\run.ps1 pr [-Pages all]               download Epic Power Rankings (top 10,000), then rebuild tables
 param(
     [Parameter(Position = 0)][string]$Stage = "help",
     [int]$Limit = 10, [int]$Count = 3, [string]$Window, [string]$Season, [string]$Pages = "10",
-    [string]$Region, [string]$Search, [int]$Days = 30, [string]$Via = "epic", [string]$Source = "epic", [string]$Path, [string]$Value
+    [string]$Region, [string]$Search, [int]$Days = 30, [string]$Via = "epic", [string]$Source = "epic", [string]$Path, [string]$Value, [int]$MinTop = 3
 )
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)   # repo root
@@ -100,6 +102,26 @@ switch ($Stage) {
     "analyze" { Analyze $Data }
     "pois" { Push-Location pipeline/node; node pois.js; Pop-Location; if ($LASTEXITCODE -eq 0) { Analyze $Data } }
     "plan" { Push-Location pipeline/node; node download.js --plan; Pop-Location }
+    "weekly" {
+        $a = @("weekly", "--days", $Days, "--pages", $Pages)
+        if ($Region) { $a += @("--region", $Region) }
+        Push-Location pipeline/node
+        node find_matches.js @a
+        node download.js --limit $Limit --min-top1000 $MinTop
+        Pop-Location
+        dotnet (Extractor) "$Data/raw" "$Data/parsed" --mode full
+        PruneRaw
+        Analyze $Data
+    }
+    "genexports" {
+        $s = Get-ChildItem "$Data/reports/survey" -Filter *.survey.json -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if (-not $s) { throw "No survey yet: run data menu option S first." }
+        $a = @("pipeline/python/gen_exports.py", $s.FullName)
+        $src = "pipeline/extractor/vendor/FortniteReplayDecompressor/src"
+        if (Test-Path $src) { $a += @("--parser-src", $src) }
+        node scripts/py.mjs @a
+        Write-Host "Now run option 1 to rebuild the replay parser with the new definitions." -ForegroundColor Yellow
+    }
     "survey" {
         # List every data type in one replay (default: the newest downloaded), for planning new extractions.
         $file = if ($Path) { Get-ChildItem "$Data/raw" -Filter "$Path*.replay" | Select-Object -First 1 }
@@ -123,8 +145,12 @@ switch ($Stage) {
         } else { Write-Host "Raw replays will be kept after processing." -ForegroundColor Green }
     }
     "reparse" {
-        dotnet (Extractor) "$Data/raw" "$Data/parsed" --mode full --overwrite
+        # -Path <match id> re-reads just that match (quick check after a parser update).
+        $src = if ($Path) { Join-Path "$Data/raw" "$Path.replay" } else { "$Data/raw" }
+        if ($Path -and -not (Test-Path $src)) { throw "No downloaded replay $src" }
+        dotnet (Extractor) $src "$Data/parsed" --mode full --overwrite
         Analyze $Data
+        if ($Path) { Write-Host "`nProcessed file: $(Join-Path "$Data/parsed" "$Path.json")" -ForegroundColor Green }
     }
     "datadir" {
         if (-not $Path) { throw "Use: .\pipeline\run.ps1 datadir -Path D:\ZoneLabData" }
