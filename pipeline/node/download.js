@@ -5,6 +5,12 @@
 //   node download.js --via api-fortnite      download through api-fortnite.com instead
 //                                            (2 credits per match; use if the Epic route fails)
 //   node download.js --with-checkpoints      also download checkpoints (see below)
+//   node download.js --plan                  show the download order and stop
+//   node download.js --order list            download in list order instead of strongest lobbies first
+//
+// By default the strongest lobbies come first: matches are ranked by how many Power
+// Rankings top-1,000 players the leaderboards showed in them (or, before Power Rankings
+// are downloaded, by how many top-leaderboard players appeared).
 //
 // Checkpoints are periodic full snapshots of the game that a replay viewer uses to jump
 // around the timeline. The parser skips them entirely, so by default they aren't
@@ -59,7 +65,47 @@ const ids = fs.readFileSync(CSV, 'utf8').split('\n').slice(1)
   .map((l) => l.split(',')[0].trim())
   .filter((id) => /^[0-9a-f]{32}$/i.test(id));
 
-const todo = ids.filter((id) => !fs.existsSync(path.join(RAW, `${id}.replay`))).slice(0, limit);
+// ---- strongest lobbies first
+function readCsv(file) {
+  if (!fs.existsSync(file)) return [];
+  const [head, ...lines] = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
+  const cols = head.split(',');
+  return lines.map((l) => Object.fromEntries(l.split(',').map((v, i) => [cols[i], v])));
+}
+const prRank = new Map(readCsv(path.join(DATA, 'power_rankings.csv')).map((r) => [r.account_id, Number(r.pr_rank)]));
+const strength = new Map(); // matchId -> [top1000, top10000, seen]
+for (const r of readCsv(path.join(DATA, 'match_seen_players.csv'))) {
+  const s = strength.get(r.match_id) || [0, 0, 0];
+  const pr = prRank.get(r.account_id);
+  if (pr && pr <= 1000) s[0] += 1;
+  if (pr) s[1] += 1;
+  s[2] += 1;
+  strength.set(r.match_id, s);
+}
+const byStrength = !args.includes('--order') || args[args.indexOf('--order') + 1] !== 'list';
+const score = (id) => strength.get(id.toLowerCase()) || [0, 0, 0];
+const waiting = ids.filter((id) => !fs.existsSync(path.join(RAW, `${id}.replay`)));
+if (byStrength && strength.size) {
+  // Stable sort: by PR top-1,000 count, then PR top-10,000, then leaderboard players seen.
+  waiting.sort((a, b) => { const x = score(a), y = score(b); return (y[0] - x[0]) || (y[1] - x[1]) || (y[2] - x[2]); });
+}
+const todo = waiting.slice(0, limit);
+const basis = prRank.size ? 'Power Rankings top-1,000 players' : 'top-leaderboard players';
+if (byStrength && strength.size && todo.length) {
+  const pick = (id) => (prRank.size ? score(id)[0] : score(id)[2]);
+  console.log(`Strongest lobbies first, by ${basis} seen in each match: this run ranges from ${pick(todo[0])} down to ${pick(todo[todo.length - 1])}.`);
+} else if (byStrength && !strength.size) {
+  console.log('No lobby information yet (re-run option 4 on your windows to record it); downloading in list order.');
+}
+if (args.includes('--plan')) {
+  console.log(`\nNext ${Math.min(todo.length, 15)} of ${waiting.length} waiting matches:`);
+  console.log('match id                          PR top-1,000  PR top-10,000  leaderboard players seen');
+  for (const id of todo.slice(0, 15)) {
+    const [a, b, c] = score(id);
+    console.log(`${id}  ${String(a).padStart(12)}  ${String(b).padStart(13)}  ${String(c).padStart(24)}`);
+  }
+  process.exit(0);
+}
 console.log(`${ids.length} IDs listed, ${todo.length} to download ${via === 'api-fortnite' ? 'via api-fortnite.com (2 credits each)' : 'from Epic'}`);
 
 let ok = 0;

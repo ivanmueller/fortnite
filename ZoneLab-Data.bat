@@ -19,7 +19,8 @@ echo   1  One-time setup: install the replay parser (needs the .NET 10 SDK)
 echo   2  Log in to Epic (one time; use a secondary account)
 echo   3  List tournaments from the last 30 days
 echo   4  Collect match IDs for one tournament window
-echo   5  Download and process the collected matches (free, from Epic)
+echo   5  Download and process the collected matches (strongest lobbies first)
+echo   V  Preview which matches option 5 downloads next
 echo   6  Process my own recent replays from the Fortnite Demos folder
 echo   7  Re-process everything already downloaded (after an update)
 echo   8  Download via api-fortnite.com instead (2 credits per match; use if 5 fails)
@@ -44,6 +45,7 @@ if /i "%choice%"=="9" goto :key
 if /i "%choice%"=="l" goto :logout
 if /i "%choice%"=="d" goto :datadir
 if /i "%choice%"=="p" goto :pr
+if /i "%choice%"=="v" goto :plan
 if /i "%choice%"=="k" goto :keepraw
 if /i "%choice%"=="q" goto :end
 goto :menu
@@ -105,6 +107,10 @@ goto :done
 
 :analyze
 %PS% "pipeline\run.ps1" reparse
+goto :done
+
+:plan
+%PS% "pipeline\run.ps1" plan
 goto :done
 
 :pr

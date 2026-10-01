@@ -36,6 +36,7 @@ const TOURNAMENTS_CSV = path.join(DATA, 'tournaments.csv');
 const RANKS_CSV = path.join(DATA, 'player_ranks.csv'); // leaderboard rank of every player read, per window
 const RANKS_HEADER = 'event_window_id,account_id,rank,points,ranks_read';
 const PR_CSV = path.join(DATA, 'power_rankings.csv');
+const SEEN_CSV = path.join(DATA, 'match_seen_players.csv'); // which leaderboard players appeared in which match
 const PR_EVENT = 'epicgames_dreamyparadox';
 const PR_WINDOW = 'dreamyparadox';
 const HEADER = 'match_id,event_window_id,region,session_date,is_server_replay,source';
@@ -230,8 +231,9 @@ async function collectWindow(windowId) {
       }
       for (const s of entry.sessionHistory || []) {
         if (!s.sessionId) continue;
-        const cur = sessions.get(s.sessionId) || { end: s.endTime, teams: 0 };
+        const cur = sessions.get(s.sessionId) || { end: s.endTime, teams: 0, players: new Set() };
         cur.teams += 1;
+        for (const acc of entry.teamAccountIds || []) cur.players.add(String(acc).toLowerCase());
         sessions.set(s.sessionId, cur);
       }
     }
@@ -246,6 +248,7 @@ async function collectWindow(windowId) {
   }
 
   saveRanks(windowId, ranks);
+  saveSeen(windowId, sessions);
   const existing = readExisting();
   const rows = [];
   for (const [id, s] of sessions) {
@@ -306,6 +309,16 @@ async function downloadPowerRankings() {
   console.log(`saved ${rows.size} players to ${path.relative(ROOT, PR_CSV) || PR_CSV}`);
   console.log('top 3 (compare with fortnite.com/competitive/power-rankings):',
     top.map((r) => `#${r.rank} rating ${r.score || r.points}`).join(', '));
+}
+
+/** Replace this window's rows in match_seen_players.csv: who from the leaderboard played in each match. */
+function saveSeen(windowId, sessions) {
+  const keep = fs.existsSync(SEEN_CSV)
+    ? fs.readFileSync(SEEN_CSV, 'utf8').split('\n').slice(1).filter((l) => l && l.split(',')[2] !== windowId)
+    : [];
+  const rows = [];
+  for (const [id, s] of sessions) for (const acc of s.players) rows.push([id.toLowerCase(), acc, windowId].join(','));
+  fs.writeFileSync(SEEN_CSV, ['match_id,account_id,event_window_id', ...keep, ...rows].join('\n') + '\n');
 }
 
 /** Replace this window's rows in player_ranks.csv with the ranks just read. */
