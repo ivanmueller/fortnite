@@ -10,10 +10,11 @@
 #   .\pipeline\run.ps1 analyze [-Season v37.10]     re-run flatten, validate and zone analysis only
 #   .\pipeline\run.ps1 reparse                      re-read every downloaded replay (after parser updates), then analyze
 #   .\pipeline\run.ps1 datadir -Path D:\ZoneLabData move downloaded data to another folder/drive and use it from now on
+#   .\pipeline\run.ps1 keepraw -Value yes|no        keep raw .replay files after processing (default yes)
 param(
     [Parameter(Position = 0)][string]$Stage = "help",
     [int]$Limit = 10, [int]$Count = 3, [string]$Window, [string]$Season, [string]$Pages = "10",
-    [string]$Region, [string]$Search, [int]$Days = 30, [string]$Via = "epic", [string]$Source = "epic", [string]$Path
+    [string]$Region, [string]$Search, [int]$Days = 30, [string]$Via = "epic", [string]$Source = "epic", [string]$Path, [string]$Value
 )
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)   # repo root
@@ -31,6 +32,26 @@ function DataDir {
     return "data"
 }
 $Data = DataDir
+function EnvValue([string]$Key) {
+    if (-not (Test-Path .env)) { return $null }
+    $line = Get-Content .env | Where-Object { $_ -match "^\s*$Key\s*=" } | Select-Object -First 1
+    if ($line) { return ($line -split '=', 2)[1].Trim().Trim('"') } else { return $null }
+}
+function SetEnvValue([string]$Key, [string]$Val) {
+    $lines = @(); if (Test-Path .env) { $lines = @(Get-Content .env | Where-Object { $_ -notmatch "^\s*$Key\s*=" }) }
+    $lines += "$Key=$Val"
+    [IO.File]::WriteAllLines((Join-Path (Get-Location).Path ".env"), [string[]]$lines)
+}
+# Delete raw replays that were processed successfully, if the user chose to (ZONELAB_KEEP_RAW=no).
+function PruneRaw {
+    if ((EnvValue "ZONELAB_KEEP_RAW") -ne "no") { return }
+    $freed = 0; $n = 0
+    foreach ($f in Get-ChildItem "$Data/raw" -Filter *.replay -ErrorAction SilentlyContinue) {
+        $parsed = Join-Path "$Data/parsed" ($f.BaseName + ".json")
+        if ((Test-Path $parsed) -and (Get-Item $parsed).Length -gt 1000) { $freed += $f.Length; $n++; Remove-Item $f.FullName }
+    }
+    if ($n) { Write-Host ("Deleted {0} processed raw replays, freeing {1:N1} GB (ZONELAB_KEEP_RAW=no)." -f $n, ($freed / 1GB)) -ForegroundColor Yellow }
+}
 function Analyze([string]$DataDir = "data") {
     node scripts/py.mjs pipeline/python/flatten.py --data-dir $DataDir
     node scripts/py.mjs pipeline/python/validate.py --data-dir $DataDir
@@ -68,9 +89,18 @@ switch ($Stage) {
     "pilot" {
         Push-Location pipeline/node; node download.js --limit $Limit --via $Via; Pop-Location
         dotnet (Extractor) "$Data/raw" "$Data/parsed" --mode full
+        PruneRaw
         Analyze $Data
     }
     "analyze" { Analyze $Data }
+    "keepraw" {
+        if ($Value -notin @("yes", "no")) { throw "Use: .\pipeline\run.ps1 keepraw -Value yes|no" }
+        SetEnvValue "ZONELAB_KEEP_RAW" $Value
+        if ($Value -eq "no") {
+            Write-Host "Raw replays will be deleted after they're processed. Re-processing after a future update will then need a fresh download (Epic keeps tournament replays about 30 days)." -ForegroundColor Yellow
+            PruneRaw
+        } else { Write-Host "Raw replays will be kept after processing." -ForegroundColor Green }
+    }
     "reparse" {
         dotnet (Extractor) "$Data/raw" "$Data/parsed" --mode full --overwrite
         Analyze $Data
@@ -91,9 +121,7 @@ switch ($Stage) {
             New-Item -ItemType Directory -Force "$new\$d" | Out-Null
         }
         foreach ($f in "match_ids.csv", "tournaments.csv") { if (Test-Path "$old\$f") { Move-Item "$old\$f" "$new\$f" -Force } }
-        $lines = @(); if (Test-Path .env) { $lines = @(Get-Content .env | Where-Object { $_ -notmatch '^\s*ZONELAB_DATA_DIR\s*=' }) }
-        $lines += "ZONELAB_DATA_DIR=$new"
-        [IO.File]::WriteAllLines((Join-Path (Get-Location) ".env"), [string[]]$lines)
+        SetEnvValue "ZONELAB_DATA_DIR" $new
         Write-Host "Downloaded data now lives in $new (moved from $old). Saved in .env." -ForegroundColor Green
         Write-Host "Restart Start-ZoneLab.bat so the dashboard reads the new location." -ForegroundColor Yellow
     }

@@ -25,6 +25,7 @@ echo   7  Re-process everything already downloaded (after an update)
 echo   8  Download via api-fortnite.com instead (2 credits per match; use if 5 fails)
 echo   9  Save an api-fortnite.com key (only needed for option 8)
 echo   D  Store downloaded data somewhere else (e.g. another drive)
+echo   K  Keep or delete raw replays after processing (saves about 95%% of disk space)
 echo   L  Log out of Epic (revokes the saved login)
 echo   Q  Quit
 echo.
@@ -41,6 +42,7 @@ if /i "%choice%"=="8" goto :pilotapi
 if /i "%choice%"=="9" goto :key
 if /i "%choice%"=="l" goto :logout
 if /i "%choice%"=="d" goto :datadir
+if /i "%choice%"=="k" goto :keepraw
 if /i "%choice%"=="q" goto :end
 goto :menu
 
@@ -101,6 +103,17 @@ goto :done
 
 :analyze
 %PS% "pipeline\run.ps1" reparse
+goto :done
+
+:keepraw
+echo.
+echo Raw replays are only needed to re-process matches after a parser update.
+echo Deleting them keeps about 3 MB per match instead of the full replay, but re-processing
+echo later would need a fresh download (Epic keeps tournament replays about 30 days).
+set "kr="
+set /p "kr=Keep raw replays after processing? (yes/no) [yes]: "
+if "%kr%"=="" set "kr=yes"
+%PS% "pipeline\run.ps1" keepraw -Value %kr%
 goto :done
 
 :datadir

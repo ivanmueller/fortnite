@@ -4,6 +4,12 @@
 //   node download.js --limit 5               only the first 5 missing (good for a first test)
 //   node download.js --via api-fortnite      download through api-fortnite.com instead
 //                                            (2 credits per match; use if the Epic route fails)
+//   node download.js --with-checkpoints      also download checkpoints (see below)
+//
+// Checkpoints are periodic full snapshots of the game that a replay viewer uses to jump
+// around the timeline. The parser skips them entirely, so by default they aren't
+// downloaded: smaller files, same results. Fortnite's own replay viewer may not open
+// files without them; use --with-checkpoints if you want to watch a match in-game.
 //
 // Saves <id>.replay and <id>.meta.json to data/raw. Safe to re-run: finished
 // matches are skipped, failures are logged to data/raw/failed.txt.
@@ -27,6 +33,7 @@ const args = process.argv.slice(2);
 const li = args.indexOf('--limit');
 const limit = li >= 0 ? Number(args[li + 1]) : Infinity;
 const PAUSE_MS = 3000;
+const WITH_CHECKPOINTS = args.includes('--with-checkpoints');
 const via = args.includes('--via') ? args[args.indexOf('--via') + 1] : 'epic';
 const API_BASE = process.env.FORTNITE_API_BASE || 'https://prod.api-fortnite.com';
 if (via === 'api-fortnite' && !process.env.FORTNITE_API_KEY) {
@@ -75,6 +82,7 @@ for (const [n, matchId] of todo.entries()) {
     const buf = await downloader.downloadReplay({
       matchId,
       maxConcurrentDownloads: 5,
+      checkpointCount: WITH_CHECKPOINTS ? 1000 : 0,
       updateCallback: (d) => {
         const c = d.dataChunks || d.data || {};
         if (c.max) process.stdout.write(`  ${matchId}: data ${c.current}/${c.max}\r`);

@@ -42,6 +42,10 @@ powershell -ExecutionPolicy Bypass -File .\pipeline\setup.ps1 -FromSource
 
 **Storage.** Each tournament replay is about 130 MB (100 matches ≈ 13 GB). To keep them on another drive, choose **D** in `ZoneLab-Data.bat` and give a **new or empty** folder such as `D:\ZoneLabData`. Everything downloaded so far moves there, and the pipeline and dashboard use it from then on. The folder is saved in `.env` as `ZONELAB_DATA_DIR`.
 
+**Smaller downloads.** Replays are downloaded without *checkpoints*, the periodic full snapshots a replay viewer uses to jump around the timeline. The parser never reads them, so results are identical. To watch a match in Fortnite's own replay viewer, download it with `node download.js --with-checkpoints` from `pipeline\node`.
+
+**Deleting raw replays.** Option **K** can delete each raw replay once it's processed, keeping only the processed data (about 3 MB per match). Leave raw replays on while the pipeline is still changing: re-processing after an update needs them, and Epic only keeps tournament replays for about 30 days.
+
 **After an update** that changes how replays are read, choose **7** to re-process everything you've already downloaded. Nothing is downloaded again.
 
 **Pull tournaments within about 30 days.** Epic deletes tournament replays after roughly a month; option 4 warns when a window's matches are getting close to that.
