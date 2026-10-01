@@ -24,3 +24,4 @@ data/reports/*
 data_synthetic/
 data_local/
 data/tournaments.csv
+data/match_ids.csv

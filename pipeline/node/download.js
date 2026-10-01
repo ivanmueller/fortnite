@@ -17,10 +17,11 @@ import dotenv from 'dotenv';
 import downloader from 'fortnite-replay-downloader';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'); // repo root
-const RAW = path.join(ROOT, 'data', 'raw');
-const CSV = path.join(ROOT, 'data', 'match_ids.csv');
-fs.mkdirSync(RAW, { recursive: true });
 dotenv.config({ path: path.join(ROOT, '.env') });
+const DATA = process.env.ZONELAB_DATA_DIR || path.join(ROOT, 'data'); // ZoneLab-Data.bat option D changes this
+const RAW = path.join(DATA, 'raw');
+const CSV = path.join(DATA, 'match_ids.csv');
+fs.mkdirSync(RAW, { recursive: true });
 
 const args = process.argv.slice(2);
 const li = args.indexOf('--limit');

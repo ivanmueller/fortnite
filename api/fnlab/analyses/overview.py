@@ -28,8 +28,10 @@ def run(ctx: Context) -> Result:
     r.metric("Seasons", m["season"].nunique())
     r.metric("Regions", m["region"].nunique())
     if "is_server_replay" in m:
-        share = m["is_server_replay"].fillna(False).astype(bool).mean()
-        r.metric("Server replays", f"{share:.0%}", "Client replays only include nearby players")
+        known = pd.to_numeric(m["is_server_replay"].astype("object"), errors="coerce").dropna()
+        r.metric("Server replays", f"{known.astype(bool).mean():.0%}" if len(known) else "Unknown",
+                 "Client replays only include nearby players" if len(known) else
+                 "Not recorded for these matches (they weren't in data/match_ids.csv when processed)")
     r.metric("Median players", f"{m['n_humans'].median():.0f}")
 
     m["week"] = d.dt.to_period("W-SUN").dt.start_time

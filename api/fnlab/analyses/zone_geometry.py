@@ -34,6 +34,9 @@ def run(ctx: Context) -> Result:
             [dict(name=f"Phase {int(p)}", x=sample.loc[sample.phase == p, "next_x"].tolist(),
                   y=sample.loc[sample.phase == p, "next_y"].tolist()) for p in phases],
             x_label="X (Unreal units)", y_label="Y (Unreal units)")
+    has_kind = "kind" in z.columns
+    by = z.groupby("phase")
+    spread = (by["dist"].std() / by["dist"].mean()).fillna(0)
     tbl = (z.groupby("phase").agg(pulls=("match_id", "size"), radius=("cur_r", "median"),
                                   next_radius=("next_r", "median"), moved=("dist", "median"),
                                   offset_ratio=("offset_ratio", "median"), shrink_ratio=("shrink_ratio", "median"),
@@ -42,7 +45,18 @@ def run(ctx: Context) -> Result:
                                                    "next_radius": "Median next radius", "moved": "Median distance moved",
                                                    "offset_ratio": "Median moved ÷ radius",
                                                    "shrink_ratio": "Median shrink", "mean_u": "Mean u"}))
-    r.table("Medians by phase", tbl)
+    tbl.insert(1, "Type", [("moving" if (z.loc[z.phase == p, "kind"] == "moving").mean() > 0.5 else "shrinking")
+                           if has_kind else "–" for p in tbl["Phase"]])
+    if "wait_s" in z.columns:
+        tbl.insert(2, "Wait before (s)", by["wait_s"].median().round(0).reindex(tbl["Phase"]).to_numpy())
+    tbl["Distance spread"] = [f"{spread.get(p, 0):.1%}" for p in tbl["Phase"]]
+    tbl["Distance fixed?"] = ["yes" if (spread.get(p, 1) < 0.02 and by.size().get(p, 0) >= 5) else "no"
+                              for p in tbl["Phase"]]
+    r.table("Phase by phase", tbl)
+    fixed = [int(p) for p in tbl["Phase"] if tbl.loc[tbl["Phase"] == p, "Distance fixed?"].iat[0] == "yes"]
+    if fixed:
+        r.notes.insert(0, f"Phases {', '.join(map(str, fixed))} move the same distance in every match (spread under 2%). "
+                          "The game sets how far those circles move; only the direction can vary, so test direction, not distance.")
     med = z.groupby("phase")[metric].median()
     r.headline = f"{desc}: median {med.min():.2f} to {med.max():.2f} across phases."
     r.metric("Storm pulls", f"{len(z):,}")

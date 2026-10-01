@@ -24,8 +24,9 @@ import { fileURLToPath } from 'url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'); // repo root
 dotenv.config({ path: path.join(ROOT, '.env') });
-const CSV = path.join(ROOT, 'data', 'match_ids.csv');
-const TOURNAMENTS_CSV = path.join(ROOT, 'data', 'tournaments.csv');
+const DATA = process.env.ZONELAB_DATA_DIR || path.join(ROOT, 'data'); // ZoneLab-Data.bat option D changes this
+const CSV = path.join(DATA, 'match_ids.csv');
+const TOURNAMENTS_CSV = path.join(DATA, 'tournaments.csv');
 const HEADER = 'match_id,event_window_id,region,session_date,is_server_replay,source';
 const BASE = process.env.FORTNITE_API_BASE || 'https://prod.api-fortnite.com';
 const KEY = process.env.FORTNITE_API_KEY;
@@ -184,6 +185,7 @@ async function findEventId(windowId) {
 }
 
 function readExisting() {
+  fs.mkdirSync(DATA, { recursive: true });
   if (!fs.existsSync(CSV)) fs.writeFileSync(CSV, `${HEADER}\n`);
   return new Set(fs.readFileSync(CSV, 'utf8').split('\n').slice(1)
     .filter((l) => l && !l.startsWith('#')).map((l) => l.split(',')[0].trim().toLowerCase()));
@@ -232,6 +234,7 @@ async function collectWindow(windowId) {
     rows.push([id, windowId, region, (s.end || '').slice(0, 10), 1, SOURCE].join(','));
   }
   if (rows.length) fs.appendFileSync(CSV, `${rows.join('\n')}\n`);
+  console.log(`Match list: ${CSV}`);
   const teams = [...sessions.values()].map((s) => s.teams).sort((a, b) => a - b);
   console.log(`window ${windowId}: ${sessions.size} matches across ${Math.min(page, total)} of ${total} leaderboard pages;`
     + ` added ${rows.length} new IDs to data/match_ids.csv.`);

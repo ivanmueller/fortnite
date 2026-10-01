@@ -55,6 +55,10 @@ GUIDES: dict[str, Guide] = {
             "from the previous pull.",
             "Per-match tests summarise each match once, so linked pulls within a match don't inflate significance. "
             "Per-phase tests use one pull per match.",
+            "Late in a match the storm becomes a moving zone: the new circle drifts past the old edge. Distance tests "
+            "use shrinking zones only; direction tests use whichever zones the Zones setting picks.",
+            "The bus route comes from the bus itself when the replay records it (exact). Otherwise it's fitted from "
+            "where players first skydive, and matches with a loose fit are left out of bus tests.",
         ],
         terms={
             "Pull distance": "Tests whether u departs from an even spread: t-test of match averages against 0.50 "
@@ -69,9 +73,10 @@ GUIDES: dict[str, Guide] = {
             "Per match": "One summary per match: the tests that carry the page's main claim.",
             "Storm pulls": "Pulls with a known starting circle in the selected phase range.",
             "Mean u": "Average u over all pulls: 0.50 if random, 1.00 if every pull reaches the edge.",
-            "Bus from aircraft data": "Share of matches where the bus path came from the replay's flight data. "
-                                      "Otherwise it is fitted through players' first skydiving positions, which "
-                                      "matched the recorded heading to within 0.1° in testing.",
+            "Bus route known": "Share of matches whose bus route is reliable: exact from the bus itself, or a fitted "
+                               "line within about 50 m. Matches without one are left out of the bus tests.",
+            "Moving zones": "Pulls where the new circle drifts past the old one's edge. They're excluded from the "
+                            "distance test, because 'how close to the edge' doesn't apply to them.",
             "p": P_VALUE,
         },
         charts={
@@ -109,6 +114,8 @@ GUIDES: dict[str, Guide] = {
             "Storm pulls": "Number of circle-to-circle moves in the selection.",
             "Phases": "Distinct storm phases recorded.",
             "Overall median": "Median of the chosen measure across every pull.",
+            "Phase by phase": "Type (shrinking or moving), the usual wait before the phase starts (0 = a continuous "
+                              "moving zone), median sizes, and how much the distance moved varies between matches.",
             "Distance moved ÷ current radius": "How far the center travels, relative to the circle's size. 0.3 means "
                                                "it moves 30% of the current radius.",
             "Next radius ÷ current radius": "The shrink factor. 0.6 means the next circle is 60% of the current radius.",
@@ -117,8 +124,8 @@ GUIDES: dict[str, Guide] = {
         },
         charts={
             "Distribution by phase": "Box plots: the line is the median, the box holds the middle half of pulls, the "
-                                     "whiskers the typical range. A narrow box means that phase behaves consistently "
-                                     "from match to match.",
+                                     "whiskers the typical range. A flat line instead of a box means that phase moves "
+                                     "the same amount in every match: set by the game, not random.",
             "Where next circles land": "Each dot is a next-circle center, coloured by phase. Compare positions only "
                                        "within one season; the map changes between seasons.",
         },

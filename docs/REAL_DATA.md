@@ -40,6 +40,10 @@ powershell -ExecutionPolicy Bypass -File .\pipeline\setup.ps1 -FromSource
 2. **Choose 4** for each window you want, pasting its ID. It reads the window's leaderboard: every team's entry lists the matches it played, and their IDs are added to `data/match_ids.csv`. The default reads 10 pages (the top teams' lobbies); answer `all` to reach every lobby.
 3. **Choose 5** to download and process. Start with **10 matches** to check the data. Then read the quality report (section 4) and run larger batches of 50–100. Each run skips matches it already has, so you can stop and resume safely.
 
+**Storage.** Each tournament replay is about 130 MB (100 matches ≈ 13 GB). To keep them on another drive, choose **D** in `ZoneLab-Data.bat` and give a **new or empty** folder such as `D:\ZoneLabData`. Everything downloaded so far moves there, and the pipeline and dashboard use it from then on. The folder is saved in `.env` as `ZONELAB_DATA_DIR`.
+
+**After an update** that changes how replays are read, choose **7** to re-process everything you've already downloaded. Nothing is downloaded again.
+
 **Pull tournaments within about 30 days.** Epic deletes tournament replays after roughly a month; option 4 warns when a window's matches are getting close to that.
 
 If option 5 fails for every match, Epic has changed something on the free route. **Option 8** downloads the same replays through api-fortnite.com instead, at 2 credits per match. It needs a free api-fortnite.com key saved with **option 9** (the free tier gives 15 credits a day; paid credit packs and plans add more).
@@ -103,4 +107,5 @@ Anything short of that is a **lead**: worth re-testing with more data, not worth
 | Option 4 finds no match IDs | The window may not have been played yet, or its replays have expired |
 | Option 5 shows "request failed" for every match | Use option 8, and send me the last lines of `data/raw/failed.txt` |
 | Processing fails on new replays | Rebuild the parser from source (section 2) |
-| Dashboard still shows "No tournament data yet" | Make sure option 5 finished, then refresh the page |
+| Dashboard still shows "No tournament data yet" | Make sure option 5 finished, then refresh the page. If you used option D, restart `Start-ZoneLab.bat` |
+| "The replay parser needs rebuilding after an update" | Run option 1, then option 7 |

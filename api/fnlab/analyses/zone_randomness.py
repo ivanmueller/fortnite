@@ -16,13 +16,23 @@ def fmt(x, d=2):
     return "–" if x is None or not np.isfinite(x) else f"{x:.{d}f}"
 
 
-def load_pulls(con, sel: str = "sel") -> pd.DataFrame:
+def _cols(con, table: str) -> set[str]:
+    return set(con.execute(f"SELECT * FROM {table} LIMIT 0").df().columns)
+
+
+def load_pulls(con, sel: str = "sel", zones: str = "all") -> pd.DataFrame:
+    zc, bc = _cols(con, "zone_offsets"), _cols(con, "bus")
+    kind = "z.kind" if "kind" in zc else "'shrinking'"
+    # Only trust a bus heading that is exact (from the bus itself) or a tight fitted line.
+    reliable = "b.bus_source = 'aircraft'" + (" OR (b.fit_rms <= 5000 AND b.n_points >= 10)" if "fit_rms" in bc else "")
     z = df(con, f"""
-        SELECT z.match_id, z.phase, z.u, z.offset_ratio, z.shrink_ratio, z.angle_deg,
-               b.bearing_deg, b.direction_known
+        SELECT z.match_id, z.phase, z.u, z.offset_ratio, z.shrink_ratio, z.angle_deg, {kind} AS kind,
+               CASE WHEN {reliable} THEN b.bearing_deg END AS bearing_deg, b.direction_known
         FROM zone_offsets z JOIN {sel} USING (match_id) LEFT JOIN bus b USING (match_id)
         ORDER BY z.match_id, z.phase
     """)
+    if zones in ("shrinking", "moving"):
+        z = z[z.kind == zones]
     if z.empty:
         return z
     z["u"] = z["u"].clip(0, 1)
@@ -41,12 +51,16 @@ def per_match(z: pd.DataFrame) -> pd.DataFrame:
           "Tests each storm pull against pure randomness: how far it moves, which way, relative to the bus, "
           "and whether it keeps the previous pull's direction.",
           params=[ALPHA_PARAM,
+                  Param("zones", "Zones", "select", "all",
+                        [{"value": "all", "label": "All zones"}, {"value": "shrinking", "label": "Shrinking zones only"},
+                         {"value": "moving", "label": "Moving zones only"}],
+                        "Distance tests always use shrinking zones; this also limits the direction tests."),
                   Param("min_phase", "From phase", "number", 2, help="Phase 1's starting circle is often unknown"),
                   Param("max_phase", "To phase", "number", 12)])
 def run(ctx: Context) -> Result:
     alpha = float(ctx.params.get("alpha", 0.005))
     r = Result()
-    z = load_pulls(ctx.con)
+    z = load_pulls(ctx.con, zones=ctx.params.get("zones", "all"))
     if z.empty:
         r.headline = "No storm pulls in this selection."
         return r
@@ -71,8 +85,10 @@ def run(ctx: Context) -> Result:
         if len(gz) < MIN_N:
             continue
         ks, rd, rb = ks_uniform(gz["u"]), rayleigh(gz["angle_deg"]), rayleigh(gz["rel_bus_deg"])
-        grp = f"Phase {int(ph)}"
-        r.test(grp, "Pull distance", ks["n"], f"mean u {gz['u'].mean():.2f}", ks["p"], alpha)
+        moving = (gz["kind"] == "moving").mean() > 0.5
+        grp = f"Phase {int(ph)}" + (" (moving)" if moving else "")
+        if not moving:
+            r.test(grp, "Pull distance", ks["n"], f"mean u {gz['u'].mean():.2f}", ks["p"], alpha)
         r.test(grp, "Compass direction", rd["n"], f"{fmt(rd['mean_deg'], 0)}°, R {fmt(rd['R'])}", rd["p"], alpha)
         r.test(grp, "Direction vs bus", rb["n"], f"{fmt(rb['mean_deg'], 0)}°, R {fmt(rb['R'])}", rb["p"], alpha)
         if gz["turn_deg"].notna().sum() >= MIN_N:
@@ -84,19 +100,21 @@ def run(ctx: Context) -> Result:
                   f"No departure from randomness across {len(pm):,} matches at p < {alpha}.")
     r.metric("Matches", f"{len(pm):,}")
     r.metric("Storm pulls", f"{len(z):,}")
-    r.metric("Mean u", fmt(z["u"].mean()), "0.50 if random, 1.00 if every pull hits the edge")
-    r.metric("Bus from aircraft data",
-             f"{(df(ctx.con, 'SELECT avg((bus_source = ?)::INT) FROM bus JOIN sel USING (match_id)', ['aircraft']).iat[0, 0] or 0):.0%}",
-             "Otherwise fitted from skydive starts")
+    r.metric("Mean u", fmt(z["u"].mean()), "Shrinking zones only. 0.50 if random, 1.00 if every pull hits the edge")
+    r.metric("Moving zones", f"{(z['kind'] == 'moving').sum():,} of {len(z):,}")
+    r.metric("Bus route known", f"{z.groupby('match_id').bearing_deg.first().notna().mean():.0%}",
+             "Matches with an exact or tightly fitted bus route; others are left out of bus tests")
 
     r.chart("polar_histogram", "Pull direction", [dict(name="Pulls", theta=z["angle_deg"].tolist())], bins=24)
     r.chart("polar_histogram", "Pull direction relative to bus heading",
             [dict(name="Pulls", theta=z["rel_bus_deg"].dropna().tolist())], bins=24, zero_label="Bus heading")
     r.chart("polar_histogram", "Turn from previous pull", [dict(name="Pulls", theta=z["turn_deg"].dropna().tolist())],
             bins=24)
-    r.chart("histogram", "Pull distance u", [dict(name="Pulls", values=z["u"].tolist())],
-            bins=10, range=[0, 1], x_label="u = (distance moved / max allowed)²", y_label="Pulls",
-            reference_lines=[dict(axis="y", value=len(z) / 10, label="If random")])
+    us = z["u"].dropna()
+    if len(us):
+        r.chart("histogram", "Pull distance u", [dict(name="Shrinking zones", values=us.tolist())],
+                bins=10, range=[0, 1], x_label="u = (distance moved / max allowed)²", y_label="Pulls",
+                reference_lines=[dict(axis="y", value=len(us) / 10, label="If random")])
     found = [t["reading"].lower() for t in r.tests if t["group"] == g and t["significant"] and t.get("reading")]
     conclude(r, ctx, primary=[g], alpha=alpha, recommended=200,
              takeaway_found="Storm pulls are not random in this selection: " + "; ".join(found) + ".",

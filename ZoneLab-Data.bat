@@ -21,9 +21,10 @@ echo   3  List tournaments from the last 30 days
 echo   4  Collect match IDs for one tournament window
 echo   5  Download and process the collected matches (free, from Epic)
 echo   6  Process my own recent replays from the Fortnite Demos folder
-echo   7  Rebuild tables and reports from data already downloaded
+echo   7  Re-process everything already downloaded (after an update)
 echo   8  Download via api-fortnite.com instead (2 credits per match; use if 5 fails)
 echo   9  Save an api-fortnite.com key (only needed for option 8)
+echo   D  Store downloaded data somewhere else (e.g. another drive)
 echo   L  Log out of Epic (revokes the saved login)
 echo   Q  Quit
 echo.
@@ -39,6 +40,7 @@ if /i "%choice%"=="7" goto :analyze
 if /i "%choice%"=="8" goto :pilotapi
 if /i "%choice%"=="9" goto :key
 if /i "%choice%"=="l" goto :logout
+if /i "%choice%"=="d" goto :datadir
 if /i "%choice%"=="q" goto :end
 goto :menu
 
@@ -98,7 +100,17 @@ set /p "count=How many of your newest replays [3]: "
 goto :done
 
 :analyze
-%PS% "pipeline\run.ps1" analyze
+%PS% "pipeline\run.ps1" reparse
+goto :done
+
+:datadir
+echo.
+echo Pick a NEW or EMPTY folder, for example D:\ZoneLabData (not a folder that already holds other files).
+echo Everything downloaded so far moves there, and future downloads go there too.
+set "dpath="
+set /p "dpath=Folder: "
+if "%dpath%"=="" goto :menu
+%PS% "pipeline\run.ps1" datadir -Path "%dpath%"
 goto :done
 
 :pilotapi

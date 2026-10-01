@@ -24,6 +24,7 @@ MIN_TRACK_COVERAGE = 0.90    # share of human players with a usable movement tra
 MIN_TRACK_ROWS = 10          # rows for a track to count as "usable"
 MAX_MEDIAN_GAP_S = 5.0       # typical gap between position samples
 MIN_BUS_POINTS = 10          # skydive starts needed to trust a derived bus line
+MAX_BUS_FIT_RMS = 5000       # derived bus line must fit within ~50 m (Unreal units are cm)
 
 
 def load(tables: Path, name: str) -> pd.DataFrame:
@@ -47,12 +48,17 @@ def check_match(mid, m, players, zones, bus, pos) -> list[tuple[str, str, str]]:
         bad = zones[(zones.next_r > zones.cur_r) | (zones.next_r <= 0)]
         out.append(("PASS" if bad.empty else "FAIL", "zone radii shrink",
                     "all phases shrink" if bad.empty else f"{len(bad)} phases grow or have zero radius"))
-        known = zones.dropna(subset=["cur_x"])
+        known = zones.dropna(subset=["cur_x"]).sort_values("phase")
         if not known.empty:
             dist = np.hypot(known.next_x - known.cur_x, known.next_y - known.cur_y)
-            outside = (dist > (known.cur_r - known.next_r) * 1.01).sum()
-            out.append(("PASS" if outside == 0 else "WARN", "next zone inside current",
-                        "ok" if outside == 0 else f"{outside} phases where next circle pokes outside current"))
+            moving = (dist > (known.cur_r - known.next_r) * 1.01 + 1).to_numpy()
+            first_moving = int(known.phase.to_numpy()[moving.argmax()]) if moving.any() else None
+            # Moving zones are normal late in a match. A moving zone followed by a shrinking one is unusual.
+            odd = moving.any() and not moving[moving.argmax():].all()
+            out.append(("WARN" if odd else "PASS", "shrinking vs moving zones",
+                        f"{(~moving).sum()} shrinking, {moving.sum()} moving"
+                        + (f" (moving from phase {first_moving})" if first_moving else "")
+                        + (": a shrinking zone follows a moving one, worth a look" if odd else "")))
 
     # Teams and placements
     team_sizes = humans.groupby("team_index").size()
@@ -102,13 +108,14 @@ def check_match(mid, m, players, zones, bus, pos) -> list[tuple[str, str, str]]:
     else:
         b = bus.iloc[0]
         if b.bus_source == "aircraft":
-            out.append(("PASS", "bus path", f"from aircraft data, bearing {b.bearing_deg:.1f} deg"))
+            out.append(("PASS", "bus path", f"exact, from the bus itself: heading {b.bearing_deg:.1f} deg"))
         else:
-            ok = b.n_points >= MIN_BUS_POINTS
+            ok = b.n_points >= MIN_BUS_POINTS and b.fit_rms <= MAX_BUS_FIT_RMS
             note = "" if b.get("direction_known", True) else ", direction of travel unknown (180 deg ambiguity)"
             out.append(("PASS" if ok else "WARN", "bus path",
                         f"derived from {int(b.n_points)} skydive starts, bearing {b.bearing_deg:.1f} deg, "
-                        f"line fit rms {b.fit_rms:.0f} units{note}"))
+                        f"line fit rms {b.fit_rms / 100:.0f} m{note}"
+                        + ("" if ok else ": too loose to use; bus-based tests skip this match")))
 
     # Season tag
     out.append(("PASS" if isinstance(m.season, str) else "WARN", "season tag", str(m.season)))

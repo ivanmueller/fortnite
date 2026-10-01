@@ -7,12 +7,15 @@
 #   ./pipeline/run.sh find <eventWindowId> [pages|all]
 #   ./pipeline/run.sh pilot [limit] [epic|api-fortnite]
 #   ./pipeline/run.sh analyze [season-label]
+#   ./pipeline/run.sh reparse
 set -euo pipefail
 cd "$(dirname "$0")/.."   # repo root
 extractor() {
-  for p in pipeline/extractor/bin/source/fn-extract.dll pipeline/extractor/bin/nuget/fn-extract.dll; do [[ -f $p ]] && { echo "$p"; return; }; done
-  echo "Extractor not built. Run ./pipeline/setup.sh first." >&2; exit 1
+  for p in pipeline/extractor/bin/source/ZoneLab.ReplayReader.dll pipeline/extractor/bin/nuget/ZoneLab.ReplayReader.dll; do [[ -f $p ]] && { echo "$p"; return; }; done
+  echo "The replay parser needs rebuilding after an update. Run ./pipeline/setup.sh first." >&2; exit 1
 }
+DATA=$( [[ -f .env ]] && sed -n 's/^[[:space:]]*ZONELAB_DATA_DIR[[:space:]]*=[[:space:]]*//p' .env | head -1 | tr -d '"\r' )
+DATA=${DATA:-data}
 analyze() {
   local dir="$1" season="${2:-}"
   node scripts/py.mjs pipeline/python/flatten.py --data-dir "$dir"
@@ -30,7 +33,8 @@ case "${1:-help}" in
   test)  (cd pipeline/node && node find_matches.js test) ;;
   tournaments) shift; (cd pipeline/node && node find_matches.js tournaments "$@") ;;
   find)  (cd pipeline/node && node find_matches.js window "${2:?usage: ./run.sh find <eventWindowId>}" --pages "${3:-10}") ;;
-  pilot) (cd pipeline/node && node download.js --limit "${2:-10}" --via "${3:-epic}"); dotnet "$(extractor)" data/raw data/parsed --mode full; analyze data ;;
-  analyze) analyze data "${2:-}" ;;
+  pilot) (cd pipeline/node && node download.js --limit "${2:-10}" --via "${3:-epic}"); dotnet "$(extractor)" "$DATA/raw" "$DATA/parsed" --mode full; analyze "$DATA" ;;
+  analyze) analyze "$DATA" "${2:-}" ;;
+  reparse) dotnet "$(extractor)" "$DATA/raw" "$DATA/parsed" --mode full --overwrite; analyze "$DATA" ;;
   *) sed -n 2,8p "$0" ;;
 esac

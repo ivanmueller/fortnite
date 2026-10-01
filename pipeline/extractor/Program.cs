@@ -5,6 +5,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using FortniteReplayReader;
 using FortniteReplayReader.Models;
+using Unreal.Core.Attributes;
+using Unreal.Core.Contracts;
 using Unreal.Core.Models;
 using Unreal.Core.Models.Enums;
 
@@ -46,9 +48,9 @@ foreach (var file in files)
     var sw = Stopwatch.StartNew();
     try
     {
-        var reader = new ReplayReader(null, mode);
+        var reader = new ZoneLabReader(mode);
         var replay = reader.ReadReplay(file);
-        var doc = Extract.Build(matchId, file, replay, sampleSec);
+        var doc = Extract.Build(matchId, file, replay, sampleSec, reader.Buses);
         File.WriteAllText(outPath, JsonSerializer.Serialize(doc, jsonOpts));
         Console.WriteLine($"ok     {matchId}  {sw.Elapsed.TotalSeconds:F1}s  players={doc.Players.Count} zones={doc.Zones.Count} positions={doc.Positions.Rows.Count} bus={doc.Bus.Count}");
         ok++;
@@ -68,7 +70,7 @@ static class Extract
 {
     static double[]? V(FVector? v) => v is null ? null : new[] { v.X, v.Y, v.Z };
 
-    public static ResearchDoc Build(string matchId, string file, FortniteReplay r, double sampleSec)
+    public static ResearchDoc Build(string matchId, string file, FortniteReplay r, double sampleSec, IReadOnlyDictionary<uint, BusExport> buses)
     {
         var doc = new ResearchDoc { MatchId = matchId, SourceFile = Path.GetFileName(file) };
 
@@ -117,6 +119,30 @@ static class Extract
                 TimeTillDropEnd = b.TimeTillDropEnd,
                 FlightTimestamp = b.ReplicatedFlightTimestamp,
             });
+        }
+
+        // The bus actor itself (captured by ZoneLabReader). Recent replays don't fill the
+        // parser's own flight-path list, so this is the reliable source.
+        if (doc.Bus.Count == 0)
+        {
+            foreach (var (channel, b) in buses.OrderBy(kv => kv.Value.FlightStartTime ?? float.MaxValue))
+            {
+                if (b.FlightStartLocation is null) continue;
+                doc.Bus.Add(new BusRow
+                {
+                    Index = channel,
+                    Start = V(b.FlightStartLocation),
+                    Yaw = b.FlightStartRotation?.Yaw,
+                    Speed = b.FlightSpeed ?? 0,
+                    TimeTillFlightEnd = b.TimeTillFlightEnd ?? 0,
+                    TimeTillDropStart = b.TimeTillDropStart ?? 0,
+                    TimeTillDropEnd = b.TimeTillDropEnd ?? 0,
+                    FlightTimestamp = b.ReplicatedFlightTimestamp ?? 0,
+                    FlightStartTime = b.FlightStartTime, FlightEndTime = b.FlightEndTime,
+                    DropStartTime = b.DropStartTime, DropEndTime = b.DropEndTime,
+                    Source = "aircraft_actor",
+                });
+            }
         }
 
         int zi = 0;
@@ -225,7 +251,51 @@ class ResearchDoc
 }
 class ReplayMeta { public uint? LengthMs { get; set; } public uint? NetworkVersion { get; set; } public uint? Changelist { get; set; } public DateTime? Timestamp { get; set; } public bool? IsEncrypted { get; set; } public string? Branch { get; set; } public uint? HeaderChangelist { get; set; } public int? EngineNetworkVersion { get; set; } public string? Platform { get; set; } }
 class GameMeta { public string? SessionId { get; set; } public string? Playlist { get; set; } public string? MapInfo { get; set; } public int? TournamentRound { get; set; } public int? TeamSize { get; set; } public int? TotalTeams { get; set; } public int? MaxPlayers { get; set; } public int? TotalBots { get; set; } public float? AircraftStartT { get; set; } public float? SafeZonesStartT { get; set; } public float? MatchEndT { get; set; } public DateTime? UtcStarted { get; set; } public uint? WinningTeam { get; set; } public List<int>? WinningPlayerIds { get; set; } }
-class BusRow { public uint Index { get; set; } public double[]? Start { get; set; } public float? Yaw { get; set; } public float Speed { get; set; } public float TimeTillFlightEnd { get; set; } public float TimeTillDropStart { get; set; } public float TimeTillDropEnd { get; set; } public float FlightTimestamp { get; set; } }
+class BusRow { public uint Index { get; set; } public double[]? Start { get; set; } public float? Yaw { get; set; } public float Speed { get; set; } public float TimeTillFlightEnd { get; set; } public float TimeTillDropStart { get; set; } public float TimeTillDropEnd { get; set; } public float FlightTimestamp { get; set; }
+    public float? FlightStartTime { get; set; } public float? FlightEndTime { get; set; } public float? DropStartTime { get; set; } public float? DropEndTime { get; set; } public string Source { get; set; } = "game_state"; }
+
+// ---- Battle Bus capture ----------------------------------------------------
+// The parser library defines the bus actor but only parses it in its "Ignore" mode.
+// This copy is enabled at the normal level. The parser only scans libraries whose name
+// contains "ReplayReader", which is why this project's assembly is ZoneLab.ReplayReader.
+[NetFieldExportGroup("/Game/Athena/Aircraft/AthenaAircraft.AthenaAircraft_C", ParseMode.Minimal)]
+public class BusExport : INetFieldExportGroup
+{
+    [NetFieldExport("FlightStartLocation", RepLayoutCmdType.PropertyVector100)] public FVector? FlightStartLocation { get; set; }
+    [NetFieldExport("FlightStartRotation", RepLayoutCmdType.PropertyRotator)] public FRotator? FlightStartRotation { get; set; }
+    [NetFieldExport("FlightSpeed", RepLayoutCmdType.PropertyFloat)] public float? FlightSpeed { get; set; }
+    [NetFieldExport("TimeTillFlightEnd", RepLayoutCmdType.PropertyFloat)] public float? TimeTillFlightEnd { get; set; }
+    [NetFieldExport("TimeTillDropStart", RepLayoutCmdType.PropertyFloat)] public float? TimeTillDropStart { get; set; }
+    [NetFieldExport("TimeTillDropEnd", RepLayoutCmdType.PropertyFloat)] public float? TimeTillDropEnd { get; set; }
+    [NetFieldExport("FlightStartTime", RepLayoutCmdType.PropertyFloat)] public float? FlightStartTime { get; set; }
+    [NetFieldExport("FlightEndTime", RepLayoutCmdType.PropertyFloat)] public float? FlightEndTime { get; set; }
+    [NetFieldExport("DropStartTime", RepLayoutCmdType.PropertyFloat)] public float? DropStartTime { get; set; }
+    [NetFieldExport("DropEndTime", RepLayoutCmdType.PropertyFloat)] public float? DropEndTime { get; set; }
+    [NetFieldExport("ReplicatedFlightTimestamp", RepLayoutCmdType.PropertyFloat)] public float? ReplicatedFlightTimestamp { get; set; }
+}
+
+class ZoneLabReader : ReplayReader
+{
+    // Updates arrive as partial deltas; merge them per bus (one channel per bus).
+    public Dictionary<uint, BusExport> Buses { get; } = new();
+
+    public ZoneLabReader(ParseMode mode) : base(null, mode) { }
+
+    protected override void OnExportRead(uint channelIndex, INetFieldExportGroup? exportGroup)
+    {
+        if (exportGroup is BusExport b)
+        {
+            if (!Buses.TryGetValue(channelIndex, out var m)) Buses[channelIndex] = m = new BusExport();
+            foreach (var prop in typeof(BusExport).GetProperties())
+            {
+                var v = prop.GetValue(b);
+                if (v is not null) prop.SetValue(m, v);
+            }
+            return;
+        }
+        base.OnExportRead(channelIndex, exportGroup);
+    }
+}
 class ZoneRow { public int Seq { get; set; } public float Radius { get; set; } public float StartShrinkT { get; set; } public float FinishShrinkT { get; set; } public double[]? LastCenter { get; set; } public float LastRadius { get; set; } public double[]? NextCenter { get; set; } public float NextRadius { get; set; } public double[]? NextNextCenter { get; set; } public float NextNextRadius { get; set; } }
 class PlayerRow { public int? Id { get; set; } public string? PlayerId { get; set; } public string? Name { get; set; } public bool IsBot { get; set; } public int? TeamIndex { get; set; } public int? Placement { get; set; } public uint? Kills { get; set; } public uint? TeamKills { get; set; } public double? DeathT { get; set; } public int? DeathCause { get; set; } public double[]? DeathLocation { get; set; } public bool? Disconnected { get; set; } public string? Platform { get; set; } public int LocationSamplesRaw { get; set; } public int LocationSamplesUntimed { get; set; } }
 class TeamRow { public int? TeamIndex { get; set; } public int? Placement { get; set; } public uint? TeamKills { get; set; } public List<int?>? PlayerIds { get; set; } }

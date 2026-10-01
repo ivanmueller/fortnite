@@ -8,18 +8,29 @@
 #   .\pipeline\run.ps1 find -Window <eventWindowId> [-Pages 10|all]          collect match IDs into data/match_ids.csv
 #   .\pipeline\run.ps1 pilot [-Limit 10] [-Via api-fortnite]                 download -> extract -> flatten -> validate
 #   .\pipeline\run.ps1 analyze [-Season v37.10]     re-run flatten, validate and zone analysis only
+#   .\pipeline\run.ps1 reparse                      re-read every downloaded replay (after parser updates), then analyze
+#   .\pipeline\run.ps1 datadir -Path D:\ZoneLabData move downloaded data to another folder/drive and use it from now on
 param(
     [Parameter(Position = 0)][string]$Stage = "help",
     [int]$Limit = 10, [int]$Count = 3, [string]$Window, [string]$Season, [string]$Pages = "10",
-    [string]$Region, [string]$Search, [int]$Days = 30, [string]$Via = "epic", [string]$Source = "epic"
+    [string]$Region, [string]$Search, [int]$Days = 30, [string]$Via = "epic", [string]$Source = "epic", [string]$Path
 )
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)   # repo root
 
 function Extractor {
-    foreach ($p in "pipeline/extractor/bin/source/fn-extract.dll", "pipeline/extractor/bin/nuget/fn-extract.dll") { if (Test-Path $p) { return $p } }
-    throw "Extractor not built. Run .\pipeline\setup.ps1 first."
+    foreach ($p in "pipeline/extractor/bin/source/ZoneLab.ReplayReader.dll", "pipeline/extractor/bin/nuget/ZoneLab.ReplayReader.dll") { if (Test-Path $p) { return $p } }
+    throw "The replay parser needs rebuilding after an update. Run ZoneLab-Data.bat option 1."
 }
+# Where downloaded tournament data lives: ZONELAB_DATA_DIR in .env, or data\ in the project.
+function DataDir {
+    if (Test-Path .env) {
+        $line = Get-Content .env | Where-Object { $_ -match '^\s*ZONELAB_DATA_DIR\s*=' } | Select-Object -First 1
+        if ($line) { $v = ($line -split '=', 2)[1].Trim().Trim('"'); if ($v) { return $v } }
+    }
+    return "data"
+}
+$Data = DataDir
 function Analyze([string]$DataDir = "data") {
     node scripts/py.mjs pipeline/python/flatten.py --data-dir $DataDir
     node scripts/py.mjs pipeline/python/validate.py --data-dir $DataDir
@@ -56,9 +67,35 @@ switch ($Stage) {
     "find" { if (-not $Window) { throw "Use: .\pipeline\run.ps1 find -Window <eventWindowId>" }; Push-Location pipeline/node; node find_matches.js window $Window --pages $Pages --source $Source; Pop-Location }
     "pilot" {
         Push-Location pipeline/node; node download.js --limit $Limit --via $Via; Pop-Location
-        dotnet (Extractor) data/raw data/parsed --mode full
-        Analyze "data"
+        dotnet (Extractor) "$Data/raw" "$Data/parsed" --mode full
+        Analyze $Data
     }
-    "analyze" { Analyze "data" }
+    "analyze" { Analyze $Data }
+    "reparse" {
+        dotnet (Extractor) "$Data/raw" "$Data/parsed" --mode full --overwrite
+        Analyze $Data
+    }
+    "datadir" {
+        if (-not $Path) { throw "Use: .\pipeline\run.ps1 datadir -Path D:\ZoneLabData" }
+        # Resolve against PowerShell's folder (.NET's working folder can differ).
+        $full = { param($p) if ([IO.Path]::IsPathRooted($p)) { [IO.Path]::GetFullPath($p) } else { [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $p)) } }
+        $new = & $full $Path
+        $old = & $full $Data
+        if ($new -eq $old) { Write-Host "Already using $new"; break }
+        if ((Test-Path $new) -and (Get-ChildItem $new -Force | Where-Object { $_.Name -notin @("raw", "parsed", "tables", "reports", "match_ids.csv", "tournaments.csv") })) {
+            throw "$new already contains other files. Choose a new or empty folder (for example D:\ZoneLabData) so nothing gets mixed together."
+        }
+        New-Item -ItemType Directory -Force $new | Out-Null
+        foreach ($d in "raw", "parsed", "tables", "reports") {
+            if (Test-Path "$old\$d") { robocopy "$old\$d" "$new\$d" /E /MOVE /XF .gitkeep /NFL /NDL /NJH /NJS | Out-Null }
+            New-Item -ItemType Directory -Force "$new\$d" | Out-Null
+        }
+        foreach ($f in "match_ids.csv", "tournaments.csv") { if (Test-Path "$old\$f") { Move-Item "$old\$f" "$new\$f" -Force } }
+        $lines = @(); if (Test-Path .env) { $lines = @(Get-Content .env | Where-Object { $_ -notmatch '^\s*ZONELAB_DATA_DIR\s*=' }) }
+        $lines += "ZONELAB_DATA_DIR=$new"
+        [IO.File]::WriteAllLines((Join-Path (Get-Location) ".env"), [string[]]$lines)
+        Write-Host "Downloaded data now lives in $new (moved from $old). Saved in .env." -ForegroundColor Green
+        Write-Host "Restart Start-ZoneLab.bat so the dashboard reads the new location." -ForegroundColor Yellow
+    }
     default { Get-Content $PSCommandPath | Select-Object -Skip 1 -First 7 }
 }

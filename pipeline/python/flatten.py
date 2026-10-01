@@ -135,8 +135,14 @@ def add_zone_features(z: pd.DataFrame) -> pd.DataFrame:
     z["offset_ratio"] = z.dist / z.cur_r
     z["shrink_ratio"] = z.next_r / z.cur_r
     z["allowed"] = z.cur_r - z.next_r
-    z["u"] = (z.dist / z.allowed) ** 2
+    # Shrinking zone: the next circle stays inside the current one. Moving zone: it drifts
+    # past the old edge (late game). u is only meaningful for shrinking zones.
+    z["kind"] = np.where(z.dist <= z.allowed * 1.01 + 1, "shrinking", "moving")
+    z["u"] = np.where(z.kind == "shrinking", (z.dist / z.allowed).clip(upper=1) ** 2, np.nan)
     z["angle_deg"] = np.degrees(np.arctan2(z.dy, z.dx)) % 360
+    # Seconds between the previous shrink finishing and this one starting (0 = continuous moving zone).
+    prev_finish = z.groupby("match_id")["finish_shrink_t"].shift(1)
+    z["wait_s"] = (z.start_shrink_t - prev_finish).round(1)
     return z.dropna(subset=["dist", "cur_r"])
 
 
@@ -148,14 +154,23 @@ def bus_row(match_id: str, doc: dict, pos: pd.DataFrame) -> dict:
         yaw = b.get("yaw")
         if start and yaw is not None and any(abs(c) > 0 for c in start[:2]):
             bearing = float(yaw) % 360  # Unreal yaw: 0 = +X, increasing toward +Y
+            ux, uy = math.cos(math.radians(bearing)), math.sin(math.radians(bearing))
+            speed = b.get("speed") or 0
+            t0 = b.get("flight_start_time")
+            t_end = b.get("flight_end_time")
+            dur = (t_end - t0) if (t0 is not None and t_end) else (b.get("time_till_flight_end") or 0)
+            at = lambda secs: (start[0] + ux * speed * secs, start[1] + uy * speed * secs)  # noqa: E731
             row = dict(match_id=match_id, bus_source="aircraft",
-                       start_x=start[0], start_y=start[1], bearing_deg=bearing,
-                       end_x=np.nan, end_y=np.nan, n_points=np.nan, fit_rms=np.nan,
-                       direction_known=True)
-            speed, dur = b.get("speed") or 0, b.get("time_till_flight_end") or 0
+                       start_x=start[0], start_y=start[1], bearing_deg=bearing, speed=speed or np.nan,
+                       end_x=np.nan, end_y=np.nan, drop_start_x=np.nan, drop_start_y=np.nan,
+                       drop_end_x=np.nan, drop_end_y=np.nan,
+                       flight_start_t=t0, drop_start_t=b.get("drop_start_time"), drop_end_t=b.get("drop_end_time"),
+                       n_points=np.nan, fit_rms=0.0, direction_known=True)
             if speed > 0 and dur > 0:
-                row["end_x"] = start[0] + math.cos(math.radians(bearing)) * speed * dur
-                row["end_y"] = start[1] + math.sin(math.radians(bearing)) * speed * dur
+                row["end_x"], row["end_y"] = at(dur)
+            if speed > 0 and t0 is not None and b.get("drop_start_time") and b.get("drop_end_time"):
+                row["drop_start_x"], row["drop_start_y"] = at(b["drop_start_time"] - t0)
+                row["drop_end_x"], row["drop_end_y"] = at(b["drop_end_time"] - t0)
             return row
 
     # Derived: each player's first skydiving sample lies (roughly) on the bus line.
