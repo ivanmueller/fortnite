@@ -9,7 +9,7 @@ from . import Context, Param, register
 
 
 @register("eliminations", "Where eliminations happen",
-          "Each elimination's distance from the circle the storm was closing to at that moment, by phase, plus a map.",
+          "Each elimination's distance from the circle the storm was closing to at that moment, by zone, plus a map.",
           params=[Param("include_downs", "Include knocks", "boolean", False)])
 def run(ctx: Context) -> Result:
     r = Result()
@@ -35,8 +35,8 @@ def run(ctx: Context) -> Result:
     r.metric("Outside closing circle", f"{outside:.0%}")
     r.metric("Median distance", f"{k['d'].median():.2f}", "In closing-circle radii; ≤ 1 is inside")
     ph = k.groupby("phase").agg(n=("d", "size"), out=("d", lambda s: (s > 1).mean()))
-    r.chart("bar", "Share of eliminations outside the closing circle, by phase",
-            [dict(name="% outside", x=[f"Phase {int(p)}" for p in ph.index], y=(ph["out"] * 100).round(1).tolist())],
+    r.chart("bar", "Share of eliminations outside the closing circle, by zone",
+            [dict(name="% outside", x=[f"Zone {int(p)}" for p in ph.index], y=(ph["out"] * 100).round(1).tolist())],
             y_label="% outside")
     r.chart("histogram", "Distance from the closing circle's center",
             [dict(name="Eliminations", values=np.clip(k["d"], 0, 4).tolist())], bins=40, range=[0, 4],
@@ -44,7 +44,7 @@ def run(ctx: Context) -> Result:
             reference_lines=[dict(axis="x", value=1, label="Circle edge")])
     s = k.sample(min(len(k), 5000), random_state=0)
     r.chart("map_points", "Elimination locations",
-            [dict(name=f"Phase {int(p)}", x=s.loc[s.phase == p, "x"].tolist(), y=s.loc[s.phase == p, "y"].tolist())
+            [dict(name=f"Zone {int(p)}", x=s.loc[s.phase == p, "x"].tolist(), y=s.loc[s.phase == p, "y"].tolist())
              for p in sorted(s["phase"].unique())], x_label="X", y_label="Y")
     worst = ph["out"].idxmax() if len(ph) else None
     conclude(r, ctx, strategy=True, primary=[], alpha=0.005, recommended=100, single_season=False,

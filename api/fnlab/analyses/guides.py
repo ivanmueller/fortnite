@@ -121,9 +121,15 @@ GUIDES: dict[str, Guide] = {
         ],
         terms={
             "Storm pulls": "Number of circle-to-circle moves in the selection.",
-            "Phases": "Distinct storm phases recorded.",
+            "Zones": "Distinct storm zones recorded.",
+            "Type": "Shrinking: the next zone sits fully inside the current one. 50/50: it partly overlaps the current "
+                    "one. Shifted: it lies entirely outside, after a wait. Moving: the zone keeps moving with no wait.",
+            "Type in % of matches": "How often this zone has its most common type across the selected matches. Near "
+                                    "100% means the game sets it; lower means it varies by match or playlist.",
+            "Next zone inside current": "Median share of the next zone's area that lies inside the current zone: 100% "
+                                        "for a shrinking zone, around 50% for a true 50/50, 0% for a shifted zone.",
             "Overall median": "Median of the chosen measure across every pull.",
-            "Phase by phase": "Type (shrinking or moving), the usual wait before the phase starts (0 = a continuous "
+            "Zone by zone": "Type (shrinking or moving), the usual wait before the phase starts (0 = a continuous "
                               "moving zone), median sizes, and how much the distance moved varies between matches.",
             "Distance moved ÷ current radius": "How far the center travels, relative to the circle's size. 0.3 means "
                                                "it moves 30% of the current radius.",
@@ -132,10 +138,10 @@ GUIDES: dict[str, Guide] = {
                                         "1 touching the edge.",
         },
         charts={
-            "Distribution by phase": "Box plots: the line is the median, the box holds the middle half of pulls, the "
+            "Distribution by zone": "Box plots: the line is the median, the box holds the middle half of pulls, the "
                                      "whiskers the typical range. A flat line instead of a box means that phase moves "
                                      "the same amount in every match: set by the game, not random.",
-            "Where next circles land": "Each dot is a next-circle center, coloured by phase. Compare positions only "
+            "Where next circles land": "Each dot is a next-circle center, coloured by zone. Compare positions only "
                                        "within one season; the map changes between seasons.",
         },
         conclude=[
@@ -237,14 +243,14 @@ GUIDES: dict[str, Guide] = {
             "Median distance": "Median distance from the closing circle's center, in radii of that circle.",
         },
         charts={
-            "Share of eliminations outside the closing circle, by phase": "High bars mark phases where players caught "
+            "Share of eliminations outside the closing circle, by zone": "High bars mark phases where players caught "
                 "outside the next circle are eliminated most often.",
             "Distance from the closing circle's center": "Bars left of the dashed line are inside the closing circle. "
                 "A bump just inside the edge points to fights over edge positions.",
-            "Elimination locations": "Each dot is an elimination, coloured by phase. Compare only within one season.",
+            "Elimination locations": "Each dot is an elimination, coloured by zone. Compare only within one season.",
         },
         conclude=[
-            "Phases with a high share outside the circle are where rotating late is most costly.",
+            "Zones with a high share outside the circle are where rotating late is most costly.",
             "Read alongside Position vs placement: if late rotators finish worse and eliminations cluster outside "
             "the circle in the same phase, rotations are where those teams are lost.",
         ],
@@ -258,8 +264,9 @@ GUIDES: dict[str, Guide] = {
         method=[
             "A rotation is one player, in one storm phase, who is outside the next circle when it appears (the moment "
             "the previous shrink finishes) and still alive when the storm starts moving.",
-            "Phases are analysed by type. Shrinking: the next circle sits inside the current one. Moving (with wait): "
-            "the circle moves past the old edge after a pause. Moving (continuous): it keeps moving with no pause.",
+            "Zones are analysed by type, in pros' vocabulary. Shrinking: the next zone sits fully inside the current one. "
+            "50/50: it partly overlaps the current one (half in, half out). Shifted: it lies entirely outside, after a "
+            "wait. Moving: the zone keeps moving with no wait (late endgame).",
             "Timing is relative, because arriving before the storm moves is impossible in moving zones. Within each match "
             "and phase, each player is compared with the first player to reach the circle, and with players who started "
             "a similar distance out (arrival time fitted against starting distance).",
@@ -276,17 +283,18 @@ GUIDES: dict[str, Guide] = {
                                                  "minus the share of Ahead players, tested against zero.",
             "Starting farther out, worse placement": "Spearman correlation between distance outside the next circle "
                                                      "at the reveal and final placement, per match.",
-            "Per match": "All phase types together, one summary per match: the page's main claims.",
-            "Shrinking": "The same tests within shrinking phases only.",
-            "Moving (with wait)": "The same tests within moving phases that start after a pause.",
-            "Moving (continuous)": "The same tests within continuous moving zones (late endgame).",
+            "Per match": "All zone types together, one summary per match: the page's main claims.",
+            "Shrinking": "The same tests within shrinking zones only.",
+            "50/50": "The same tests within 50/50 zones (the next zone partly overlaps the current one).",
+            "Shifted": "The same tests within shifted zones (the next zone entirely outside, after a wait).",
+            "Moving": "The same tests within continuously moving zones (late endgame).",
             "Rotations": "Player-phases where a rotation was needed and the player was alive when the storm moved.",
             "Eliminated before the shrink": "Rotating players eliminated before the storm moved. Reported, not classified.",
             "Median distance outside": "Typical distance outside the next circle when it appeared.",
             "Median lag behind first in": "Typical seconds between the first player reaching the circle and each "
                                           "other rotating player reaching it.",
             "Took storm": "Share of rotations with at least 2 seconds in the storm.",
-            "Phase by phase: what each phase looks like and how players rotate": "Phase type, wait, circle size, players "
+            "Zone by zone: what each zone looks like and how players rotate": "Zone type, wait, circle size, players "
                 "alive, density, and how far out, how far behind the first arrival and how long in the storm the typical "
                 "rotating player was.",
             "Skill control: average placement by timing within each Power Rankings band": "Placement by timing class "
@@ -303,7 +311,7 @@ GUIDES: dict[str, Guide] = {
             "Average final placement by timing vs comparable players": "Lower is better. Read with the skill-control table.",
         },
         conclude=[
-            "Compare phase types separately: endgame continuous zones and early shrinking circles reward different "
+            "Compare zone types separately: moving endgame zones, 50/50s and early shrinking zones reward different "
             "timing, and pooling them can hide both.",
             "The phase table shows how crowded each phase is: a timing effect that appears only in dense phases is "
             "about third-party risk, not the storm.",
@@ -389,7 +397,7 @@ GUIDES: dict[str, Guide] = {
             "Pick the group to study as Selection A (for example the Globals event windows) and the comparison as "
             "Selection B (leave it open for 'everything else'). Matches in both count for A only.",
             "Each measure is computed by the same code as its own page, once per match, for both groups: storm pulls, "
-            "rotation by phase type, drops, fights and eliminations.",
+            "rotation by zone type, drops, fights and eliminations.",
             "The groups are compared with a Mann-Whitney U test on the per-match values, with an effect size showing how "
             "consistently A sits above or below B.",
         ],
@@ -408,7 +416,7 @@ GUIDES: dict[str, Guide] = {
                               "event accounts read near zero.",
             "Storm": "Storm measures don't depend on how players play, so differences there are about the game's "
                      "storm settings.",
-            "Rotation": "Rotation measures by phase type, as on the Rotation timing page.",
+            "Rotation": "Rotation measures by zone type, as on the Rotation timing page.",
             "Drops": "Landing measures, as on the Drop spots page.",
             "Fights and eliminations": "Fight and elimination measures, as on the High ground and Eliminations pages.",
             "p": P_VALUE,
@@ -499,7 +507,7 @@ GUIDES: dict[str, Guide] = {
             "First to shoot wins": "Per match, the share of decided fights won by the side that landed the first hit.",
             "Third-partied fights cost the winner": "Per match, how much more often a winner is eliminated within 60 s "
                                                     "when a third team joined the fight.",
-            "Storm damage in phases 2–4, worse placement": "Among players who reach phase 5, the correlation between storm "
+            "Storm damage in zones 2–4, worse placement": "Among players who reach zone 5, the correlation between storm "
                                                            "damage taken in phases 2–4 and placement.",
             "Fights": "Fights detected from damage.",
             "Decided": "Share of fights where one side lost a player.",
@@ -507,19 +515,19 @@ GUIDES: dict[str, Guide] = {
             "Third-partied": "Share of fights another team joined.",
             "Median health going in": "Health plus shield 1 s before the first hit.",
             "Storm damage per player": "Median total storm damage, players who took any.",
-            "Fights by phase": "Fights, typical length and third-party rate in each storm phase (0 = before the first storm).",
+            "Fights by zone": "Fights, typical length and third-party rate in each storm phase (0 = before the first storm).",
             "Per match": "One summary per match: the page's main claims.",
             "p": P_VALUE,
         },
         charts={
             "Win rate by health advantage going in": "How often a side wins at each health gap. The dashed line is 50%.",
-            "Third-party rate by phase": "When fights draw a third team.",
+            "Third-party rate by zone": "When fights draw a third team.",
             "Fight length": "How long fights last.",
-            "Storm damage taken, by phase": "Total storm damage across all players in each phase.",
+            "Storm damage taken, by zone": "Total storm damage across all players in each phase.",
         },
         conclude=[
             "The health-advantage chart gives a 'take or skip' rule: the gap at which the win rate clearly passes 50%.",
-            "Phases with high third-party rates reward short fights and disengaging early.",
+            "Zones with high third-party rates reward short fights and disengaging early.",
         ],
         limits=[
             "Health updates can lag a hit slightly, so health going in is read 1 s early.",
@@ -547,14 +555,14 @@ GUIDES: dict[str, Guide] = {
             "Players alive at surge": "Median players alive when an episode starts.",
             "Players hit per episode": "Median players surged per episode.",
             "Damage per tick": "Median health or shield lost per surge tick.",
-            "Surge by phase": "Per phase: episodes, players alive and hit, damage per tick, and the damage dealt by the "
+            "Surge by zone": "Per phase: episodes, players alive and hit, damage per tick, and the damage dealt by the "
                               "highest-damage surged player and the lowest-damage safe player.",
             "Per episode": "One test per surge episode, combined.",
             "Per match": "One summary per match.",
             "p": P_VALUE,
         },
         charts={
-            "Surge episodes by phase": "Which phases trigger surge.",
+            "Surge episodes by zone": "Which phases trigger surge.",
             "Chance of being surged by damage dealt beforehand": "How the risk falls as a player deals more damage.",
         },
         conclude=[
@@ -582,12 +590,12 @@ GUIDES: dict[str, Guide] = {
             "Higher player wins": "Share of fights with a clear height gap won by the higher player, tested per match "
                                   "against 50% (t-test of match shares).",
             "Fights, per match": "One win share per match: the main claim about fights.",
-            "Fights by phase": "Binomial test against 50% for fights within each phase. Shows when height starts to "
+            "Fights by zone": "Binomial test against 50% for fights within each phase. Shows when height starts to "
                                "decide fights.",
             "Higher teams finish better": "Mean Spearman rho between a team's height rank and its placement. "
                                           "Positive means higher teams finish better.",
             "Standing, per match": "One correlation per match: the main claim about standing.",
-            "Standing by phase": "The same correlation within each phase. Shows when holding height starts to matter.",
+            "Standing by zone": "The same correlation within each phase. Shows when holding height starts to matter.",
             "Fights matched": "Knocks and eliminations where the winner's position at that moment is known.",
             "Clear height gap": "Fights where the height difference exceeds the 'level' setting.",
             "Median height gap": "Typical height difference between winner and victim, over all matched fights.",
@@ -595,7 +603,7 @@ GUIDES: dict[str, Guide] = {
             "p": P_VALUE,
         },
         charts={
-            "Fights won by the higher player, by phase": "Bars above the dashed 50% line mean the higher player won "
+            "Fights won by the higher player, by zone": "Bars above the dashed 50% line mean the higher player won "
                 "more often than chance in that phase.",
             "Height of the winner relative to the player they beat": "How fights split by height difference. More "
                 "fights on the 'above' side than the 'below' side means winners tend to be higher.",

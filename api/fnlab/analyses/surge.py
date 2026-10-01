@@ -121,13 +121,13 @@ def run(ctx: Context) -> Result:
     by = ep.groupby("phase").agg(episodes=("episode", "size"), alive=("alive", "median"), hit=("surged", "median"),
                                  per_tick=("per_tick", "median"), max_surged=("max_dealt_surged", "median"),
                                  min_safe=("min_dealt_safe", "median")).reset_index()
-    by = by.rename(columns={"phase": "Phase", "episodes": "Episodes", "alive": "Players alive", "hit": "Players hit",
+    by = by.rename(columns={"phase": "Zone", "episodes": "Episodes", "alive": "Players alive", "hit": "Players hit",
                             "per_tick": "Damage per tick", "max_surged": "Most damage dealt by a surged player",
                             "min_safe": "Least damage dealt by a safe player"})
-    r.table("Surge by phase", by.round(0))
+    r.table("Surge by zone", by.round(0))
     r.notes.insert(0, "Reading the phase table: a player who had dealt more than 'Most damage dealt by a surged player' "
                       "was never surged in that phase. That number is a practical safe target.")
-    r.chart("bar", "Surge episodes by phase", [dict(name="Episodes", x=[f"Phase {int(p)}" for p in by["Phase"]], y=by["Episodes"].tolist())],
+    r.chart("bar", "Surge episodes by zone", [dict(name="Episodes", x=[f"Zone {int(p)}" for p in by["Zone"]], y=by["Episodes"].tolist())],
             y_label="Episodes")
     bands = pd.cut(per["dealt"], [-1, 0, 100, 200, 300, 500, 1e9], labels=["0", "1–100", "101–200", "201–300", "301–500", "500+"])
     g = per.groupby(bands, observed=True)["surged"].mean()

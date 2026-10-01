@@ -63,7 +63,7 @@ def run(ctx: Context) -> Result:
         counts = zph["n"].value_counts().sort_index()
         r.chart("bar", "Storm phases recorded per match",
                 [dict(name="Matches", x=counts.index.astype(str).tolist(), y=counts.tolist())],
-                x_label="Phases", y_label="Matches")
+                x_label="Zones", y_label="Matches")
 
     by = (m.groupby(["season", "region"]).size().unstack(fill_value=0)
           .reset_index().rename(columns={"season": "Season"}))

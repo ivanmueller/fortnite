@@ -20,8 +20,8 @@ FRESH_S = 10.0  # a position sample older than this at shrink start means the pl
           "Where teams stand when each storm starts closing, measured against the circle it closes to, "
           "and how that relates to where they finish.",
           params=[ALPHA_PARAM,
-                  Param("phase", "Phase", "select", "all",
-                        [{"value": "all", "label": "All phases"}] + [{"value": str(i), "label": f"Phase {i}"} for i in range(1, 11)])])
+                  Param("phase", "Zone", "select", "all",
+                        [{"value": "all", "label": "All zones"}] + [{"value": str(i), "label": f"Zone {i}"} for i in range(1, 11)])])
 def run(ctx: Context) -> Result:
     alpha = float(ctx.params.get("alpha", 0.005))
     phase = ctx.params.get("phase", "all")
@@ -65,7 +65,7 @@ def run(ctx: Context) -> Result:
     for ph, rh in rhos.groupby(level="phase"):
         t = ttest_mean(rh.dropna(), 0.0)
         if t["n"] >= 5:
-            r.test(f"Phase {int(ph)}", "Distance vs placement", t["n"], f"mean rho {t['mean']:+.2f}", t["p"], alpha,
+            r.test(f"Zone {int(ph)}", "Distance vs placement", t["n"], f"mean rho {t['mean']:+.2f}", t["p"], alpha,
                    "Teams nearer the circle finish better" if t["mean"] > 0 else "Teams farther out finish better")
     team["tier"] = pd.cut(team["placement"], [0, 5, 15, 999], labels=[t[2] for t in TIERS])
     inside = team.assign(inside=team["d"] <= 1).groupby("tier", observed=False)["inside"].mean()
@@ -95,7 +95,7 @@ def run(ctx: Context) -> Result:
     tiers = team.groupby(["phase", "tier"], observed=False)["d"].apply(lambda s: (s <= 1).mean()).unstack()
     r.chart("line", "Share of teams inside the closing circle at shrink start",
             [dict(name=str(t), x=[int(p) for p in tiers.index], y=(tiers[t] * 100).round(1).tolist()) for t in tiers.columns],
-            x_label="Phase", y_label="% of teams inside")
+            x_label="Zone", y_label="% of teams inside")
     tbl = bk.reset_index().rename(columns={"bucket": "Distance (radii)", "placement": "Avg placement", "teams": "Teams"})
     tbl["Avg placement"] = tbl["Avg placement"].round(2)
     r.table("Placement by distance bucket", tbl)

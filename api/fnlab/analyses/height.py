@@ -116,8 +116,8 @@ def run(ctx: Context) -> Result:
             if len(g) < 20:
                 continue
             b = sps.binomtest(int(g.higher_won.sum()), len(g), 0.5)
-            label = "Before first storm" if ph == 0 else f"Phase {int(ph)}"
-            r.test("Fights by phase", label, len(g), f"higher player won {g.higher_won.mean():.0%}", b.pvalue, alpha)
+            label = "Before first storm" if ph == 0 else f"Zone {int(ph)}"
+            r.test("Fights by zone", label, len(g), f"higher player won {g.higher_won.mean():.0%}", b.pvalue, alpha)
 
     # ---------------- Standing at each storm phase
     team = _snapshots(ctx)
@@ -130,7 +130,7 @@ def run(ctx: Context) -> Result:
         for ph, rh in rhos.groupby(level="phase"):
             tt = ttest_mean(rh.dropna(), 0.0)
             if tt["n"] >= 5:
-                r.test("Standing by phase", f"Phase {int(ph)}", tt["n"], f"mean rho {tt['mean']:+.2f}", tt["p"], alpha)
+                r.test("Standing by zone", f"Zone {int(ph)}", tt["n"], f"mean rho {tt['mean']:+.2f}", tt["p"], alpha)
 
     if decided.empty and team.empty:
         r.headline = ("No height data to compare in this selection. Fights need eliminations with a known eliminator; "
@@ -158,8 +158,8 @@ def run(ctx: Context) -> Result:
     if not decided.empty:
         by_phase = decided.groupby("phase")["higher_won"].agg(["mean", "size"])
         by_phase = by_phase[by_phase["size"] >= 20]
-        r.chart("bar", "Fights won by the higher player, by phase",
-                [dict(name="Higher player won", x=["Pre-storm" if p == 0 else f"Phase {int(p)}" for p in by_phase.index],
+        r.chart("bar", "Fights won by the higher player, by zone",
+                [dict(name="Higher player won", x=["Pre-storm" if p == 0 else f"Zone {int(p)}" for p in by_phase.index],
                       y=(by_phase["mean"] * 100).round(1).tolist())],
                 y_label="% of fights with a clear height gap",
                 reference_lines=[dict(axis="y", value=50, label="No advantage")])
@@ -172,20 +172,20 @@ def run(ctx: Context) -> Result:
         tp = team.groupby(["phase", "tier"], observed=False)["placement"].mean().unstack()
         r.chart("line", "Average placement by height at each storm phase",
                 [dict(name=t, x=[int(p) for p in tp.index], y=tp[t].round(2).tolist()) for t in TIERS if t in tp],
-                x_label="Phase (snapshot when the storm starts closing)", y_label="Average placement (lower is better)")
+                x_label="Zone (snapshot when the storm starts closing)", y_label="Average placement (lower is better)")
         tbl = (team.groupby(["phase", "tier"], observed=False)
                .agg(teams=("placement", "size"), placement=("placement", "mean")).reset_index()
                .pivot(index="phase", columns="tier", values="placement").round(2).reset_index())
-        tbl.columns = ["Phase"] + [f"{c} avg placement" for c in tbl.columns[1:]]
+        tbl.columns = ["Zone"] + [f"{c} avg placement" for c in tbl.columns[1:]]
         r.table("Average placement by height tier and phase", tbl)
 
-    first = next((t["name"] for t in r.tests if t["group"] == "Fights by phase" and t["significant"]), None)
+    first = next((t["name"] for t in r.tests if t["group"] == "Fights by zone" and t["significant"]), None)
     conclude(r, ctx, strategy=True, primary=["Fights, per match", "Standing, per match"], alpha=alpha, recommended=100,
              single_season=False,
              takeaway_found=("Height is linked to winning" + (f", in fights from {first.lower()} onward" if first else "")
                              + ". Check both main tests below: fights and final placement."),
              takeaway_none="No consistent advantage for the higher player or team in this selection.",
-             next_found=["Expand Fights by phase and Standing by phase to see when the advantage starts.",
+             next_found=["Expand Fights by zone and Standing by zone to see when the advantage starts.",
                          "Raise the 'level' setting: an effect that survives larger height gaps is more robust."],
              next_none=["Try a single late phase or a smaller fight distance: height may matter only in close endgame fights."])
     r.notes += [

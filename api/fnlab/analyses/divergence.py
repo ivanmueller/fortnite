@@ -67,7 +67,7 @@ def _measures(ctx: Context) -> tuple[pd.DataFrame, dict[str, tuple[str, str]]]:
         for ph in (2, 3, 4):
             s = z[(z["phase"] == ph) & z["u"].notna()].groupby("match_id")["u"].mean()
             if len(s):
-                add(s, "Storm", "u", f"Phase {ph} pull distance (u)")
+                add(s, "Storm", "u", f"Zone {ph} pull distance (u)")
         add(z.groupby("match_id")["kind"].apply(lambda k: (k == "moving").sum()), "Storm", "n", "Moving phases")
 
     d, _, _ = rotations(ctx)

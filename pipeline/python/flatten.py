@@ -120,6 +120,20 @@ def zone_phases(match_id: str, zones: list[dict]) -> list[dict]:
     return rows
 
 
+def circle_overlap(d: np.ndarray, R: np.ndarray, r: np.ndarray) -> np.ndarray:
+    """Share of the small circle's area (radius r) inside the big one (radius R), centres d apart."""
+    d, R, r = (np.asarray(v, dtype=float) for v in (d, R, r))
+    out = np.where(d <= np.abs(R - r), 1.0, np.where(d >= R + r, 0.0, np.nan))
+    m = np.isnan(out) & (r > 0) & (d > 0)
+    if m.any():
+        dm, Rm, rm = d[m], R[m], r[m]
+        a1 = rm**2 * np.arccos(np.clip((dm**2 + rm**2 - Rm**2) / (2 * dm * rm), -1, 1))
+        a2 = Rm**2 * np.arccos(np.clip((dm**2 + Rm**2 - rm**2) / (2 * dm * Rm), -1, 1))
+        a3 = 0.5 * np.sqrt(np.clip((-dm + rm + Rm) * (dm + rm - Rm) * (dm - rm + Rm) * (dm + rm + Rm), 0, None))
+        out[m] = (a1 + a2 - a3) / (np.pi * rm**2)
+    return np.round(out, 3)
+
+
 def add_zone_features(z: pd.DataFrame) -> pd.DataFrame:
     """
     Season-independent geometry of each zone pull.
@@ -145,6 +159,13 @@ def add_zone_features(z: pd.DataFrame) -> pd.DataFrame:
     # Seconds between the previous shrink finishing and this one starting (0 = continuous moving zone).
     prev_finish = z.groupby("match_id")["finish_shrink_t"].shift(1)
     z["wait_s"] = (z.start_shrink_t - prev_finish).round(1)
+    # How much of the next zone lies inside the current one (area share): 1 = shrinking, about 0.5 = a 50/50,
+    # 0 = fully shifted. And the zone type in pros' vocabulary.
+    z["overlap"] = circle_overlap(z["dist"].to_numpy(), z["cur_r"].to_numpy(), z["next_r"].to_numpy())
+    continuous = z["wait_s"].fillna(99) <= 1
+    z["zone_type"] = np.select(
+        [z["kind"] == "shrinking", continuous, z["dist"] < z["cur_r"] + z["next_r"]],
+        ["shrinking", "moving", "50/50"], "shifted")
     return z.dropna(subset=["dist", "cur_r"])
 
 

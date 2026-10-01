@@ -62,14 +62,14 @@ def test_missing_dataset_explains_fix(client, monkeypatch):
 
 
 def test_height_finds_planted_late_game_advantage(client):
-    """Demo data: no height advantage before phase 2, strong from phase 5. Fights should show both."""
+    """Demo data: no height advantage before zone 2, strong from zone 5. Fights should show both."""
     j = client.post("/api/analyses/height/run", json={"filters": DEMO}).json()
-    fights = {t["name"]: t for t in j["tests"] if t["group"] == "Fights by phase"}
+    fights = {t["name"]: t for t in j["tests"] if t["group"] == "Fights by zone"}
     assert fights, j["headline"]
-    late = [t for name, t in fights.items() if name in {"Phase 5", "Phase 6", "Phase 7"}]
+    late = [t for name, t in fights.items() if name in {"Zone 5", "Zone 6", "Zone 7"}]
     assert late and all(t["significant"] for t in late)
-    if "Phase 1" in fights:
-        assert not fights["Phase 1"]["significant"]
+    if "Zone 1" in fights:
+        assert not fights["Zone 1"]["significant"]
 
 
 def test_every_page_has_a_guide(client):
@@ -132,7 +132,7 @@ def test_divergence_flags_planted_storm_difference(client):
         "filters": {**DEMO, "seasons": ["v98.10"]}, "compare": DEMO}).json()
     rows = {row[1]: row for row in j["tables"][0]["rows"]}
     verdict = j["tables"][0]["columns"].index("Verdict")
-    assert rows["Phase 2 pull distance (u)"][verdict] == "Divergent"
+    assert rows["Zone 2 pull distance (u)"][verdict] == "Divergent"
     assert rows["Players per match"][verdict] == "Similar"
     assert any("storm itself" in w for w in j["warnings"])
 

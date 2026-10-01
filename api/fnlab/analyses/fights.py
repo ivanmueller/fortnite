@@ -151,11 +151,11 @@ def run(ctx: Context) -> Result:
                                            include_groups=False).dropna()
         t = ttest_mean(rho, 0.0)
         if t["n"] >= 3:
-            r.test("Per match", "Storm damage in phases 2–4, worse placement", t["n"], f"mean rho {t['mean']:+.2f}", t["p"], alpha,
-                   "Among players who reach phase 5, those who took more early storm damage finish worse")
+            r.test("Per match", "Storm damage in zones 2–4, worse placement", t["n"], f"mean rho {t['mean']:+.2f}", t["p"], alpha,
+                   "Among players who reach zone 5, those who took more storm damage in zones 2–4 finish worse")
         by_phase = storm.groupby(["phase"]).agg(players=("id", "nunique"), damage=("lost", "sum"))
-        r.chart("bar", "Storm damage taken, by phase",
-                [dict(name="Total storm damage", x=[f"Phase {int(p)}" for p in by_phase.index], y=by_phase["damage"].round(0).tolist())],
+        r.chart("bar", "Storm damage taken, by zone",
+                [dict(name="Total storm damage", x=[f"Zone {int(p)}" for p in by_phase.index], y=by_phase["damage"].round(0).tolist())],
                 y_label="Health and shield lost in the storm")
         r.metric("Storm damage per player", f"{storm.groupby(['match_id', 'id'])['lost'].sum().median():.0f}",
                  "Median total, players who took any")
@@ -183,21 +183,21 @@ def run(ctx: Context) -> Result:
             x_label="Health + shield compared with the opponent", y_label="% of decided fights won",
             reference_lines=[dict(axis="y", value=50, label="Even")])
     ph = f.groupby("phase").agg(fights=("t0", "size"), third=("third_party", "mean"), length=("duration", "median"))
-    r.chart("line", "Third-party rate by phase",
+    r.chart("line", "Third-party rate by zone",
             [dict(name="Fights joined by a third team", x=[int(p) for p in ph.index], y=(ph["third"] * 100).round(1).tolist())],
-            x_label="Phase (0 = before the first storm)", y_label="% of fights")
+            x_label="Zone (0 = before the first storm)", y_label="% of fights")
     r.chart("histogram", "Fight length", [dict(name="Fights", values=f["duration"].clip(0, 60).tolist())], bins=30, range=[0, 60],
             x_label="Seconds (over 60 shown at 60)", y_label="Fights")
-    tbl = ph.reset_index().rename(columns={"phase": "Phase", "fights": "Fights", "length": "Median length (s)"})
+    tbl = ph.reset_index().rename(columns={"phase": "Zone", "fights": "Fights", "length": "Median length (s)"})
     tbl["Third-partied"] = (tbl.pop("third") * 100).round(0).astype(int).astype(str) + "%"
-    r.table("Fights by phase", tbl.round(1))
+    r.table("Fights by zone", tbl.round(1))
 
     conclude(r, ctx, strategy=True, primary=["Per match"], alpha=alpha, recommended=100, single_season=True,
              takeaway_found="Fight outcomes follow clear patterns: " + "; ".join(
                  t["reading"].lower() for t in r.tests if t["group"] == "Per match" and t["significant"]) + ".",
              takeaway_none="No consistent pattern in fight outcomes in this selection.",
              next_found=["Use the health-advantage chart to set a 'take the fight' threshold for the team.",
-                         "Check third-party rates by phase: phases where most fights draw a third team call for shorter fights."],
+                         "Check third-party rates by zone: phases where most fights draw a third team call for shorter fights."],
              next_none=["Try strong lobbies only: fight selection differs most at the top."])
     r.notes += [
         f"Fights are grouped from damage between two teams with gaps under {GAP_S} s, with at least {MIN_HITS} hits or an "

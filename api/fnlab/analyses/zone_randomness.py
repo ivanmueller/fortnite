@@ -55,7 +55,7 @@ def per_match(z: pd.DataFrame) -> pd.DataFrame:
                         [{"value": "all", "label": "All zones"}, {"value": "shrinking", "label": "Shrinking zones only"},
                          {"value": "moving", "label": "Moving zones only"}],
                         "Distance tests always use shrinking zones; this also limits the direction tests."),
-                  Param("min_phase", "From phase", "number", 2, help="Phase 1's starting circle is often unknown"),
+                  Param("min_phase", "From zone", "number", 2, help="Zone 1's starting circle is often unknown"),
                   Param("max_phase", "To phase", "number", 12)])
 def run(ctx: Context) -> Result:
     alpha = float(ctx.params.get("alpha", 0.005))
@@ -86,7 +86,7 @@ def run(ctx: Context) -> Result:
             continue
         ks, rd, rb = ks_uniform(gz["u"]), rayleigh(gz["angle_deg"]), rayleigh(gz["rel_bus_deg"])
         moving = (gz["kind"] == "moving").mean() > 0.5
-        grp = f"Phase {int(ph)}" + (" (moving)" if moving else "")
+        grp = f"Zone {int(ph)}" + (" (moving)" if moving else "")
         if not moving:
             r.test(grp, "Pull distance", ks["n"], f"mean u {gz['u'].mean():.2f}", ks["p"], alpha)
         r.test(grp, "Compass direction", rd["n"], f"{fmt(rd['mean_deg'], 0)}°, R {fmt(rd['R'])}", rd["p"], alpha)

@@ -1,12 +1,13 @@
 """
-Rotation timing, measured relative to the lobby and the phase type.
+Rotation timing, measured relative to the lobby and the zone type.
 
-Phases differ in kind, so they're analysed by type:
-  shrinking            the next circle sits inside the current one
-  moving (with wait)   the circle moves past the old edge after a pause
-  moving (continuous)  the circle keeps moving with no pause (late endgame)
-In moving phases almost nobody can arrive "before the storm moves", so timing is
-measured against the other players in the same match and phase, not against the clock.
+Zones differ in kind, so they're analysed by type (pros' vocabulary):
+  shrinking  the next zone sits fully inside the current one
+  50/50      the next zone partly overlaps the current one (half in, half out)
+  shifted    the next zone lies entirely outside the current one, after a wait
+  moving     the zone keeps moving with no wait (late endgame)
+In 50/50, shifted and moving zones almost nobody can arrive "before the storm moves", so
+timing is measured against the other players in the same match and zone, not the clock.
 
 For each player who must rotate (outside the next circle when it's revealed) and is
 alive when the storm starts moving:
@@ -34,7 +35,7 @@ from ..store import df
 from . import ALPHA_PARAM, Context, Param, register
 
 CLASSES = ["Ahead", "Typical", "Behind"]
-TYPES = ["Shrinking", "Moving (with wait)", "Moving (continuous)"]
+TYPES = ["Shrinking", "50/50", "Shifted", "Moving"]
 MIN_GROUP = 6      # rotators needed in a match-phase to rank them
 MIN_POINT = 10     # chart points based on fewer players are left out
 
@@ -50,7 +51,8 @@ def _player_phases(ctx: Context) -> pd.DataFrame:
         ),
         zz AS (
             SELECT *,
-                   sqrt(power(next_x - cur_x, 2) + power(next_y - cur_y, 2)) > cur_r - next_r + 100 AS moving
+                   sqrt(power(next_x - cur_x, 2) + power(next_y - cur_y, 2)) > cur_r - next_r + 100 AS moving,
+                   sqrt(power(next_x - cur_x, 2) + power(next_y - cur_y, 2)) >= cur_r + next_r AS outside_all
             FROM z
             WHERE reveal_t IS NOT NULL AND cur_x IS NOT NULL AND start_shrink_t >= reveal_t
               AND finish_shrink_t > start_shrink_t
@@ -58,7 +60,7 @@ def _player_phases(ctx: Context) -> pd.DataFrame:
         p AS (SELECT p.match_id, p.id, p.t, p.x, p.y FROM positions p JOIN sel USING (match_id)),
         s AS (
             SELECT zz.match_id, zz.phase, p.id, p.t, p.x, p.y, zz.next_r, zz.cur_r, zz.reveal_t,
-                   zz.start_shrink_t, zz.finish_shrink_t, zz.moving,
+                   zz.start_shrink_t, zz.finish_shrink_t, zz.moving, zz.outside_all,
                    sqrt(power(p.x - zz.next_x, 2) + power(p.y - zz.next_y, 2)) AS d_next,
                    greatest(0, least(1, (p.t - zz.start_shrink_t) / (zz.finish_shrink_t - zz.start_shrink_t))) AS f,
                    zz.cur_x, zz.cur_y, zz.next_x, zz.next_y
@@ -75,7 +77,7 @@ def _player_phases(ctx: Context) -> pd.DataFrame:
                min(t) AS first_t, max(t) AS last_t, count(*) AS n,
                arg_min(x, t) AS x0, arg_min(y, t) AS y0,
                any_value(d_reveal) / 100 AS d_reveal_m, any_value(next_r) / 100 AS next_r_m,
-               any_value(cur_r) / 100 AS cur_r_m, any_value(moving) AS moving,
+               any_value(cur_r) / 100 AS cur_r_m, any_value(moving) AS moving, any_value(outside_all) AS outside_all,
                any_value(reveal_t) AS reveal_t, any_value(start_shrink_t) AS start_t,
                any_value(finish_shrink_t) AS finish_t,
                min(t) FILTER (WHERE d_next <= next_r) AS entry_t,
@@ -114,7 +116,8 @@ def rotations(ctx: Context) -> tuple[pd.DataFrame, pd.DataFrame, int]:
     r = r[~r["is_bot"].fillna(False).astype(bool)]
     r["final"] = r["team_placement"] if "team_placement" in r else r["placement"]
     wait = r["start_t"] - r["reveal_t"]
-    r["type"] = np.select([~r["moving"].astype(bool), wait > 1], TYPES[:2], TYPES[2])
+    moving = r["moving"].astype(bool)
+    r["type"] = np.select([~moving, wait <= 1, r["outside_all"].astype(bool)], ["Shrinking", "Moving", "Shifted"], "50/50")
 
     # Everyone alive and tracked at the reveal: phase context and local density.
     alive = r[((r["first_t"] - r["reveal_t"]) <= 5) & (r["death_t"].isna() | (r["death_t"] >= r["reveal_t"]))].copy()
@@ -179,11 +182,11 @@ def _tests(r: Result, d: pd.DataFrame, group: str, alpha: float) -> None:
 
 
 @register("rotation", "Rotation timing",
-          "When players reach the next circle compared with the rest of the lobby and with players starting as far "
-          "out, by phase type (shrinking, moving, continuous), and how that relates to eliminations and placement.",
+          "When players reach the next zone compared with the rest of the lobby and with players starting as far "
+          "out, by zone type (shrinking, 50/50, shifted, moving), and how that relates to eliminations and placement.",
           params=[ALPHA_PARAM,
-                  Param("type", "Phase type", "select", "all",
-                        [{"value": "all", "label": "All phase types"}] + [{"value": t, "label": t} for t in TYPES]),
+                  Param("type", "Zone type", "select", "all",
+                        [{"value": "all", "label": "All zone types"}] + [{"value": t, "label": t} for t in TYPES]),
                   Param("players", "Players", "select", "all",
                         [{"value": "all", "label": "All players"},
                          {"value": "ranked", "label": "Power Rankings top 10,000 only"},
@@ -209,7 +212,7 @@ def run(ctx: Context) -> Result:
         r.headline = "No rotations of this kind in the selection."
         return r
 
-    # ---- tests: overall per match (main claim), then by phase type
+    # ---- tests: overall per match (main claim), then by zone type
     _tests(r, d, "Per match", alpha)
     for t in TYPES:
         sub = d[d["type"] == t]
@@ -238,12 +241,12 @@ def run(ctx: Context) -> Result:
                                           storm=("storm_s", "median"), took=("storm_s", lambda s: (s >= 2).mean())))
              .reset_index())
     ctx_t = ctx_t.rename(columns={
-        "phase": "Phase", "type": "Type", "wait": "Wait (s)", "radius": "Circle radius (m)", "alive": "Players alive",
+        "phase": "Zone", "type": "Type", "wait": "Wait (s)", "radius": "Circle radius (m)", "alive": "Players alive",
         "density": "Players per km²", "rotating": "Rotations", "outside": "Median distance outside (m)",
         "neighbours": "Median players within 100 m", "lag": "Median lag behind first in (s)",
         "storm": "Median storm time (s)", "took": "Took storm"})
     ctx_t["Took storm"] = (ctx_t["Took storm"] * 100).round(0).astype("Int64").astype(str) + "%"
-    r.table("Phase by phase: what each phase looks like and how players rotate", ctx_t.round(1))
+    r.table("Zone by zone: what each zone looks like and how players rotate", ctx_t.round(1))
 
     # ---- charts
     tier = pd.cut(d["final"], [0, 10, 50, 999], labels=["Top 10", "11th–50th", "51st or lower"])
@@ -251,17 +254,17 @@ def run(ctx: Context) -> Result:
     lag = g.median().where(g.size() >= MIN_POINT).unstack()
     r.chart("line", "Seconds behind the first player in, by how they finished",
             [dict(name=str(t), x=[int(p) for p in lag.index], y=lag[t].round(0).tolist()) for t in lag.columns],
-            x_label="Phase", y_label="Median seconds behind the first arrival")
+            x_label="Zone", y_label="Median seconds behind the first arrival")
     g = c.groupby(["phase", "timing"])["died_in_shrink"]
     rate = g.mean().where(g.size() >= MIN_POINT).unstack()
     r.chart("line", "Eliminated during the shrink, by timing vs comparable players",
             [dict(name=k, x=[int(p) for p in rate.index], y=(rate[k] * 100).round(1).tolist()) for k in CLASSES if k in rate],
-            x_label="Phase", y_label="% eliminated while the storm closed")
+            x_label="Zone", y_label="% eliminated while the storm closed")
     g = d.assign(tier=tier).groupby(["phase", "tier"], observed=False)["storm_s"]
     st = g.mean().where(g.size() >= MIN_POINT).unstack()
     r.chart("line", "Storm time, by how they finished",
             [dict(name=str(t), x=[int(p) for p in st.index], y=st[t].round(1).tolist()) for t in st.columns],
-            x_label="Phase", y_label="Average seconds in the storm")
+            x_label="Zone", y_label="Average seconds in the storm")
     place = c.groupby("timing")["final"].mean().reindex(CLASSES)
     r.chart("bar", "Average final placement by timing vs comparable players",
             [dict(name="Average placement", x=CLASSES, y=place.round(1).tolist())], y_label="Average placement (lower is better)")
@@ -280,10 +283,10 @@ def run(ctx: Context) -> Result:
              takeaway_found="Rotation timing, compared with players starting as far out, is linked to outcome: " + "; ".join(
                  t["reading"].lower() for t in r.tests if t["group"] == "Per match" and t["significant"]) + ".",
              takeaway_none="No consistent link between distance-adjusted rotation timing and outcome in this selection.",
-             next_found=["Expand each phase type: the effect may hold in shrinking phases but not in continuous moving zones.",
+             next_found=["Expand each zone type: the effect may hold in shrinking zones but not in 50/50s or moving zones.",
                          "Check the skill-control table before concluding anything about timing itself.",
                          "Use the phase table to see how crowded each phase is when the effect appears."],
-             next_none=["Pick one phase type at a time: effects in different kinds of phase can cancel out."])
+             next_none=["Pick one zone type at a time: effects in different kinds of zone can cancel out."])
     r.notes += [
         "Timing is relative: within each match and phase, players are compared with the first arrival and with others "
         "who started a similar distance out. Arriving 'before the storm moves' is impossible in continuous moving zones, "
