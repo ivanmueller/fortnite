@@ -29,5 +29,5 @@ if ($FromSource) {
 }
 
 Write-Host "`n[4/4] Config" -ForegroundColor Cyan
-if (-not (Test-Path .env)) { Copy-Item .env.example .env; Write-Host "Created .env - add your OSIRION_API_KEY to it." }
+if (-not (Test-Path .env)) { Copy-Item .env.example .env; Write-Host "Created .env - add your FORTNITE_API_KEY (api-fortnite.com) to it." }
 Write-Host "`nSetup done. Next: .\pipeline\run.ps1 local   (parse your own replays)" -ForegroundColor Green

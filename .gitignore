@@ -22,3 +22,4 @@ data/reports/*
 !data/**/.gitkeep
 data_synthetic/
 data_local/
+data/tournaments.csv

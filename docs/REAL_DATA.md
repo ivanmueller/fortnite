@@ -12,14 +12,14 @@ Everything on Windows runs from **`ZoneLab-Data.bat`** (double-click it in the p
 ## 1. One-time setup
 
 1. Install the **.NET 10 SDK** from https://dotnet.microsoft.com/download. It's needed to read replay files.
-2. Create an **Osirion** account at https://osirion.gg and get an API key. It's pay-as-you-go; about €1 buys 1,000 credits. Every lookup prints your credits before and after, so you can see what a tournament costs.
+2. Create a free account at https://api-fortnite.com (no card needed) and copy your API key from its dashboard. It's used only to find which matches a tournament contained.
 3. In `ZoneLab-Data.bat`:
    - choose **1** (installs the replay parser);
-   - then choose **2** and paste your key. It's saved to `.env`, which is never uploaded to GitHub.
+   - then choose **2** and paste your key. It's saved to `.env`, which is never uploaded to GitHub, and checked straight away.
 
 ## 2. Test the parser on your own replays
 
-Before spending credits, check the parser reads the current season:
+Before pulling tournaments, check the parser reads the current season:
 
 1. Play or spectate a match so Fortnite saves a replay.
 2. In `ZoneLab-Data.bat`, choose **6**.
@@ -35,9 +35,13 @@ powershell -ExecutionPolicy Bypass -File .\pipeline\setup.ps1 -FromSource
 
 ## 3. Pull tournament data
 
-1. **Choose 3** to list recent tournaments. Start narrow: **one season, one region**, for example every cash cup or FNCS session this season in your region. Mixing seasons or regions early makes patterns harder to see.
-2. **Choose 4** for each event window you want, pasting its ID. Match IDs are added to `data/match_ids.csv`, with server replays listed first.
+1. **Choose 3** to list tournament windows that finished in the last 30 days. You can filter by region (EU, NAC…) and by name (cash, fncs…). Start narrow: **one season, one region**. Mixing seasons or regions early makes patterns harder to see.
+2. **Choose 4** for each window you want, pasting its ID. It reads the window's leaderboard: every team's entry lists the matches it played, and their IDs are added to `data/match_ids.csv`. The default reads 10 pages (the top teams' lobbies); answer `all` to reach every lobby.
 3. **Choose 5** to download and process. Start with **10 matches** to check the data. Then read the quality report (section 4) and run larger batches of 50–100. Each run skips matches it already has, so you can stop and resume safely.
+
+**Pull tournaments within about 30 days.** Epic deletes tournament replays after roughly a month; option 4 warns when a window's matches are getting close to that.
+
+If option 5 fails for every match, Epic has changed something on the free route. **Option 8** downloads the same replays through api-fortnite.com instead, at 2 credits per match (the free tier gives 15 credits a day; paid credit packs and plans add more).
 
 How much data each page needs before its conclusions are trustworthy (the dashboard checks this for you):
 
@@ -91,7 +95,9 @@ Anything short of that is a **lead**: worth re-testing with more data, not worth
 
 | Problem | What to do |
 | --- | --- |
-| Option 3 or 4 says the key is missing | Run option 2 again |
-| Option 5 shows "request failed" for every match | Epic may have changed access. Send me the last lines of `data/raw/failed.txt` |
+| Option 2, 3 or 4 says the key is missing or rejected | Run option 2 again and paste the key from your api-fortnite.com dashboard |
+| Option 3 or 4 says an endpoint "is not on your plan" | Send me the message: api-fortnite.com moves endpoints between plans |
+| Option 4 finds no match IDs | The window may not have been played yet, or its replays have expired |
+| Option 5 shows "request failed" for every match | Use option 8, and send me the last lines of `data/raw/failed.txt` |
 | Processing fails on new replays | Rebuild the parser from source (section 2) |
 | Dashboard still shows "No tournament data yet" | Make sure option 5 finished, then refresh the page |

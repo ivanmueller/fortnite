@@ -2,13 +2,12 @@
   "name": "fn-research-node",
   "private": true,
   "type": "module",
-  "description": "Finds tournament match IDs (Osirion) and downloads server replays (Epic).",
+  "description": "Finds tournament match IDs (api-fortnite.com) and downloads server replays (Epic, or api-fortnite.com as a fallback).",
   "scripts": {
     "tournaments": "node find_matches.js tournaments",
     "download": "node download.js"
   },
   "dependencies": {
-    "@osirion/api": "^2.0.1",
     "dotenv": "^16.4.5",
     "fortnite-replay-downloader": "^3.0.8"
   }

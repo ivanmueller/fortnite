@@ -9,7 +9,7 @@ Tournament match IDs → server replays → parsed JSON → research tables → 
 | Replay extractor (C#) | Tested on real replays from v16.10 (2021) and v32.00 (Nov 2024). Parses in 2–5 s each. |
 | `flatten.py`, `validate.py`, `zone_analysis.py` | Tested on those real replays and on 800 synthetic matches. |
 | Zone analysis correctness | Tested: random zones give no false positives; planted bus, edge and persistence patterns are each detected. |
-| `find_matches.js` (Osirion) | Written against the client's type definitions; **not run** (needs your API key). |
+| `find_matches.js` (api-fortnite.com) | Written against its published OpenAPI spec; tested end to end against a stand-in server with the same response shapes; **not yet run against the live service**. |
 | `download.js` (Epic) | Error handling tested; **real download not run** (the build machine couldn't reach Epic). |
 | `setup.ps1` / `run.ps1` | Written to mirror the tested bash scripts; **not run on Windows**. |
 | `run.sh local` and `run.sh demo` from the repo root | Tested after the move into the monorepo. |
@@ -24,7 +24,7 @@ Two findings shaped the design:
 - Node.js LTS
 - Python 3.10+
 - .NET 10 SDK
-- An [Osirion](https://osirion.gg) API key (only for finding tournament match IDs; pay-as-you-go credits)
+- A free [api-fortnite.com](https://api-fortnite.com) API key (for finding tournament match IDs)
 - Git (only for `-FromSource` builds)
 
 ## Quickstart (Windows PowerShell)
@@ -33,7 +33,7 @@ Two findings shaped the design:
 powershell -ExecutionPolicy Bypass -File .\pipeline\setup.ps1     # once, from the repo root
 .\pipeline\run.ps1 demo                                  # 1. synthetic demo data (same as npm run demo-data)
 .\pipeline\run.ps1 local -Count 3                        # 2. parse your newest replays -> "My replays" in the dashboard
-# add OSIRION_API_KEY to .env, then:
+# add FORTNITE_API_KEY to .env (or use ZoneLab-Data.bat option 2), then:
 .\pipeline\run.ps1 tournaments                           # 3. list event windows
 .\pipeline\run.ps1 find -Window <eventWindowId>          # 4. collect match IDs into data/match_ids.csv
 .\pipeline\run.ps1 pilot -Limit 10                       # 5. download, parse, validate -> "Tournaments" in the dashboard
@@ -47,7 +47,7 @@ Start with step 5 at `-Limit 10`. Open `data/reports/validation.md` before addin
 
 ## How it fits together
 
-1. **`node/find_matches.js`** lists tournaments, takes the top players in an event window, pulls their matches from Osirion, and keeps those tagged with that window. Server-recorded matches are listed first.
+1. **`node/find_matches.js`** lists recent tournament windows from api-fortnite.com, then reads a window's leaderboard. Each team's `sessionHistory` lists the matches it played; every `sessionId` is an Epic match ID, appended to `data/match_ids.csv`.
 2. **`node/download.js`** downloads each match's replay and metadata into the repo's `data/raw/`. It can be re-run safely and logs failures to `data/raw/failed.txt`.
 3. **`extractor/` (`fn-extract`)** turns each `.replay` into one compact JSON in `data/parsed/`. Always use `--mode full`, because movement tracks need it.
 4. **`python/flatten.py`** builds the tables in `data/tables/`.
@@ -92,7 +92,8 @@ The tests cover distance (Kolmogorov–Smirnov), compass direction, direction re
 | Extractor fails on new-season replays | `setup.ps1 -FromSource` builds against the latest GitHub source, which updates faster than NuGet. |
 | `positions=0` | Run the extractor with `--mode full`. |
 | Validation warns "looks like a client replay" | Normal for your own Demos-folder replays. For tournament research, use server replays (`is_server_replay=1`). |
-| Download auth errors | Epic may have revoked the downloader's built-in client. Check the [replay-downloader repo](https://github.com/xNocken/replay-downloader). As a fallback, Osirion's `getMatchEvents` serves parsed `safeZoneUpdateEvents`, `movementEvents` and `aircraftUpdateEvents` for a fee. |
-| No matches found for a window | Osirion may still be parsing it: `tournaments` shows a parsed %. Or raise `-Players`. |
+| Download auth errors | Epic may have revoked the downloader's built-in client. Download through api-fortnite.com instead (`pilot -Via api-fortnite`, or ZoneLab-Data.bat option 8). |
+| No matches found for a window | It may not have been played yet, or be older than about 30 days. Use `-Pages all` to read every lobby. |
+| Epic download fails for every match | Download through api-fortnite.com instead: `pilot -Via api-fortnite` (2 credits per match). |
 
-Read Epic's and Osirion's terms before scaling up, and keep request rates modest.
+Read Epic's and api-fortnite.com's terms before scaling up, and keep request rates modest.

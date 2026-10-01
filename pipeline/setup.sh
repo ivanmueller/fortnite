@@ -18,5 +18,5 @@ if [[ "${1:-}" == "--from-source" ]]; then
 else
   dotnet build pipeline/extractor/fn-extract.csproj -c Release
 fi
-echo "[4/4] Config"; [[ -f .env ]] || { cp .env.example .env; echo "Created .env - add your OSIRION_API_KEY."; }
+echo "[4/4] Config"; [[ -f .env ]] || { cp .env.example .env; echo "Created .env - add your FORTNITE_API_KEY (api-fortnite.com)."; }
 echo "Setup done. Next: ./pipeline/run.sh local <folder-with-replays>"

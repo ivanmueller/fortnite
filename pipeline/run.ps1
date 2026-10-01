@@ -1,13 +1,15 @@
 # run.ps1 - run pipeline stages on Windows.
 #   .\pipeline\run.ps1 demo                         synthetic data through the whole analysis (no keys, no downloads)
 #   .\pipeline\run.ps1 local [-Count 3]             parse your own newest replays from the Fortnite Demos folder
-#   .\pipeline\run.ps1 tournaments [-Season 37]     list tournament event windows (Osirion, costs credits)
-#   .\pipeline\run.ps1 find -Window <eventWindowId> collect that window's match IDs into match_ids.csv
-#   .\pipeline\run.ps1 pilot [-Limit 10]            download -> extract -> flatten -> validate -> zone analysis
+#   .\pipeline\run.ps1 test                         check your api-fortnite.com key
+#   .\pipeline\run.ps1 tournaments [-Region EU] [-Search cash] [-Days 30]   recent tournament windows
+#   .\pipeline\run.ps1 find -Window <eventWindowId> [-Pages 10|all]          collect match IDs into data/match_ids.csv
+#   .\pipeline\run.ps1 pilot [-Limit 10] [-Via api-fortnite]                 download -> extract -> flatten -> validate
 #   .\pipeline\run.ps1 analyze [-Season v37.10]     re-run flatten, validate and zone analysis only
 param(
     [Parameter(Position = 0)][string]$Stage = "help",
-    [int]$Limit = 10, [int]$Count = 3, [string]$Window, [string]$Season, [int]$Players = 60
+    [int]$Limit = 10, [int]$Count = 3, [string]$Window, [string]$Season, [string]$Pages = "10",
+    [string]$Region, [string]$Search, [int]$Days = 30, [string]$Via = "epic"
 )
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)   # repo root
@@ -40,10 +42,16 @@ switch ($Stage) {
         Analyze "data_local"
         Write-Host "These are client replays: expect WARN on track coverage. Tournament server replays should PASS." -ForegroundColor Yellow
     }
-    "tournaments" { Push-Location pipeline/node; if ($Season) { node find_matches.js tournaments --season $Season } else { node find_matches.js tournaments }; Pop-Location }
-    "find" { if (-not $Window) { throw "Use: .\run.ps1 find -Window <eventWindowId>" }; Push-Location pipeline/node; node find_matches.js window $Window --players $Players; Pop-Location }
+    "test" { Push-Location pipeline/node; node find_matches.js test; Pop-Location }
+    "tournaments" {
+        $a = @("tournaments", "--days", $Days)
+        if ($Region) { $a += @("--region", $Region) }
+        if ($Search) { $a += @("--search", $Search) }
+        Push-Location pipeline/node; node find_matches.js @a; Pop-Location
+    }
+    "find" { if (-not $Window) { throw "Use: .\pipeline\run.ps1 find -Window <eventWindowId>" }; Push-Location pipeline/node; node find_matches.js window $Window --pages $Pages; Pop-Location }
     "pilot" {
-        Push-Location pipeline/node; node download.js --limit $Limit; Pop-Location
+        Push-Location pipeline/node; node download.js --limit $Limit --via $Via; Pop-Location
         dotnet (Extractor) data/raw data/parsed --mode full
         Analyze "data"
     }
