@@ -56,6 +56,11 @@ def next_center(rng, pattern, cur, R, r, bus_bearing, prev_angle, strength):
     return [cur[0] + d * math.cos(ang), cur[1] + d * math.sin(ang), 0.0], ang
 
 
+def terrain(x: float, y: float) -> float:
+    """Rolling hills, roughly -10 m to +40 m (Unreal units are centimetres)."""
+    return 1500 + 2500 * math.sin(x / 40000) * math.cos(y / 33000)
+
+
 def make_match(i: int, rng: np.random.Generator, pattern: str, strength: float,
                when: str = "2026-01-01T00:00:00", branch: str = "++Fortnite+Release-99.00",
                sample_dt: float = SAMPLE_DT, position_effect: float = 0.0) -> dict:
@@ -129,7 +134,10 @@ def make_match(i: int, rng: np.random.Generator, pattern: str, strength: float,
                 x += dx / dist * step + rng.normal(0, noise)
                 y += dy / dist * step + rng.normal(0, noise)
                 sky = j < 10
-                z = 15000 - j * 1400 if sky else 1500 + rng.normal(0, 200)
+                # Height: terrain plus built height. With position_effect > 0, better teams build
+                # higher as the game goes on (no advantage before the first storm, full from phase 5).
+                build = position_effect * max(0.0, 1 - 2 * (place - 1) / N_TEAMS) * min(1.0, max(0, zi - 1) / 4) * 1500
+                z = 15000 - j * 1400 if sky else terrain(x, y) + build + abs(rng.normal(0, 150))
                 rows.append([pid, round(float(tt), 2), round(x, 1), round(y, 1), round(z, 1),
                              None, None, None, False, False, sky])
             alive_winner = place == 1
@@ -138,13 +146,25 @@ def make_match(i: int, rng: np.random.Generator, pattern: str, strength: float,
                                 kills=int(rng.poisson(1.5)), team_kills=None,
                                 death_t=None if alive_winner else float(death_t),
                                 death_cause=None if alive_winner else 4,
-                                death_location=None if alive_winner else [x, y, 1500.0],
+                                death_location=None if alive_winner else [x, y, z],
                                 platform="WIN", location_samples_raw=len(ts), location_samples_untimed=0))
             if not alive_winner:
                 kill_feed.append(dict(t=float(death_t), victim_id=pid, finisher_id=None, downed=False,
-                                      revived=False, location=[x, y, 1500.0]))
+                                      revived=False, location=[x, y, z], _place=place))
             pid += 1
         teams.append(dict(team_index=tidx, placement=place, player_ids=member_ids))
+
+    # Credit each death to the nearest player alive at that moment on a better-placed team.
+    arr = np.array([[r[0], r[1], r[2], r[3], r[4]] for r in rows], dtype=float)
+    place_of_pid = {p["id"]: p["placement"] for p in players}
+    pid_place = np.array([place_of_pid[int(i)] for i in arr[:, 0]])
+    for k in kill_feed:
+        near_t = np.abs(arr[:, 1] - k["t"]) <= sample_dt
+        better = pid_place < k.pop("_place")
+        cand = arr[near_t & better]
+        if len(cand):
+            d = np.hypot(cand[:, 2] - k["location"][0], cand[:, 3] - k["location"][1])
+            k["finisher_id"] = int(cand[np.argmin(d), 0])
 
     return dict(
         schema="fn-research/1", match_id=mid, source_file=f"{mid}.replay",

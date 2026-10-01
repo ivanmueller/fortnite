@@ -17,5 +17,8 @@ function mix(a: string, b: string, t: number): string {
 export function seriesColors(names: string[]): string[] {
   const ordered = names.length > 2 && names.every((n) => /^Phase \d+$/.test(n));
   if (ordered) return names.map((_, i) => mix(TEAL, VIOLET, names.length === 1 ? 1 : i / (names.length - 1)));
+  // Height tiers are ordered too: low ground pale, high ground strongest.
+  const tiers: Record<string, string> = { 'Low ground': '#9AA6B6', 'Mid ground': TEAL, 'High ground': VIOLET };
+  if (names.length > 1 && names.every((n) => n in tiers)) return names.map((n) => tiers[n]);
   return names.map((_, i) => CATEGORICAL[i % CATEGORICAL.length]);
 }

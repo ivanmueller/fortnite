@@ -18,6 +18,8 @@ npm run dev         # starts the API (port 8000) and dashboard (port 5173), and 
 
 The dashboard opens in your default browser. If that isn't Chrome, open `http://localhost:5173` in Chrome yourself.
 
+**On Windows, double-click `Start-ZoneLab.bat` instead.** It runs setup and creates the demo data the first time, starts both servers, and opens Chrome when the dashboard is ready. If Zone Lab is already running, it just opens the dashboard. Close its window to stop everything. For a desktop shortcut, right-click the file and choose *Send to → Desktop (create shortcut)*.
+
 ### Live updates
 
 - **Dashboard code** (`web/src`): saving a file updates the open page in place, without a reload.
@@ -40,7 +42,7 @@ The demo seasons have planted behaviour, so you can check the analyses find what
 - **v97.10:** pulls lean toward the bus heading.
 - **v98.10:** every pull hits the edge of the circle.
 
-In the demo, teams that finish lower also tend to rotate late.
+In the demo, teams that finish lower also tend to rotate late, and better teams build height from phase 2 onward, so the higher player wins most fights late in the game. The demo effects are exaggerated so they're easy to see; real ones will be smaller.
 
 ## Analyses
 
@@ -52,6 +54,7 @@ In the demo, teams that finish lower also tend to rotate late.
 | Compare two periods | Did storm behaviour change between selection A and selection B (e.g. two seasons, before and after a patch)? |
 | Position vs placement | Where were teams, relative to the closing circle, when it started to shrink, and how did they finish? |
 | Where eliminations happen | How far eliminations happen from the circle the storm is closing to, by phase |
+| High ground | Does the higher player win fights, do teams holding height finish better, and from which storm phase? |
 | Matches | The selected matches as a table (CSV download) |
 
 Each analysis shows a headline, key numbers, and the evidence: one p-value track per statistical test, with the threshold marked. Below that come charts, tables and notes on how to read the results.

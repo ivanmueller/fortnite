@@ -60,4 +60,4 @@ ALPHA_PARAM = Param("alpha", "Significance threshold", "select", 0.005,
                     [{"value": v, "label": f"p < {v}"} for v in (0.05, 0.01, 0.005, 0.001)],
                     "Many tests run at once, so a strict threshold avoids chasing noise.")
 
-from . import overview, zone_randomness, zone_geometry, compare_periods, positioning, eliminations  # noqa: E402,F401
+from . import overview, zone_randomness, zone_geometry, compare_periods, positioning, eliminations, height  # noqa: E402,F401

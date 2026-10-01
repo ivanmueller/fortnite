@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -59,3 +59,14 @@ def test_missing_dataset_explains_fix(client, monkeypatch):
     monkeypatch.setattr(store, "available", lambda d: False)
     r = client.get("/api/facets?dataset=real")
     assert r.status_code == 404 and "pipeline" in r.json()["detail"]
+
+
+def test_height_finds_planted_late_game_advantage(client):
+    """Demo data: no height advantage before phase 2, strong from phase 5. Fights should show both."""
+    j = client.post("/api/analyses/height/run", json={"filters": DEMO}).json()
+    fights = {t["name"]: t for t in j["tests"] if t["group"] == "Fights by phase"}
+    assert fights, j["headline"]
+    late = [t for name, t in fights.items() if name in {"Phase 5", "Phase 6", "Phase 7"}]
+    assert late and all(t["significant"] for t in late)
+    if "Phase 1" in fights:
+        assert not fights["Phase 1"]["significant"]
