@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -107,3 +107,11 @@ def test_lobby_strength_filter_and_trust_check(client):
     assert any(m["label"] == "Median lobby strength" for m in o["metrics"])
     assert any(m["label"] == "Median lobby PR" for m in o["metrics"])
     assert "Power Rankings" in next(m["detail"] for m in o["metrics"] if m["label"] == "Median lobby strength")
+
+
+def test_rotation_excludes_players_eliminated_before_the_shrink(client):
+    """Players eliminated before the storm moves must not be counted as late rotators."""
+    j = client.post("/api/analyses/rotation/run", json={"filters": DEMO}).json()
+    labels = {m["label"]: m["value"] for m in j["metrics"]}
+    assert "Eliminated before the shrink" in labels and "Rotations" in labels
+    assert any(t["name"] == "Late rotators eliminated more" for t in j["tests"])

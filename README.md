@@ -67,6 +67,7 @@ In the demo, teams that finish lower also tend to rotate late, and better teams 
 | Compare two periods | Did storm behaviour change between selection A and selection B (e.g. two seasons, before and after a patch)? |
 | Position vs placement | Where were teams, relative to the closing circle, when it started to shrink, and how did they finish? |
 | Where eliminations happen | How far eliminations happen from the circle the storm is closing to, by phase |
+| Rotation timing | When do players leave for and reach the next circle, how long are they in the storm, and does rotating late get them eliminated or cost placement? |
 | High ground | Does the higher player win fights, do teams holding height finish better, and from which storm phase? |
 | Matches | The selected matches as a table (CSV download) |
 

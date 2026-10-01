@@ -251,6 +251,62 @@ GUIDES: dict[str, Guide] = {
         limits=["Descriptive only.", "Storm deaths aren't separated from fights yet."],
     ),
 
+    "rotation": Guide(
+        question="When should you rotate? Do players who reach the next circle later get eliminated more and finish worse?",
+        method=[
+            "A rotation is one player, in one storm phase, who is outside the next circle when it's revealed (the "
+            "moment the previous shrink finishes) and still alive when the storm starts moving.",
+            "Departure: first moment they've closed a meaningful part of the gap (a quarter of it, at least 50 m). "
+            "Arrival: first moment they're inside the next circle, measured from the storm starting to close.",
+            "Storm time is reconstructed second by second from each player's position and the storm's timing, because "
+            "Season 42 replays don't record it.",
+            "Timing class: early (inside before the storm moves), with the storm (arrived during the shrink with under "
+            "5 s in the storm), late (5 s or more in the storm, or never arrived).",
+            "Players eliminated before the storm moved aren't classified: their timing never played out, and counting "
+            "them as late would bias the comparison.",
+        ],
+        terms={
+            "Later arrival, worse placement": "Within each match and phase, a Spearman rank correlation between "
+                                              "arrival time and final placement, averaged per match and tested against "
+                                              "zero. Positive means later arrivals finish worse.",
+            "Late rotators eliminated more": "Per match, the share of late rotators eliminated during the shrink minus "
+                                             "the share of early rotators, tested against zero.",
+            "Per match": "One summary per match: the page's main claims.",
+            "Arrival vs placement by phase": "The arrival correlation within each phase, to find when timing matters.",
+            "Eliminated during the shrink: late vs early": "Fisher's exact test per phase on elimination counts.",
+            "Rotations": "Player-phases where a rotation was needed and the player was alive when the storm moved.",
+            "Eliminated before the shrink": "Rotating players eliminated before the storm moved. Reported, not classified.",
+            "Early / with storm / late": "Share of rotations in each timing class.",
+            "Median departure": "Typical seconds between the next circle appearing and the player moving toward it.",
+            "Median arrival": "Typical arrival relative to the storm starting to close; negative is before.",
+            "Median storm time (late)": "Typical storm seconds for late rotations.",
+            "Skill control: average placement by timing within each Power Rankings band": "Placement by timing class "
+                "inside each skill band. If late rotators finish worse within a band, timing matters beyond skill.",
+            "p": P_VALUE,
+        },
+        charts={
+            "Eliminated during the shrink, by rotation timing": "One line per timing class. A gap between Late and Early "
+                "in a phase is the cost of rotating late in that phase.",
+            "Average final placement by rotation timing": "Lower is better. Read with the skill-control table below it.",
+            "When players arrive, by how they finished": "Median arrival per phase for top-10, 11th–50th and 51st-or-"
+                "lower finishers. Lines below zero arrived before the storm moved.",
+            "Arrival relative to the shrink starting": "Every arrival, in seconds from the storm starting to close. Left "
+                "of the dashed line is early.",
+        },
+        conclude=[
+            "The phase table and the elimination chart show where rotating late costs the most. Those are the phases "
+            "to plan rotations earliest.",
+            "Early-game storm does little damage, so many players take it deliberately: a high late share in phases 2–4 "
+            "is a choice, not a mistake. Judge lateness by its elimination cost, phase by phase.",
+            "Check the skill-control table before concluding anything about timing itself.",
+        ],
+        limits=[
+            "Storm time is reconstructed and accurate to a few seconds; sampling is about once per second.",
+            "Associations, not causes: strong players both rotate well and win fights.",
+            "Solo play only so far; team rotations in duos and trios will need a team-level version.",
+        ],
+    ),
+
     "height": Guide(
         question="Does being higher than your opponents win fights and games, and from which storm phase does it start to matter?",
         method=[
