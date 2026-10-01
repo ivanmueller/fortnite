@@ -116,8 +116,15 @@ def health_from_attributes(attr: pd.DataFrame, dmg: pd.DataFrame, players: pd.Da
         a = a[[(mid, i) not in bots for i in a["id"]]]
         hits = dmg[(dmg["match_id"] == mid) & (dmg["target_kind"] == "player")] if not dmg.empty else dmg
         hs, ss, sc = detect_slots(a, hits)
-        note = f"{mid}: health slot {hs}, shield slot {ss}"
-        if hs is None or ss is None:
+        fallback = False
+        if hs is None:
+            # Health has sat in slot 0 (base) / 1 (current) in every season checked (2021-2026), and
+            # slot 0 read realistic health in Season 42. Use it when its values look like health.
+            s0 = a.loc[a["handle"] == 0, "value"]
+            if len(s0) >= 10 and 1 <= s0.median() <= 100 and s0.quantile(0.99) <= 250 and ss != 0:
+                hs, fallback = 0, True
+        note = f"{mid}: health slot {hs}{' (fallback)' if fallback else ''}, shield slot {ss}"
+        if hs is None or ss is None or fallback:
             top = sorted(sc.items(), key=lambda kv: -max(kv[1]))[:6]
             note += ("  [slot: drop rate on shield hits / on other hits: " +
                      ", ".join(f"{k}: {v[0]:.2f}/{v[1]:.2f}" for k, v in top) + "]") if top else \
