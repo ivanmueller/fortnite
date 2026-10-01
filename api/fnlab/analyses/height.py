@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats as sps
 
+from ..conclusion import conclude
 from ..result import Result
 from ..stats import spearman, ttest_mean
 from ..store import df, has_table
@@ -178,6 +179,15 @@ def run(ctx: Context) -> Result:
         tbl.columns = ["Phase"] + [f"{c} avg placement" for c in tbl.columns[1:]]
         r.table("Average placement by height tier and phase", tbl)
 
+    first = next((t["name"] for t in r.tests if t["group"] == "Fights by phase" and t["significant"]), None)
+    conclude(r, ctx, primary=["Fights, per match", "Standing, per match"], alpha=alpha, recommended=100,
+             single_season=False,
+             takeaway_found=("Height is linked to winning" + (f", in fights from {first.lower()} onward" if first else "")
+                             + ". Check both main tests below: fights and final placement."),
+             takeaway_none="No consistent advantage for the higher player or team in this selection.",
+             next_found=["Expand Fights by phase and Standing by phase to see when the advantage starts.",
+                         "Raise the 'level' setting: an effect that survives larger height gaps is more robust."],
+             next_none=["Try a single late phase or a smaller fight distance: height may matter only in close endgame fights."])
     r.notes += [
         "Height is relative: the winner vs the player they beat, or each team vs the other teams in the same match at "
         "that moment. Raw elevation mostly reflects terrain.",

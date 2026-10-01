@@ -70,3 +70,25 @@ def test_height_finds_planted_late_game_advantage(client):
     assert late and all(t["significant"] for t in late)
     if "Phase 1" in fights:
         assert not fights["Phase 1"]["significant"]
+
+
+def test_every_page_has_a_guide(client):
+    for a in client.get("/api/analyses").json():
+        g = a["guide"]
+        assert g and g["question"] and g["method"] and g["conclude"], a["id"]
+
+
+@pytest.mark.parametrize("aid", ANALYSES)
+def test_every_page_concludes(client, aid):
+    j = client.post(f"/api/analyses/{aid}/run", json={"filters": DEMO}).json()
+    c = j["conclusion"]
+    assert c["status"] in {"found", "none", "insufficient", "descriptive"} and c["title"] and c["summary"]
+    assert any(r["label"] == "Real data" and not r["ok"] for r in c["reliability"])  # demo data is flagged
+
+
+def test_conclusion_does_not_overclaim_on_small_random_sample(client):
+    """v96 is random and has only 8 matches here: must not report a pattern, must flag sample size."""
+    j = client.post("/api/analyses/zone_randomness/run", json={"filters": {**DEMO, "seasons": ["v96.10"]}}).json()
+    c = j["conclusion"]
+    assert c["status"] in {"insufficient", "none"}
+    assert any(r["label"] == "Sample size" and not r["ok"] for r in c["reliability"])

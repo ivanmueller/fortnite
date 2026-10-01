@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ..conclusion import conclude
 from ..result import Result
 from ..store import df
 from . import Context, Param, register
@@ -25,7 +26,7 @@ def run(ctx: Context) -> Result:
         return r
     z["u"] = z["u"].clip(0, 1)
     phases = sorted(z["phase"].unique())
-    r.chart("box", f"{label} by phase",
+    r.chart("box", "Distribution by phase",
             [dict(name=f"Phase {int(p)}", values=z.loc[z.phase == p, metric].tolist()) for p in phases],
             y_label=label)
     sample = z.sample(min(len(z), 4000), random_state=0)
@@ -47,6 +48,14 @@ def run(ctx: Context) -> Result:
     r.metric("Storm pulls", f"{len(z):,}")
     r.metric("Phases", len(phases))
     r.metric(f"Overall median", f"{z[metric].median():.2f}", label)
+    iqr = z.groupby("phase")[metric].quantile(0.75) - z.groupby("phase")[metric].quantile(0.25)
+    steady = int(iqr.idxmin()) if len(iqr) else None
+    conclude(r, ctx, primary=[], alpha=0.005, recommended=100,
+             descriptive=(f"Median {label.lower()} runs from {med.min():.2f} (phase {int(med.idxmin())}) to "
+                          f"{med.max():.2f} (phase {int(med.idxmax())}). Phase {steady} is the most consistent from "
+                          "match to match." if steady is not None else "Not enough pulls to describe."),
+             next_none=["Switch the measure to see distance, shrink and edge position in turn.",
+                        "Test whether these pulls are random on Is the storm random?"])
     r.notes.append("Distances are in Unreal units (100 = 1 metre). Ratios are comparable across seasons; raw map "
                    "positions are only comparable within a season.")
     return r

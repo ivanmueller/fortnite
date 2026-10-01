@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from ..conclusion import conclude
 from ..result import Result
 from ..stats import circ_mean, circular_permutation, ks_2samp, rayleigh
 from . import ALPHA_PARAM, Context, register
@@ -50,6 +51,14 @@ def run(ctx: Context) -> Result:
     r.metric("B matches", f"{len(pb):,}", ctx.compare.describe() if ctx.compare else "")
     r.metric("Mean u (A / B)", f"{za['u'].mean():.2f} / {zb['u'].mean():.2f}")
 
+    conclude(r, ctx, primary=["A vs B"], alpha=alpha, recommended=100, single_season=False,
+             takeaway_found="Storm behaviour differs between A and B in: " + ", ".join(changed) + ".",
+             takeaway_none="No measurable change in storm behaviour between A and B.",
+             next_found=["Check the Within A and Within B rows to see which side carries the pattern.",
+                         "Make sure only the period differs between A and B; region or playlist differences also change results."],
+             next_none=["If a pattern was found in A, check Within B: present in both with no difference means it carried over."])
+    r.conclusion["reliability"].insert(1, dict(label="Sample size (B)", ok=len(pb) >= 100,
+        detail=f"{len(pb):,} matches in B; 100+ recommended." if len(pb) < 100 else f"{len(pb):,} matches in B."))
     r.chart("histogram", "Pull distance u", [dict(name="A", values=za["u"].tolist()), dict(name="B", values=zb["u"].tolist())],
             bins=10, range=[0, 1], normalize=True, x_label="u", y_label="Share of pulls")
     r.chart("polar_histogram", "Pull direction relative to bus heading",

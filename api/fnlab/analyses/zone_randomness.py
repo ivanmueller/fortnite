@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from ..conclusion import conclude
 from ..result import Result
 from ..stats import circ_mean, ks_uniform, rayleigh, ttest_mean
 from ..store import df
@@ -96,6 +97,15 @@ def run(ctx: Context) -> Result:
     r.chart("histogram", "Pull distance u", [dict(name="Pulls", values=z["u"].tolist())],
             bins=10, range=[0, 1], x_label="u = (distance moved / max allowed)²", y_label="Pulls",
             reference_lines=[dict(axis="y", value=len(z) / 10, label="If random")])
+    found = [t["reading"].lower() for t in r.tests if t["group"] == g and t["significant"] and t.get("reading")]
+    conclude(r, ctx, primary=[g], alpha=alpha, recommended=200,
+             takeaway_found="Storm pulls are not random in this selection: " + "; ".join(found) + ".",
+             takeaway_none="Storm pulls look random on all four measures: distance, compass direction, relation to "
+                           "the bus and persistence.",
+             next_found=["Expand the phases to find when the effect starts.",
+                         "Open Storm pull geometry to see how large it is in each phase.",
+                         "Repeat per region: a pattern specific to one area can drive the pooled result."],
+             next_none=["Repeat per region or per event window; an effect specific to one part of the map can hide in pooled data."])
     r.notes += [
         "Trust the per-match and per-phase rows. Pooling every pull treats linked pulls as independent and overstates significance.",
         "Island shape (water, edges) can create non-randomness on its own. Confirm any effect on a held-out season.",

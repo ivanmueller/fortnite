@@ -86,7 +86,8 @@ def matches(q: MatchQuery):
 @app.get("/api/analyses")
 def analyses():
     return [dict(id=a.id, title=a.title, summary=a.summary, needs_compare=a.needs_compare,
-                 params=[asdict(p) for p in a.params]) for a in REGISTRY.values()]
+                 params=[asdict(p) for p in a.params], guide=asdict(a.guide) if a.guide else None)
+            for a in REGISTRY.values()]
 
 
 class RunRequest(BaseModel):

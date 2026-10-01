@@ -2,12 +2,13 @@ import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
-import { emptyFilters, usePersistent } from './state';
+import { describe, emptyFilters, usePersistent } from './state';
 import type { AnalysisInfo, DatasetKey, Filters } from './types';
 import { SelectionPanel } from './components/SelectionPanel';
 import { ParamsForm } from './components/ParamsForm';
 import { ResultView } from './components/ResultView';
 import { MatchesView } from './components/MatchesView';
+import { GuidePanel } from './components/GuidePanel';
 
 const MATCHES_TAB = '__matches';
 
@@ -18,6 +19,7 @@ export function App() {
   const [tab, setTab] = usePersistent<{ id: string }>('tab', { id: 'overview' });
   const [paramsById, setParamsById] = usePersistent<Record<string, Record<string, unknown>>>('params', {});
   const [reloadedAt, setReloadedAt] = useState<string | null>(null);
+  const [guideOpen, setGuideOpen] = usePersistent<{ open: boolean }>('guide', { open: true });
 
   // Live reload: the API gets a new boot id every time uvicorn restarts after a code change.
   const health = useQuery({ queryKey: ['health'], queryFn: api.health, refetchInterval: 2000, retry: false });
@@ -108,12 +110,16 @@ export function App() {
               <h1>{current.title}</h1>
               <p>{current.summary}</p>
             </div>
+            {current.guide && <GuidePanel guide={current.guide} summary={current.summary} open={guideOpen.open} onToggle={(open) => setGuideOpen({ open })} />}
             <ParamsForm params={current.params} values={params}
                         onChange={(v) => setParamsById({ ...paramsById, [tab.id]: v })} />
             <div className={`run ${run.isFetching ? 'is-busy' : ''}`} aria-busy={run.isFetching}>
               {run.isError && <p className="notice notice--error">{(run.error as Error).message}</p>}
               {run.data?.status === 'empty' && <p className="notice">{run.data.message}</p>}
-              {run.data?.status === 'ok' && <ResultView result={run.data} alpha={alpha} />}
+              {run.data?.status === 'ok' && (
+                <ResultView result={run.data} alpha={alpha} guide={current.guide} title={current.title}
+                            scope={current.needs_compare ? `A: ${describe(filters)}. B: ${describe(compareFilters)}` : describe(filters)} />
+              )}
               {run.isPending && <p className="muted">Running…</p>}
             </div>
           </>
@@ -131,13 +137,14 @@ function EmptyDataset({ dataset }: { dataset: DatasetKey }) {
     },
     local: {
       title: 'No replays of your own yet',
-      body: <>Parse your newest replays from the Fortnite Demos folder with <code>.\pipeline\run.ps1 local</code> (Windows) or
-        <code> ./pipeline/run.sh local &lt;folder&gt;</code>. They appear here as soon as the pipeline writes <code>data_local/tables</code>.</>,
+      body: <>Double-click <code>ZoneLab-Data.bat</code> in the project folder and choose 6 (after the one-time setup, option 1).
+        Your newest replays from the Fortnite Demos folder appear here as soon as they're processed.</>,
     },
     real: {
       title: 'No tournament data yet',
-      body: <>Find, download and parse tournament replays with the pipeline (<code>pipeline/README.md</code>). The dashboard
-        reads <code>data/tables</code> and updates as soon as the pipeline writes it.</>,
+      body: <>Double-click <code>ZoneLab-Data.bat</code> in the project folder and work through options 1 to 5: setup, your
+        Osirion key, pick a tournament, collect its match IDs, then download and process them. This page fills in as soon
+        as the first matches are processed. The full walkthrough is in <code>docs/REAL_DATA.md</code>.</>,
     },
   };
   return (

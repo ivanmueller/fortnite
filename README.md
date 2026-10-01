@@ -26,6 +26,19 @@ The dashboard opens in your default browser. If that isn't Chrome, open `http://
 - **Analysis code** (`api/`): saving a file restarts the API. The dashboard notices within two seconds, refetches, and shows "Code change picked up" in the top bar.
 - **Data**: when the pipeline rewrites the tables, the next query reads the new files. There's no import step.
 
+## Real data and conclusions
+
+**[docs/REAL_DATA.md](docs/REAL_DATA.md)** walks through it end to end: setup, pulling tournament replays, checking quality, working through the pages, and deciding what counts as a finding. On Windows, double-click **`ZoneLab-Data.bat`** for a numbered menu of every data step.
+
+Every page explains itself:
+
+- **About this page** gives the question, the method, how to draw a conclusion, and the limits.
+- **Every number and test** has a definition on hover.
+- **Every chart** has a line on how to read it.
+- **A conclusion panel** grades the evidence and checks whether the data behind it can be trusted.
+
+The page text lives in `api/fnlab/analyses/guides.py`, so it can be edited in one place.
+
 ## Datasets
 
 Switch between them in the left rail.

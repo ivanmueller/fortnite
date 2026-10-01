@@ -46,6 +46,7 @@ class Result:
     tables: list[dict] = field(default_factory=list)    # {title, columns, rows}
     notes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    conclusion: dict | None = None                       # set by conclusion.conclude()
 
     def metric(self, label: str, value, detail: str | None = None) -> None:
         self.metrics.append(dict(label=label, value=value, detail=detail))

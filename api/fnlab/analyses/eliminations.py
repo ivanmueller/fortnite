@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from ..conclusion import conclude
 from ..result import Result
 from ..store import df, has_table
 from . import Context, Param, register
@@ -45,5 +46,11 @@ def run(ctx: Context) -> Result:
     r.chart("map_points", "Elimination locations",
             [dict(name=f"Phase {int(p)}", x=s.loc[s.phase == p, "x"].tolist(), y=s.loc[s.phase == p, "y"].tolist())
              for p in sorted(s["phase"].unique())], x_label="X", y_label="Y")
+    worst = ph["out"].idxmax() if len(ph) else None
+    conclude(r, ctx, primary=[], alpha=0.005, recommended=100, single_season=False,
+             descriptive=(f"{outside:.0%} of eliminations happen outside the closing circle, most in phase "
+                          f"{int(worst)} ({ph['out'].max():.0%})." if worst is not None else "Not enough eliminations to describe."),
+             next_none=["Compare with Position vs placement for the same phase.",
+                        "Turn on knocks to include fights that were decided but not finished."])
     r.notes.append("Eliminations before the first storm starts closing are excluded, because there's no circle to measure against yet.")
     return r

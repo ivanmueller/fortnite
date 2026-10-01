@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from ..filters import Filters
+from ..guide import Guide
 from ..result import Result
 
 
@@ -43,15 +44,16 @@ class Analysis:
     params: list[Param] = field(default_factory=list)
     needs_compare: bool = False
     min_matches: int = 1
+    guide: Guide | None = None
 
 
 REGISTRY: dict[str, Analysis] = {}
 
 
 def register(id: str, title: str, summary: str, params: list[Param] | None = None,
-             needs_compare: bool = False, min_matches: int = 1):
+             needs_compare: bool = False, min_matches: int = 1, guide: Guide | None = None):
     def wrap(fn):
-        REGISTRY[id] = Analysis(id, title, summary, fn, params or [], needs_compare, min_matches)
+        REGISTRY[id] = Analysis(id, title, summary, fn, params or [], needs_compare, min_matches, guide)
         return fn
     return wrap
 
@@ -61,3 +63,8 @@ ALPHA_PARAM = Param("alpha", "Significance threshold", "select", 0.005,
                     "Many tests run at once, so a strict threshold avoids chasing noise.")
 
 from . import overview, zone_randomness, zone_geometry, compare_periods, positioning, eliminations, height  # noqa: E402,F401
+from .guides import GUIDES  # noqa: E402
+
+for _id, _guide in GUIDES.items():
+    if _id in REGISTRY:
+        REGISTRY[_id].guide = _guide

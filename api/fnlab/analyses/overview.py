@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from ..conclusion import conclude
 from ..result import Result
 from ..store import df
 from . import Context, register
@@ -52,6 +53,16 @@ def run(ctx: Context) -> Result:
     by = (m.groupby(["season", "region"]).size().unstack(fill_value=0)
           .reset_index().rename(columns={"season": "Season"}))
     r.table("Matches by season and region", by)
+    per_season = m.groupby("season").size().sort_values(ascending=False)
+    top, top_n = (per_season.index[0], int(per_season.iloc[0])) if len(per_season) else ("–", 0)
+    ready = (per_season >= 200).sum()
+    conclude(r, ctx, primary=[], alpha=0.005, recommended=200, single_season=False,
+             descriptive=(f"The largest season, {top}, has {top_n:,} matches. "
+                          + (f"{ready} season(s) reach the 200 matches recommended for zone tests."
+                             if ready else "No season yet reaches the 200 matches recommended for zone tests; "
+                             "treat test results as early signals.")),
+             next_none=[f"Filter to {top} and open Is the storm random?" if top_n else "Add matches with the pipeline.",
+                        "Check Storm phases recorded per match: complete matches should all show the same high count."])
     if len(m["season"].dropna().unique()) > 1:
         r.notes.append("This selection mixes seasons. Map changes between seasons can create or hide patterns, "
                        "so run zone analyses one season at a time before comparing.")

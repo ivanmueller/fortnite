@@ -1,4 +1,5 @@
 import type { TestRow } from '../types';
+import { InfoTip } from './InfoTip';
 
 // p-values on a log track from 1 (left) to 1e-12 (right), with the threshold marked.
 const MIN_LOG = -12;
@@ -6,7 +7,7 @@ const pos = (p: number | null) => (p === null ? 0 : Math.min(1, Math.max(0, Math
 const fmtP = (p: number | null) =>
   p === null ? 'n/a' : p < 0.001 ? `p < 0.001` : `p = ${p.toFixed(3)}`;
 
-export function EvidenceStrip({ tests, alpha }: { tests: TestRow[]; alpha: number }) {
+export function EvidenceStrip({ tests, alpha, terms = {} }: { tests: TestRow[]; alpha: number; terms?: Record<string, string> }) {
   if (!tests.length) return null;
   const groups = [...new Set(tests.map((t) => t.group))];
   const threshold = pos(alpha);
@@ -14,7 +15,10 @@ export function EvidenceStrip({ tests, alpha }: { tests: TestRow[]; alpha: numbe
     <section className="evidence" aria-label="Statistical tests">
       <div className="evidence__scale" aria-hidden>
         <span />
-        <span className="evidence__ends"><span>Consistent with chance</span><span>Strong evidence of a pattern</span></span>
+        <span className="evidence__ends">
+          <span>Consistent with chance</span>
+          <span>Strong evidence of a pattern <InfoTip label="the p-value scale" text={`Each dot is a test's p-value on a log scale. ${terms.p ?? ''} The vertical tick marks the threshold (p < ${alpha}); a filled dot has crossed it.`} /></span>
+        </span>
       </div>
       {groups.map((g, gi) => {
         const rows = tests.filter((t) => t.group === g);
@@ -24,7 +28,7 @@ export function EvidenceStrip({ tests, alpha }: { tests: TestRow[]; alpha: numbe
             {rows.map((t, i) => (
               <li key={i} className={`test ${t.significant ? 'is-sig' : ''}`}>
                 <div className="test__name">
-                  {t.name}
+                  {t.name} <InfoTip label={t.name} text={terms[t.name] ?? terms[t.group]} />
                   <span className="test__value">{t.value}</span>
                 </div>
                 <div className="track" role="img"
@@ -43,7 +47,7 @@ export function EvidenceStrip({ tests, alpha }: { tests: TestRow[]; alpha: numbe
         );
         // The first group is the headline evidence and stays open; the rest fold away.
         return gi === 0 || groups.length <= 2 ? (
-          <div className="evidence__group" key={g}><h3>{g}</h3>{list}</div>
+          <div className="evidence__group" key={g}><h3>{g} <InfoTip label={g} text={terms[g]} /></h3>{list}</div>
         ) : (
           <details className="evidence__group" key={g}>
             <summary>

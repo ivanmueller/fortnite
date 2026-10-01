@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from ..conclusion import conclude
 from ..result import Result
 from ..stats import spearman, ttest_mean
 from ..store import df
@@ -75,6 +76,15 @@ def run(ctx: Context) -> Result:
     r.metric("Mean rho", f"{allt['mean']:+.2f}" if np.isfinite(allt.get("mean", np.nan)) else "–",
              "Distance vs placement, averaged per match")
 
+    conclude(r, ctx, primary=["Per match"], alpha=alpha, recommended=100, single_season=False,
+             takeaway_found=(f"Teams farther from the closing circle finish worse (mean rho {allt['mean']:+.2f})."
+                             if allt.get("mean", 0) > 0 else
+                             f"Teams farther from the closing circle finish better (mean rho {allt['mean']:+.2f})."),
+             takeaway_none="No consistent link between distance from the closing circle and final placement.",
+             next_found=["Find the phase where the tier lines separate most: that's when positioning differs most "
+                         "between strong and weak finishers.",
+                         "Compare with Where eliminations happen for the same phases."],
+             next_none=["Try a single phase: an effect confined to late phases can be diluted across all phases."])
     team["bucket"] = pd.cut(team["d"], BUCKETS, labels=BUCKET_LABELS, right=False)
     bk = team.groupby("bucket", observed=False).agg(placement=("placement", "mean"), teams=("placement", "size"))
     shown = bk["placement"].where(bk["teams"] >= MIN_BUCKET)

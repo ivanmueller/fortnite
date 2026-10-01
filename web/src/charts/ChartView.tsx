@@ -25,11 +25,14 @@ class ChartBoundary extends Component<{ children: ReactNode }, { error: string |
   }
 }
 
-export function ChartView({ spec }: { spec: ChartSpec }) {
+export function ChartView({ spec, help }: { spec: ChartSpec; help?: string }) {
   const Render = RENDERERS[spec.kind];
   return (
     <figure className={`chart chart--${spec.kind}`}>
-      <figcaption>{spec.title}</figcaption>
+      <figcaption>
+        {spec.title}
+        {help && <span className="chart__help">{help}</span>}
+      </figcaption>
       <ChartBoundary>
         <Suspense fallback={<div className="chart-loading">Loading chart…</div>}>
           {Render ? <Render spec={spec} /> : <p className="chart-error">No renderer for “{spec.kind}”.</p>}

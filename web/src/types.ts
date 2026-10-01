@@ -35,12 +35,33 @@ export interface ParamSpec {
   help?: string | null;
 }
 
+export interface Guide {
+  question: string;
+  method: string[];
+  terms: Record<string, string>;
+  charts: Record<string, string>;
+  conclude: string[];
+  limits: string[];
+}
+
 export interface AnalysisInfo {
   id: string;
   title: string;
   summary: string;
   needs_compare: boolean;
   params: ParamSpec[];
+  guide: Guide | null;
+}
+
+export type Strength = 'strong' | 'clear' | 'weak' | 'none';
+
+export interface Conclusion {
+  status: 'found' | 'none' | 'insufficient' | 'descriptive';
+  title: string;
+  summary: string;
+  evidence: { label: string; detail: string; strength: Strength; p: number | null; n: number }[];
+  reliability: { label: string; ok: boolean; detail: string }[];
+  next_steps: string[];
 }
 
 export type ChartKind = 'bar' | 'stacked_bar' | 'line' | 'histogram' | 'polar_histogram' | 'box' | 'map_points';
@@ -91,6 +112,7 @@ export interface AnalysisResult {
   tables: TableSpec[];
   notes: string[];
   warnings: string[];
+  conclusion: Conclusion | null;
   n_matches: number;
   n_compare: number;
   params: Record<string, unknown>;
