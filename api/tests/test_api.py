@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -156,3 +156,10 @@ def test_pages_point_at_real_analyses(client):
     j = client.post(f"/api/analyses/{storm['analysis']}/run", json={"filters": DEMO}).json()
     titles = {c["title"] for c in j["charts"]}
     assert all(c in titles for c in storm["charts"] if c != "Where endgames land" or "pois" in titles)
+
+
+def test_endgame_height_finds_planted_advantage(client):
+    """Demo data: better teams hold height late, so endgame high ground must come out ahead of low ground."""
+    j = client.post("/api/analyses/endgame_height/run", json={"filters": DEMO}).json()
+    main = next(t for t in j["tests"] if t["name"] == "Higher teams finish better in the endgame")
+    assert main["significant"] and "finishing better" in main["reading"]

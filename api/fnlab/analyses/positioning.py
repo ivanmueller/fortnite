@@ -96,7 +96,7 @@ def run(ctx: Context) -> Result:
     r.chart("bar", "How teams finished, by distance from the closing zone",
             [dict(name="Rivals who finished ahead", x=BUCKET_LABELS, y=shown.round(0).tolist())],
             x_label="Distance from the next zone's centre, in zone widths (1 or less = inside)",
-            y_label="% of rivals alive then who finished ahead",
+            y_label="Rivals who finished ahead (%)",
             reference_lines=[dict(axis="y", value=50, label="Average")])
     tiers = team.groupby(["phase", "tier"], observed=False)["d"].apply(lambda s: (s <= 1).mean()).unstack()
     r.chart("line", "Share of teams inside the closing circle at shrink start",

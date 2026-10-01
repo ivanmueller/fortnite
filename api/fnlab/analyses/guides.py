@@ -585,6 +585,89 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "endgame_height": Guide(
+        question="In the endgame, does rotating through high ground or low ground pay off?",
+        method=[
+            "Endgame means zone 6 on: the 50/50s, shifted and moving zones. Early-game height is left out on purpose: it "
+            "mostly reflects where players landed, not a positioning choice.",
+            "When each zone starts closing, every team's average height is ranked against the other teams alive at that "
+            "moment: low ground (bottom third), mid ground, high ground (top third).",
+            "A team's path is its tiers across the endgame zones it was alive for: held high ground, climbed, mixed, "
+            "dropped, or stayed low.",
+            "Outcomes compare each team only with rivals alive at the same moment, so late-game survivors don't flatter "
+            "any tier.",
+        ],
+        terms={
+            "Higher teams finish better in the endgame": "Within each endgame zone, the link between a team's height rank "
+                                                         "and its final placement, summarised per match.",
+            "Holding high beats staying low": "Per match, how much better (or worse) teams that held high ground finished "
+                                              "than teams that stayed low, in points of finishing rank.",
+            "Teams tracked through the endgame": "Teams alive for at least two endgame zones.",
+            "Held high ground": "Share of those teams that spent most of the endgame in the top third by height.",
+            "Stayed low": "Share that spent most of the endgame in the bottom third.",
+            "Typical height gap, high vs low": "Median difference in average height between high- and low-ground teams.",
+            "Endgame height paths": "Each path: how many teams took it and how they finished against other endgame teams.",
+            "Per match": "One summary per match: the page's main claims.",
+            "By zone": "The same link, zone by zone.",
+            "p": P_VALUE,
+        },
+        charts={
+            "How teams finished, by endgame height path": "Each bar: the share of other endgame teams that teams on this "
+                "path finished ahead of. Above the dashed 50% line means better than average.",
+            "How each height finished, zone by zone": "For each zone, how low, mid and high-ground teams finished against "
+                "the rivals alive then. Lines above 50% did better than average.",
+            "Teams surviving each zone, by height": "Share of teams in each tier still alive when the next zone closes.",
+        },
+        conclude=[
+            "If held high and climbed both beat stayed low, the endgame rewards getting height, even late.",
+            "If the zone-by-zone lines only separate in moving zones, height matters most once the storm keeps moving.",
+        ],
+        limits=[
+            "Height is measured at each zone's start; a team that rotates low and builds up mid-zone counts as low.",
+            "Associations, not causes: stronger teams may both take height and win more.",
+        ],
+    ),
+
+    "height_damage": Guide(
+        question="When we need damage (surge), which height over the opponent deals the most damage for the least taken back?",
+        method=[
+            "Every hit between players is paired with both players' positions at that moment: the attacker's height over "
+            "the target, and the range.",
+            "Hits between two teams no more than 15 s apart form one exchange. For each side: damage dealt, damage taken "
+            "back, its average height over the other side, and the typical range.",
+            "From zone 4 on, when surge becomes relevant; earlier fights mostly reflect the landing.",
+        ],
+        terms={
+            "Higher side wins the damage trade": "Per match, the link between a side's height over its opponent and its net "
+                                                 "damage (dealt minus taken back) in each exchange.",
+            "By range": "The same link at close, mid and long range.",
+            "Exchanges": "Runs of hits between two teams from zone 4 on.",
+            "Trade from 15 m+ above": "Damage dealt for every 1 taken back when 15 m or more above the opponent.",
+            "Trade from 5–15 m above": "The same for a smaller height edge.",
+            "One-sided tags from 15 m+ above": "Share of exchanges from 15 m+ above where the higher side took no damage back.",
+            "Damage trade by range and height": "Every range and height band: exchanges, damage dealt and taken back, the "
+                                                "trade, and how often it was one-sided.",
+            "Per match": "One summary per match: the page's main claim.",
+            "p": P_VALUE,
+        },
+        charts={
+            "Damage dealt for every 1 taken back, by height and range": "One line per range. Above the dashed line at 1, "
+                "that height deals more than it takes back. Level ground is always about 1 by definition.",
+            "Damage dealt and taken back, by height over the opponent": "Average damage dealt and taken back per exchange. "
+                "The gap between the bars is the height advantage.",
+            "One-sided tags, by height over the opponent": "How often each height dealt damage and took none back: the "
+                                                           "safe tags a surge tower is for.",
+        },
+        conclude=[
+            "The height at which the range lines rise clearly above 1 is where tagging becomes cheap damage.",
+            "A high one-sided share from far above is the case for building a tower before a surge check.",
+        ],
+        limits=[
+            "Damage counts hits on players only; it doesn't see damage absorbed by builds.",
+            "Bands with fewer than 15 exchanges are left blank.",
+        ],
+    ),
+
     "height": Guide(
         question="Does being higher than your opponents win fights and games, and from which storm phase does it start to matter?",
         method=[
