@@ -20,7 +20,7 @@ import duckdb
 import numpy as np
 import pandas as pd
 
-TABLES = ["health", "damage", "chests", "pickups", "weapons_held", "builds"]
+TABLES = ["health", "damage", "chests", "pickups", "weapons_held", "builds", "attributes"]
 NEAR_CM = 300
 
 RARITY = [("_Mythic", "mythic"), ("_SR_", "legendary"), ("_VR_", "epic"), ("_R_", "rare"), ("_UC_", "uncommon"), ("_C_", "common")]
@@ -66,11 +66,83 @@ def collect(doc: dict, mid: str) -> dict[str, pd.DataFrame]:
     return out
 
 
+def detect_slots(attr: pd.DataFrame, hits: pd.DataFrame) -> tuple[int | None, int | None, dict]:
+    """
+    Which slots of the raw health record are health and shield, for one match. A slot whose value
+    drops right after hits flagged as shield hits is the shield; one that drops after hits that
+    aren't shield hits is health. Returns (health_slot, shield_slot, scores).
+    """
+    hits = hits[hits["target_id"].notna()].copy()
+    if attr.empty or hits.empty:
+        return None, None, {}
+    hits["target_id"] = hits["target_id"].astype("int64")
+    hits["shield_hit"] = hits["shield_hit"].fillna(False).astype(bool)
+    scores = {}
+    for h, a in attr.groupby("handle"):
+        if len(a) < 10 or a["value"].max() > 250 or a["value"].min() < -100:
+            continue
+        a = a.dropna(subset=["id"]).astype({"id": "int64"}).sort_values("t")
+        e = hits.sort_values("t")
+        before = pd.merge_asof(e.assign(tb=e["t"] - 0.05).sort_values("tb"), a.rename(columns={"t": "tb", "value": "v0", "id": "target_id"})[["tb", "target_id", "v0"]],
+                               on="tb", by="target_id", direction="backward")
+        after = pd.merge_asof(e.assign(ta=e["t"] + 1.0).sort_values("ta"), a.rename(columns={"t": "ta", "value": "v1", "id": "target_id"})[["ta", "target_id", "v1"]],
+                              on="ta", by="target_id", direction="backward")
+        m = before.merge(after[["t", "target_id", "v1"]], on=["t", "target_id"], how="inner").dropna(subset=["v0", "v1"])
+        if len(m) < 10:
+            continue
+        drop = m["v1"] < m["v0"]
+        scores[int(h)] = (drop[m["shield_hit"]].mean() if m["shield_hit"].any() else 0.0,
+                          drop[~m["shield_hit"]].mean() if (~m["shield_hit"]).any() else 0.0)
+    if not scores:
+        return None, None, {}
+    # Shield: drops on shield hits far more than on other hits. Health: of the slots that drop more on
+    # non-shield hits, the one that drops most often. Ties (base/current copies of one attribute) go to
+    # the lowest slot.
+    shield = max(sorted(scores), key=lambda k: scores[k][0] - scores[k][1])
+    cands = [k for k in sorted(scores) if scores[k][1] > scores[k][0]]
+    health = max(cands, key=lambda k: scores[k][1]) if cands else None
+    shield = shield if scores[shield][0] >= 0.5 and scores[shield][0] - scores[shield][1] >= 0.2 else None
+    health = health if health is not None and scores[health][1] >= 0.5 else None
+    return health, shield, scores
+
+
+def health_from_attributes(attr: pd.DataFrame, dmg: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """Rebuild the health table (t, id, health, shield) from raw record slots, per match."""
+    frames, notes = [], []
+    for mid, a in attr.groupby("match_id"):
+        hits = dmg[(dmg["match_id"] == mid) & (dmg["target_kind"] == "player")] if not dmg.empty else dmg
+        hs, ss, _ = detect_slots(a, hits)
+        notes.append(f"{mid}: health slot {hs}, shield slot {ss}")
+        if hs is None:
+            continue
+        keep = a[a["handle"].isin([hs, ss])].dropna(subset=["id"])
+        wide = keep.pivot_table(index=["id", "t"], columns="handle", values="value", aggfunc="last").sort_index()
+        wide = wide.groupby(level="id").ffill()
+        f = pd.DataFrame({"health": wide[hs].clip(lower=0) if hs in wide else np.nan,
+                          "shield": wide[ss].fillna(0).clip(lower=0) if ss is not None and ss in wide else np.nan}).reset_index()
+        f.insert(0, "match_id", mid)
+        frames.append(f)
+    return (pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()), notes
+
+
 def finish(out: dict, ev: dict[str, list[pd.DataFrame]]) -> None:
     """Concatenate per-match event frames into out[...], classify items, infer missing openers and takers."""
     for name in TABLES:
         frames = ev.get(name) or []
         out[name] = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+    # Health and shield from the raw health record, where the extractor captured it.
+    attr = out.pop("attributes")
+    if not attr.empty:
+        rebuilt, notes = health_from_attributes(attr, out["damage"])
+        for n in notes[:3]:
+            print(f"  health record: {n}")
+        if len(notes) > 3:
+            print(f"  health record: ... {len(notes) - 3} more matches")
+        if not rebuilt.empty:
+            done = set(rebuilt["match_id"])
+            old = out["health"]
+            out["health"] = pd.concat([rebuilt, old[~old["match_id"].isin(done)]] if not old.empty else [rebuilt], ignore_index=True)
 
     for name, col in (("pickups", "item"), ("weapons_held", "weapon")):
         df = out[name]

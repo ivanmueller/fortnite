@@ -40,6 +40,90 @@ public abstract class ContainerExport : INetFieldExportGroup
     [NetFieldExport("ReplicatedLootTier", RepLayoutCmdType.PropertyInt)] public int? ReplicatedLootTier { get; set; }
 }
 
+// Raw health record: every slot, so the table builder can find which slot is health and which is the
+// shield each season (Epic adds attributes, shifting slots). Registered before the parser's own
+// HealthSet definition, which then gets ignored; if load order ever differs, the parser's version is
+// used instead and only health is available.
+[NetFieldExportGroup("/Script/FortniteGame.FortRegenHealthSet", ParseMode.Minimal)]
+public sealed class RegenHealthRaw : INetFieldExportGroup
+{
+    [NetFieldExportHandle(0, RepLayoutCmdType.PropertyFloat)] public float? H0 { get; set; }
+    [NetFieldExportHandle(1, RepLayoutCmdType.PropertyFloat)] public float? H1 { get; set; }
+    [NetFieldExportHandle(2, RepLayoutCmdType.PropertyFloat)] public float? H2 { get; set; }
+    [NetFieldExportHandle(3, RepLayoutCmdType.PropertyFloat)] public float? H3 { get; set; }
+    [NetFieldExportHandle(4, RepLayoutCmdType.PropertyFloat)] public float? H4 { get; set; }
+    [NetFieldExportHandle(5, RepLayoutCmdType.PropertyFloat)] public float? H5 { get; set; }
+    [NetFieldExportHandle(6, RepLayoutCmdType.PropertyFloat)] public float? H6 { get; set; }
+    [NetFieldExportHandle(7, RepLayoutCmdType.PropertyFloat)] public float? H7 { get; set; }
+    [NetFieldExportHandle(8, RepLayoutCmdType.PropertyFloat)] public float? H8 { get; set; }
+    [NetFieldExportHandle(9, RepLayoutCmdType.PropertyFloat)] public float? H9 { get; set; }
+    [NetFieldExportHandle(10, RepLayoutCmdType.PropertyFloat)] public float? H10 { get; set; }
+    [NetFieldExportHandle(11, RepLayoutCmdType.PropertyFloat)] public float? H11 { get; set; }
+    [NetFieldExportHandle(12, RepLayoutCmdType.PropertyFloat)] public float? H12 { get; set; }
+    [NetFieldExportHandle(13, RepLayoutCmdType.PropertyFloat)] public float? H13 { get; set; }
+    [NetFieldExportHandle(14, RepLayoutCmdType.PropertyFloat)] public float? H14 { get; set; }
+    [NetFieldExportHandle(15, RepLayoutCmdType.PropertyFloat)] public float? H15 { get; set; }
+    [NetFieldExportHandle(16, RepLayoutCmdType.PropertyFloat)] public float? H16 { get; set; }
+    [NetFieldExportHandle(17, RepLayoutCmdType.PropertyFloat)] public float? H17 { get; set; }
+    [NetFieldExportHandle(18, RepLayoutCmdType.PropertyFloat)] public float? H18 { get; set; }
+    [NetFieldExportHandle(19, RepLayoutCmdType.PropertyFloat)] public float? H19 { get; set; }
+    [NetFieldExportHandle(20, RepLayoutCmdType.PropertyFloat)] public float? H20 { get; set; }
+    [NetFieldExportHandle(21, RepLayoutCmdType.PropertyFloat)] public float? H21 { get; set; }
+    [NetFieldExportHandle(22, RepLayoutCmdType.PropertyFloat)] public float? H22 { get; set; }
+    [NetFieldExportHandle(23, RepLayoutCmdType.PropertyFloat)] public float? H23 { get; set; }
+    [NetFieldExportHandle(24, RepLayoutCmdType.PropertyFloat)] public float? H24 { get; set; }
+    [NetFieldExportHandle(25, RepLayoutCmdType.PropertyFloat)] public float? H25 { get; set; }
+    [NetFieldExportHandle(26, RepLayoutCmdType.PropertyFloat)] public float? H26 { get; set; }
+    [NetFieldExportHandle(27, RepLayoutCmdType.PropertyFloat)] public float? H27 { get; set; }
+    [NetFieldExportHandle(28, RepLayoutCmdType.PropertyFloat)] public float? H28 { get; set; }
+    [NetFieldExportHandle(29, RepLayoutCmdType.PropertyFloat)] public float? H29 { get; set; }
+    [NetFieldExportHandle(30, RepLayoutCmdType.PropertyFloat)] public float? H30 { get; set; }
+    [NetFieldExportHandle(31, RepLayoutCmdType.PropertyFloat)] public float? H31 { get; set; }
+    [NetFieldExportHandle(32, RepLayoutCmdType.PropertyFloat)] public float? H32 { get; set; }
+    [NetFieldExportHandle(33, RepLayoutCmdType.PropertyFloat)] public float? H33 { get; set; }
+    [NetFieldExportHandle(34, RepLayoutCmdType.PropertyFloat)] public float? H34 { get; set; }
+    [NetFieldExportHandle(35, RepLayoutCmdType.PropertyFloat)] public float? H35 { get; set; }
+    [NetFieldExportHandle(36, RepLayoutCmdType.PropertyFloat)] public float? H36 { get; set; }
+    [NetFieldExportHandle(37, RepLayoutCmdType.PropertyFloat)] public float? H37 { get; set; }
+    [NetFieldExportHandle(38, RepLayoutCmdType.PropertyFloat)] public float? H38 { get; set; }
+    [NetFieldExportHandle(39, RepLayoutCmdType.PropertyFloat)] public float? H39 { get; set; }
+    [NetFieldExportHandle(40, RepLayoutCmdType.PropertyFloat)] public float? H40 { get; set; }
+    [NetFieldExportHandle(41, RepLayoutCmdType.PropertyFloat)] public float? H41 { get; set; }
+    [NetFieldExportHandle(42, RepLayoutCmdType.PropertyFloat)] public float? H42 { get; set; }
+    [NetFieldExportHandle(43, RepLayoutCmdType.PropertyFloat)] public float? H43 { get; set; }
+    [NetFieldExportHandle(44, RepLayoutCmdType.PropertyFloat)] public float? H44 { get; set; }
+    [NetFieldExportHandle(45, RepLayoutCmdType.PropertyFloat)] public float? H45 { get; set; }
+    [NetFieldExportHandle(46, RepLayoutCmdType.PropertyFloat)] public float? H46 { get; set; }
+    [NetFieldExportHandle(47, RepLayoutCmdType.PropertyFloat)] public float? H47 { get; set; }
+    [NetFieldExportHandle(48, RepLayoutCmdType.PropertyFloat)] public float? H48 { get; set; }
+    [NetFieldExportHandle(49, RepLayoutCmdType.PropertyFloat)] public float? H49 { get; set; }
+    [NetFieldExportHandle(50, RepLayoutCmdType.PropertyFloat)] public float? H50 { get; set; }
+    [NetFieldExportHandle(51, RepLayoutCmdType.PropertyFloat)] public float? H51 { get; set; }
+    [NetFieldExportHandle(52, RepLayoutCmdType.PropertyFloat)] public float? H52 { get; set; }
+    [NetFieldExportHandle(53, RepLayoutCmdType.PropertyFloat)] public float? H53 { get; set; }
+    [NetFieldExportHandle(54, RepLayoutCmdType.PropertyFloat)] public float? H54 { get; set; }
+    [NetFieldExportHandle(55, RepLayoutCmdType.PropertyFloat)] public float? H55 { get; set; }
+    [NetFieldExportHandle(56, RepLayoutCmdType.PropertyFloat)] public float? H56 { get; set; }
+    [NetFieldExportHandle(57, RepLayoutCmdType.PropertyFloat)] public float? H57 { get; set; }
+    [NetFieldExportHandle(58, RepLayoutCmdType.PropertyFloat)] public float? H58 { get; set; }
+    [NetFieldExportHandle(59, RepLayoutCmdType.PropertyFloat)] public float? H59 { get; set; }
+    [NetFieldExportHandle(60, RepLayoutCmdType.PropertyFloat)] public float? H60 { get; set; }
+    [NetFieldExportHandle(61, RepLayoutCmdType.PropertyFloat)] public float? H61 { get; set; }
+    [NetFieldExportHandle(62, RepLayoutCmdType.PropertyFloat)] public float? H62 { get; set; }
+    [NetFieldExportHandle(63, RepLayoutCmdType.PropertyFloat)] public float? H63 { get; set; }
+    [NetFieldExportHandle(64, RepLayoutCmdType.PropertyFloat)] public float? H64 { get; set; }
+    [NetFieldExportHandle(65, RepLayoutCmdType.PropertyFloat)] public float? H65 { get; set; }
+    [NetFieldExportHandle(66, RepLayoutCmdType.PropertyFloat)] public float? H66 { get; set; }
+    [NetFieldExportHandle(67, RepLayoutCmdType.PropertyFloat)] public float? H67 { get; set; }
+    [NetFieldExportHandle(68, RepLayoutCmdType.PropertyFloat)] public float? H68 { get; set; }
+    [NetFieldExportHandle(69, RepLayoutCmdType.PropertyFloat)] public float? H69 { get; set; }
+    [NetFieldExportHandle(70, RepLayoutCmdType.PropertyFloat)] public float? H70 { get; set; }
+    [NetFieldExportHandle(71, RepLayoutCmdType.PropertyFloat)] public float? H71 { get; set; }
+    public static readonly (int Handle, System.Reflection.PropertyInfo Prop)[] Slots =
+        typeof(RegenHealthRaw).GetProperties().Where(p => p.Name.StartsWith("H"))
+            .Select(p => (int.Parse(p.Name[1..]), p)).ToArray();
+}
+
 public class EventTable
 {
     public string[] Columns { get; set; } = Array.Empty<string>();
@@ -54,6 +138,7 @@ public class MatchEvents
     public EventTable Pickups { get; set; } = new();
     public EventTable WeaponsHeld { get; set; } = new();
     public EventTable Builds { get; set; } = new();
+    public EventTable Attributes { get; set; } = new();
 }
 
 public class EventCapture
@@ -76,6 +161,7 @@ public class EventCapture
     readonly Dictionary<uint, Build> _builds = new();
     readonly Dictionary<uint, Chest> _chests = new();
     uint Key(uint ch) => _channelToActor.TryGetValue(ch, out var g) ? g : 0x8000_0000u | ch;
+    readonly List<object?[]> _attributes = new();
     readonly List<object?[]> _health = new(), _damage = new(), _chestRows = new(), _pickupRows = new(), _heldRows = new(), _buildRows = new();
     static readonly Dictionary<Type, string> _pathOf = new();
 
@@ -151,6 +237,14 @@ public class EventCapture
             case BatchedDamageCues dc:
                 Damage(ch, dc);
                 break;
+            case RegenHealthRaw raw:
+                {
+                    var pid = PlayerOfPawnChannel(ch);
+                    foreach (var (handle, prop) in RegenHealthRaw.Slots)
+                        if (prop.GetValue(raw) is float v && float.IsFinite(v))
+                            _attributes.Add(new object?[] { R(_now), pid, handle, Math.Round(v, 3) });
+                    break;
+                }
             case HealthSet hs:
                 {
                     var (h, s) = _hp.TryGetValue(ch, out var v) ? v : (-1.0, 0.0);
@@ -253,6 +347,7 @@ public class EventCapture
             Pickups = new EventTable { Columns = new[] { "spawn_t", "item", "count", "x", "y", "z", "tossed", "picked_t", "picked_by", "gone_t" }, Rows = _pickupRows },
             WeaponsHeld = new EventTable { Columns = new[] { "t", "id", "weapon" }, Rows = held },
             Builds = new EventTable { Columns = new[] { "t", "kind", "team_index", "player_placed", "max_health", "x", "y", "z", "destroyed_t" }, Rows = _buildRows },
+            Attributes = new EventTable { Columns = new[] { "t", "id", "handle", "value" }, Rows = _attributes },
         };
     }
 }
