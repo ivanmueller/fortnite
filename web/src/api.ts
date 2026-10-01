@@ -1,4 +1,5 @@
-import type { AnalysisInfo, AnalysisResult, DatasetKey, Facets, Filters, Health, MatchList, PageInfo } from './types';
+import type { AnalysisInfo, AnalysisResult, DataStatus, DatasetKey, DownloadPlan, Facets, Filters, Health, JobDetail, JobSummary,
+  MatchList, PageInfo, TournamentRow } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -31,6 +32,18 @@ export const api = {
   facets: (dataset: DatasetKey) => request<Facets>(`/api/facets?dataset=${dataset}`),
   analyses: () => request<AnalysisInfo[]>('/api/analyses'),
   pages: () => request<PageInfo[]>('/api/pages'),
+  dataStatus: () => request<DataStatus>('/api/data/status'),
+  jobs: () => request<JobSummary[]>('/api/data/jobs'),
+  job: (id: string) => request<JobDetail>(`/api/data/jobs/${id}`),
+  startJob: (kind: string, params: Record<string, unknown> = {}) =>
+    request<JobSummary>('/api/data/jobs', { method: 'POST', body: JSON.stringify({ kind, params }) }),
+  cancelJob: (id: string) => request<JobSummary>(`/api/data/jobs/${id}/cancel`, { method: 'POST' }),
+  tournaments: (q: { search: string; region: string; days: number; upcoming: boolean }) =>
+    request<{ rows: TournamentRow[]; total: number }>(`/api/data/tournaments?${new URLSearchParams({
+      search: q.search, region: q.region, days: String(q.days), upcoming: String(q.upcoming) })}`),
+  plan: (limit: number, minTop: number) => request<DownloadPlan>(`/api/data/plan?limit=${limit}&min_top=${minTop}`),
+  saveSettings: (s: { data_dir?: string; keep_raw?: boolean; fortnite_api_key?: string }) =>
+    request<{ ok: boolean }>('/api/data/settings', { method: 'PUT', body: JSON.stringify(s) }),
   matches: (filters: Filters, limit = 200) =>
     request<MatchList>('/api/matches', { method: 'POST', body: JSON.stringify({ filters: cleanFilters(filters), limit }) }),
   run: (id: string, filters: Filters, params: Record<string, unknown>, compare?: Filters) =>

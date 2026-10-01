@@ -6,6 +6,7 @@ import type { Filters, PageInfo } from './types';
 import { SelectionPanel } from './components/SelectionPanel';
 import { SectionView } from './components/SectionView';
 import { MatchesView } from './components/MatchesView';
+import { DataPage } from './components/DataPage';
 
 export const APP_NAME = 'Vantage';
 export const APP_TAGLINE = 'Competitive Fortnite analytics';
@@ -40,7 +41,8 @@ export function App() {
   const facets = useQuery({ queryKey: ['facets', dataset, bootId], queryFn: () => api.facets(dataset), enabled: datasetReady });
   const pages = useQuery({ queryKey: ['pages', bootId], queryFn: api.pages, enabled: !!bootId });
   const analyses = useQuery({ queryKey: ['analyses', bootId], queryFn: api.analyses, enabled: !!bootId });
-  const page: PageInfo | undefined = pages.data?.find((p) => p.id === tab.id) ?? pages.data?.[0];
+  const onData = tab.id === 'data';
+  const page: PageInfo | undefined = onData ? undefined : pages.data?.find((p) => p.id === tab.id) ?? pages.data?.[0];
   const compareFilters = { ...compare, dataset };
   const counts = useQuery({
     queryKey: ['count', filters, bootId], queryFn: () => api.matches(filters, 1), enabled: datasetReady,
@@ -53,7 +55,7 @@ export function App() {
   const scope = page?.needs_compare ? `A: ${describe(filters)}. B: ${describe(compareFilters)}` : describe(filters);
 
   return (
-    <div className="app">
+    <div className={`app ${onData ? 'app--wide' : ''}`}>
       <header className="topbar">
         <div className="brand">
           <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden>
@@ -70,14 +72,14 @@ export function App() {
         </div>
       </header>
 
-      <aside className="rail">
+      {!onData && <aside className="rail">
         <SelectionPanel title={page?.needs_compare ? 'Group A' : 'Selection'} filters={filters} onChange={setFilters}
                         facets={facets.data} count={counts.data?.total} />
         {page?.needs_compare && (
           <SelectionPanel title="Group B" filters={compareFilters} onChange={(f) => setCompare(f)}
                           facets={facets.data} count={compareCount.data?.total} />
         )}
-      </aside>
+      </aside>}
 
       <main className="main">
         <nav className="tabs" aria-label="Pages">
@@ -85,19 +87,21 @@ export function App() {
             <button key={p.id} className={page?.id === p.id ? 'is-on' : ''} aria-current={page?.id === p.id ? 'page' : undefined}
                     onClick={() => setTab({ id: p.id })}>{p.title}</button>
           ))}
+          <button className={`tabs__data ${onData ? 'is-on' : ''}`} aria-current={onData ? 'page' : undefined}
+                  onClick={() => setTab({ id: 'data' })}>Data</button>
         </nav>
 
         {!health.data && !health.isError && <p className="muted">Connecting…</p>}
-        {health.data && !datasetReady && (
+        {onData && health.data && <DataPage />}
+        {!onData && health.data && !datasetReady && (
           <div className="empty">
             <h1>No tournament data yet</h1>
-            <p>Double-click <code>Vantage-Data.bat</code> in the project folder and work through options 1 to 5: setup, a one-time
-              Epic login, pick a tournament, collect its match IDs, then download and process them. This page fills in as soon as
-              the first matches are processed. The full walkthrough is in <code>docs/REAL_DATA.md</code>.</p>
+            <p>Open the <button className="link" onClick={() => setTab({ id: 'data' })}>Data</button> tab to sign in to Epic, pick
+              tournaments and download them. This page fills in as soon as the first matches are processed.</p>
           </div>
         )}
 
-        {datasetReady && page && (
+        {!onData && datasetReady && page && (
           <>
             <div className="intro">
               <h1>{page.title}</h1>

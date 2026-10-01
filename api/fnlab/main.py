@@ -87,6 +87,11 @@ def matches(q: MatchQuery):
     return clean(dict(total=n, columns=list(rows.columns), rows=rows.astype(object).where(rows.notna(), None).values.tolist()))
 
 
+from .datamgr import router as data_router  # noqa: E402
+
+app.include_router(data_router)
+
+
 @app.get("/api/pages")
 def pages():
     """The dashboard's pages: which analyses each one groups, and what each section features."""

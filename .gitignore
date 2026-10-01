@@ -25,3 +25,4 @@ data_synthetic/
 data_local/
 data/tournaments.csv
 data/match_ids.csv
+.epic-auth.json.expired

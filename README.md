@@ -41,7 +41,7 @@ The page text lives in `api/fnlab/analyses/guides.py`, so it can be edited in on
 
 ## Datasets
 
-The dashboard shows your tournament data (`data/tables`, or the folder chosen with data menu option D). Fill it with `Vantage-Data.bat` (see `docs/REAL_DATA.md`). Replay files from elsewhere, such as a team's archive, go in with option 6.
+The dashboard shows your tournament data (`data/tables`, or the folder chosen with data menu option D). Fill it from the dashboard's **Data** page (or `Vantage-Data.bat`) (see `docs/REAL_DATA.md`). Replay files from elsewhere, such as a team's archive, go in with option 6.
 
 The synthetic demo data (`data_synthetic/tables`, `npm run demo-data`) is used only by the automated tests.
 

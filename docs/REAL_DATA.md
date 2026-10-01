@@ -9,6 +9,21 @@ This guide takes you from an empty dashboard to findings you can defend:
 
 Everything on Windows runs from **`Vantage-Data.bat`** (double-click it in the project folder for a numbered menu) and **`Start-Vantage.bat`** (the dashboard).
 
+## Using the Data page (recommended)
+
+Everything below can be done from the dashboard: open Vantage (`Start-Vantage.bat`) and click **Data** at the top right.
+
+- **Status cards** show your Epic sign-in, the replay parser, matches collected, waiting and ready, Power Rankings, map names and storage.
+- **Sign in to Epic** appears when you're signed out: open Epic's page, paste the code, done.
+- **Weekly tier-1 collection** runs the weekly routine in one click, optionally refreshing Power Rankings first.
+- **Quick actions:** refresh Power Rankings, update map names, rebuild tables, re-process every match.
+- **Tournaments:** refresh the list from Epic, search it, then **Collect matches** and **Download** for any window. Each row shows how many matches are collected and downloaded.
+- **Download collected matches** with a lobby-strength filter, and a preview of what's next.
+- **Import replay files** from a team's archive or your own folder.
+- **Settings and advanced tools:** data folder, keeping or deleting raw replays, re-processing one match, the season survey and parser rebuild, the api-fortnite.com fallback, and signing out.
+
+Jobs run one at a time with a live progress bar, the current step, time remaining and a log, and can be cancelled. When a job finishes, every page refreshes. `Vantage-Data.bat` still works and does the same things from a menu.
+
 ## 1. One-time setup
 
 1. Install the **.NET 10 SDK** from https://dotnet.microsoft.com/download. It's needed to read replay files.

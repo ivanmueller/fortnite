@@ -137,3 +137,49 @@ export interface SectionInfo {
 }
 
 export interface PageInfo { id: string; title: string; question: string; needs_compare?: boolean; sections: SectionInfo[] }
+
+export interface DataStatus {
+  epic: { logged_in: boolean; name?: string; account_id?: string; since?: string };
+  login_url: string;
+  parser: { ready: boolean; dotnet: boolean };
+  data_dir: string;
+  data_exists: boolean;
+  size_gb: number;
+  keep_raw: boolean;
+  api_key_set: boolean;
+  counts: { collected: number; waiting: number; raw: number; parsed: number; in_tables: number };
+  power_rankings: { players: number; fetched: string | null };
+  pois: { places: number; fetched: string | null };
+  validation: string | null;
+  tournaments_list: { windows: number; updated: string | null };
+  busy: boolean;
+}
+
+export interface JobSummary {
+  id: string;
+  kind: string;
+  title: string;
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+  step: number;
+  steps: string[];
+  step_label: string;
+  detail: string;
+  progress: number | null;
+  step_frac: number | null;
+  eta_s: number | null;
+  params: Record<string, unknown>;
+  created: number;
+  started: number | null;
+  ended: number | null;
+  error: string | null;
+  failed_steps: string[];
+}
+
+export interface JobDetail extends JobSummary { log: string[] }
+
+export interface TournamentRow {
+  end: string; region: string; name: string; window: string; event: string | null;
+  collected: number; downloaded: number; processed: number;
+}
+
+export interface DownloadPlan { rows: { match_id: string; top1000: number; top10000: number; seen: number }[]; waiting: number; note: string }

@@ -163,3 +163,25 @@ def test_endgame_height_finds_planted_advantage(client):
     j = client.post("/api/analyses/endgame_height/run", json={"filters": DEMO}).json()
     main = next(t for t in j["tests"] if t["name"] == "Higher teams finish better in the endgame")
     assert main["significant"] and "finishing better" in main["reading"]
+
+
+def test_data_page_status_and_job_validation(client):
+    """The Data page's status loads, and bad job requests get a plain explanation instead of running."""
+    s = client.get("/api/data/status").json()
+    assert {"epic", "parser", "counts", "data_dir"} <= set(s)
+    assert client.post("/api/data/jobs", json={"kind": "collect", "params": {}}).status_code == 400
+    assert client.post("/api/data/jobs", json={"kind": "nonsense"}).status_code == 400
+    assert client.post("/api/data/jobs", json={"kind": "login", "params": {"code": " "}}).status_code == 400
+    assert "rows" in client.get("/api/data/tournaments").json()
+
+
+def test_data_actions_are_local_only():
+    """Data endpoints run programs, so they refuse requests from other machines."""
+    import pytest
+    from fastapi import HTTPException
+    from fnlab.datamgr import local_only
+
+    class Req:
+        client = type("C", (), {"host": "203.0.113.9"})()
+    with pytest.raises(HTTPException):
+        local_only(Req())
