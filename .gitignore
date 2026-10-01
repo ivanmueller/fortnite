@@ -5,6 +5,7 @@
 .venv/
 node_modules/
 web/dist/
+web/*.tsbuildinfo
 __pycache__/
 .pytest_cache/
 pipeline/node/cache.json

@@ -4,6 +4,7 @@ or alone with:  python -m uvicorn fnlab.main:app --reload --app-dir api
 """
 from __future__ import annotations
 
+import logging
 import time
 import traceback
 import uuid
@@ -21,6 +22,16 @@ from .filters import Filters
 from .result import clean
 
 BOOT_ID = uuid.uuid4().hex[:8]  # changes on every reload; the dashboard watches it to refresh
+
+
+class _HideHealthChecks(logging.Filter):
+    """The dashboard polls /api/health every 2 s to spot code reloads; keep those out of the terminal."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/api/health" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(_HideHealthChecks())
 
 app = FastAPI(title="Fortnite zone lab API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
