@@ -76,7 +76,7 @@ def run(ctx: Context) -> Result:
     r.metric("Mean rho", f"{allt['mean']:+.2f}" if np.isfinite(allt.get("mean", np.nan)) else "–",
              "Distance vs placement, averaged per match")
 
-    conclude(r, ctx, primary=["Per match"], alpha=alpha, recommended=100, single_season=False,
+    conclude(r, ctx, strategy=True, primary=["Per match"], alpha=alpha, recommended=100, single_season=False,
              takeaway_found=(f"Teams farther from the closing circle finish worse (mean rho {allt['mean']:+.2f})."
                              if allt.get("mean", 0) > 0 else
                              f"Teams farther from the closing circle finish better (mean rho {allt['mean']:+.2f})."),

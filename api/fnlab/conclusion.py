@@ -30,7 +30,7 @@ def strength(p, alpha: float) -> str:
     return "none"
 
 
-def reliability(ctx, *, recommended: int, single_season: bool = True, sel: str = "sel") -> list[dict]:
+def reliability(ctx, *, recommended: int, single_season: bool = True, sel: str = "sel", strategy: bool = False) -> list[dict]:
     """Checks on the data behind a result. Each item: {label, ok, detail}."""
     m = df(ctx.con, f"""
         SELECT count(*) AS n, count(DISTINCT season) AS seasons,
@@ -53,6 +53,19 @@ def reliability(ctx, *, recommended: int, single_season: bool = True, sel: str =
         checks.append(dict(label="Replay source", ok=server >= 0.95,
                            detail=f"{server:.0%} server replays." + ("" if server >= 0.95 else
                            " Client replays only include players near the recorder, which biases position and fight data.")))
+    if strategy:
+        # Strategy conclusions (positioning, fights) only transfer from even, high-skill lobbies.
+        has = "lobby_strength" in set(ctx.con.execute("SELECT * FROM matches LIMIT 0").df().columns)
+        med = ctx.con.execute(f"SELECT median(lobby_strength), count(lobby_strength) FROM matches JOIN {sel} USING (match_id)").fetchone() if has else (None, 0)
+        if not has or not med[1]:
+            checks.append(dict(label="Lobby strength", ok=False, detail="Unknown for these matches. Re-run option 4 on their "
+                               "tournament windows to record leaderboard ranks, then filter to strong lobbies."))
+        else:
+            ok = med[0] >= 0.5
+            checks.append(dict(label="Lobby strength", ok=ok,
+                               detail=f"Median lobby has {med[0]:.0%} of its players in the top 1,000." + (
+                                   "" if ok else " Mixed-skill lobbies: outcomes may reflect skill gaps more than decisions. "
+                                   "Use the Lobby strength filter or later-round windows.")))
     if ctx.filters.dataset == "demo":
         checks.append(dict(label="Real data", ok=False,
                            detail="Demo data with planted effects. Use it to learn the page, not to draw conclusions."))
@@ -62,9 +75,9 @@ def reliability(ctx, *, recommended: int, single_season: bool = True, sel: str =
 def conclude(r: Result, ctx, *, primary: list[str], alpha: float, recommended: int,
              takeaway_found: str = "", takeaway_none: str = "", next_found: list[str] | None = None,
              next_none: list[str] | None = None, single_season: bool = True, descriptive: str | None = None,
-             sel: str = "sel") -> None:
+             sel: str = "sel", strategy: bool = False) -> None:
     """Fill r.conclusion. `primary` names the test groups that carry the main claim."""
-    checks = reliability(ctx, recommended=recommended, single_season=single_season, sel=sel)
+    checks = reliability(ctx, recommended=recommended, single_season=single_season, sel=sel, strategy=strategy)
     n_ok = all(c["ok"] for c in checks if c["label"] == "Sample size")
 
     if descriptive is not None:

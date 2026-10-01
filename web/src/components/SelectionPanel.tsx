@@ -90,6 +90,21 @@ export function SelectionPanel({ title, filters, onChange, facets, count, showDa
         )}
       </div>
 
+      {!!facets?.lobby_rated_matches && (
+        <div className="field">
+          <label className="field__label" htmlFor={`${id}-lobby`}>Lobby strength</label>
+          <select id={`${id}-lobby`} value={String(filters.min_lobby_strength ?? '')}
+                  onChange={(e) => set({ min_lobby_strength: e.target.value ? Number(e.target.value) : null })}>
+            <option value="">Any lobby</option>
+            {[0.25, 0.5, 0.75].map((v) => (
+              <option key={v} value={v}>{Math.round(v * 100)}%+ in top 1,000</option>
+            ))}
+          </select>
+          <p className="field__hint">Share of each lobby in the top 1,000 (Power Rankings when downloaded). Use strong
+            lobbies for strategy questions; storm and bus pages can use all.</p>
+        </div>
+      )}
+
       <label className="check">
         <input type="checkbox" checked={filters.server_only} onChange={(e) => set({ server_only: e.target.checked })} />
         Server replays only

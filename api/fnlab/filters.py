@@ -16,10 +16,14 @@ class Filters(BaseModel):
     event_windows: list[str] = Field(default_factory=list)
     playlist_contains: str | None = None
     server_only: bool = False
+    min_lobby_strength: float | None = None  # share of the lobby ranked in the window's top 1,000
 
-    def where(self) -> tuple[str, list]:
+    def where(self, columns: set[str] | None = None) -> tuple[str, list]:
         """SQL WHERE clause (without the keyword) over the matches table, plus parameters."""
         sql, params = ["TRUE"], []
+        if self.min_lobby_strength and (columns is None or "lobby_strength" in columns):
+            sql.append("lobby_strength >= ?")
+            params.append(self.min_lobby_strength)
         if self.date_from:
             sql.append("TRY_CAST(match_date AS DATE) >= ?")
             params.append(self.date_from)
@@ -51,4 +55,6 @@ class Filters(BaseModel):
             parts.append(f"playlist ~ {self.playlist_contains}")
         if self.server_only:
             parts.append("server replays only")
+        if self.min_lobby_strength:
+            parts.append(f"lobbies with {self.min_lobby_strength:.0%}+ top-1,000 players")
         return "; ".join(parts) or "all matches"

@@ -180,7 +180,7 @@ def run(ctx: Context) -> Result:
         r.table("Average placement by height tier and phase", tbl)
 
     first = next((t["name"] for t in r.tests if t["group"] == "Fights by phase" and t["significant"]), None)
-    conclude(r, ctx, primary=["Fights, per match", "Standing, per match"], alpha=alpha, recommended=100,
+    conclude(r, ctx, strategy=True, primary=["Fights, per match", "Standing, per match"], alpha=alpha, recommended=100,
              single_season=False,
              takeaway_found=("Height is linked to winning" + (f", in fights from {first.lower()} onward" if first else "")
                              + ". Check both main tests below: fights and final placement."),

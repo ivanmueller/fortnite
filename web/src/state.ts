@@ -3,7 +3,7 @@ import type { DatasetKey, Filters } from './types';
 
 export const emptyFilters = (dataset: DatasetKey = 'demo'): Filters => ({
   dataset, date_from: null, date_to: null, seasons: [], regions: [], event_windows: [],
-  playlist_contains: null, server_only: false,
+  playlist_contains: null, server_only: false, min_lobby_strength: null,
 });
 
 /** useState that survives page reloads (the dashboard is local, so localStorage is fine). */
@@ -29,5 +29,6 @@ export function describe(f: Filters): string {
   if (f.regions.length) parts.push(f.regions.join(', '));
   if (f.event_windows.length) parts.push(`${f.event_windows.length} event window${f.event_windows.length > 1 ? 's' : ''}`);
   if (f.server_only) parts.push('server replays');
+  if (f.min_lobby_strength) parts.push(`lobbies ${Math.round(f.min_lobby_strength * 100)}%+ top-1,000`);
   return parts.length ? parts.join('; ') : 'All matches';
 }

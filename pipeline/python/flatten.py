@@ -207,6 +207,95 @@ def bus_row(match_id: str, doc: dict, pos: pd.DataFrame) -> dict:
                 direction_known=direction_known)
 
 
+# --------------------------------------------------------------------------- lobby strength
+RANK_TIERS = (100, 500, 1000)
+
+
+def add_lobby_strength(out: dict, data: Path) -> None:
+    """
+    Skill context for every player and lobby, from two optional sources:
+
+    1. Epic Power Rankings (power_rankings.csv, from find_matches.js powerrankings):
+       a cross-event skill rating for the global top 10,000. Preferred.
+         players: pr_rank, pr_score
+         matches: lobby_pr_top1000 / lobby_pr_top10000 (share of humans ranked that high),
+                  lobby_pr_mean (mean rating of ranked players)
+    2. The tournament window's own leaderboard (player_ranks.csv, saved by option 4):
+       how players finished that session. Fallback when PR isn't downloaded.
+         players: leaderboard_rank, leaderboard_points
+         matches: lobby_top100/500/1000, lobby_median_rank, ranks_read
+
+    lobby_strength = lobby_pr_top1000 when PR is available, else lobby_top1000;
+    lobby_strength_source says which.
+    """
+    pl, m = out["players"], out["matches"]
+    session_cols = ["ranked_players", "lobby_top100", "lobby_top500", "lobby_top1000", "lobby_median_rank", "ranks_read"]
+    pr_cols = ["lobby_pr_top1000", "lobby_pr_top10000", "lobby_pr_mean"]
+    for c in session_cols + pr_cols + ["lobby_strength", "lobby_strength_source"]:
+        if c in m.columns:
+            m = m.drop(columns=c)
+    for c in session_cols + pr_cols:
+        m[c] = np.nan
+    m["lobby_strength"] = np.nan
+    m["lobby_strength_source"] = None
+    if pl.empty or m.empty:
+        out["matches"] = m
+        return
+
+    acc = pl["player_id"].astype(str).str.lower()
+    is_human = ~pl["is_bot"].astype(bool)
+    pl = pl.assign(leaderboard_rank=np.nan, leaderboard_points=np.nan, pr_rank=np.nan, pr_score=np.nan)
+
+    # 1. Power Rankings
+    pr_path = data / "power_rankings.csv"
+    if pr_path.exists():
+        pr = pd.read_csv(pr_path, dtype={"account_id": str}).drop_duplicates("account_id")
+        pr["account_id"] = pr["account_id"].str.lower()
+        pr_map = pr.set_index("account_id")
+        pl["pr_rank"] = acc.map(pr_map["pr_rank"]).to_numpy()
+        score = pd.to_numeric(pr_map["pr_score"], errors="coerce")
+        if score.isna().all() and "pr_points" in pr_map:
+            score = pd.to_numeric(pr_map["pr_points"], errors="coerce")
+        pl["pr_score"] = acc.map(score).to_numpy()
+        h = pl[is_human].groupby("match_id")
+        stats = pd.DataFrame({
+            "lobby_pr_top1000": h["pr_rank"].apply(lambda s: (s <= 1000).mean()),
+            "lobby_pr_top10000": h["pr_rank"].apply(lambda s: s.notna().mean()),
+            "lobby_pr_mean": h["pr_score"].mean(),
+        })
+        m = m.set_index("match_id")
+        m.update(stats)
+        m = m.reset_index()
+
+    # 2. Session leaderboard ranks
+    rk_path = data / "player_ranks.csv"
+    if rk_path.exists():
+        rk = pd.read_csv(rk_path, dtype={"event_window_id": str, "account_id": str})
+        rk["account_id"] = rk["account_id"].str.lower()
+        read = rk.groupby("event_window_id")["ranks_read"].max()
+        p = pl[["match_id", "is_bot"]].assign(account_id=acc.to_numpy()).merge(
+            m[["match_id", "event_window_id"]], on="match_id", how="left")
+        p = p.merge(rk[["event_window_id", "account_id", "rank", "points"]], on=["event_window_id", "account_id"], how="left")
+        pl["leaderboard_rank"] = p["rank"].to_numpy()
+        pl["leaderboard_points"] = p["points"].to_numpy()
+        h = p[~p["is_bot"].astype(bool) & p["event_window_id"].isin(read.index)].groupby("match_id")
+        stats = pd.DataFrame({
+            "ranked_players": h["rank"].count(),
+            **{f"lobby_top{n}": h["rank"].apply(lambda s, n=n: (s <= n).mean()) for n in RANK_TIERS},
+            "lobby_median_rank": h["rank"].median(),
+        })
+        m = m.set_index("match_id")
+        m.update(stats)
+        m = m.reset_index()
+        m["ranks_read"] = m["event_window_id"].map(read)
+
+    has_pr = m["lobby_pr_top1000"].notna()
+    m["lobby_strength"] = np.where(has_pr, m["lobby_pr_top1000"], m["lobby_top1000"])
+    m["lobby_strength_source"] = np.where(has_pr, "power_rankings",
+                                          np.where(m["lobby_top1000"].notna(), "session", None))
+    out["players"], out["matches"] = pl, m
+
+
 # --------------------------------------------------------------------------- main
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -310,6 +399,8 @@ def main() -> None:
         else:
             out[name] = pd.DataFrame(rows)
     out["zone_offsets"] = add_zone_features(out["zones"]) if not out["zones"].empty else pd.DataFrame()
+
+    add_lobby_strength(out, data)
 
     # Team placement = best placement of any human on the team. Players who
     # disconnect keep the placement from when they left, so members can differ.

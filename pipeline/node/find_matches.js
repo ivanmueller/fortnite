@@ -14,6 +14,12 @@
 //       Top pages hold the top teams. Their matches cover the strongest lobbies;
 //       --pages all also reaches lower lobbies, at one request per page.
 //
+//   node find_matches.js powerrankings [--pages all|N] [--event <eventId> --window <windowId>]
+//       Downloads Epic's Power Rankings (top 10,000 players, 25 per page) to
+//       power_rankings.csv: real account IDs with PR rank and rating. Epic publishes PR
+//       as a tournament leaderboard (event epicgames_dreamyparadox, window dreamyparadox,
+//       as of Oct 2026; found in fortnite.com/competitive/power-rankings page data).
+//
 // Source: Epic directly (default; needs the one-time login from ZoneLab-Data.bat option 2).
 // Add --source api-fortnite to use api-fortnite.com instead (Pro plan, FORTNITE_API_KEY in .env).
 import dotenv from 'dotenv';
@@ -27,6 +33,11 @@ dotenv.config({ path: path.join(ROOT, '.env') });
 const DATA = process.env.ZONELAB_DATA_DIR || path.join(ROOT, 'data'); // ZoneLab-Data.bat option D changes this
 const CSV = path.join(DATA, 'match_ids.csv');
 const TOURNAMENTS_CSV = path.join(DATA, 'tournaments.csv');
+const RANKS_CSV = path.join(DATA, 'player_ranks.csv'); // leaderboard rank of every player read, per window
+const RANKS_HEADER = 'event_window_id,account_id,rank,points,ranks_read';
+const PR_CSV = path.join(DATA, 'power_rankings.csv');
+const PR_EVENT = 'epicgames_dreamyparadox';
+const PR_WINDOW = 'dreamyparadox';
 const HEADER = 'match_id,event_window_id,region,session_date,is_server_replay,source';
 const BASE = process.env.FORTNITE_API_BASE || 'https://prod.api-fortnite.com';
 const KEY = process.env.FORTNITE_API_KEY;
@@ -204,12 +215,19 @@ async function collectWindow(windowId) {
   const maxPages = pagesOpt === 'all' ? Infinity : Number(pagesOpt);
 
   const sessions = new Map(); // sessionId -> { end, teams }
+  const ranks = new Map();    // accountId -> { rank, points }
   let page = 0;
   let total = 1;
   while (page < total && page < maxPages) {
     const board = await leaderboardPage(eventId, windowId, page);
     total = board?.totalPages ?? 1;
     for (const entry of board?.entries || []) {
+      for (const acc of entry.teamAccountIds || []) {
+        const id = String(acc).toLowerCase();
+        if (!ranks.has(id) || entry.rank < ranks.get(id).rank) {
+          ranks.set(id, { rank: entry.rank, points: entry.pointsEarned ?? entry.score ?? '' });
+        }
+      }
       for (const s of entry.sessionHistory || []) {
         if (!s.sessionId) continue;
         const cur = sessions.get(s.sessionId) || { end: s.endTime, teams: 0 };
@@ -227,6 +245,7 @@ async function collectWindow(windowId) {
     return;
   }
 
+  saveRanks(windowId, ranks);
   const existing = readExisting();
   const rows = [];
   for (const [id, s] of sessions) {
@@ -237,13 +256,69 @@ async function collectWindow(windowId) {
   console.log(`Match list: ${CSV}`);
   const teams = [...sessions.values()].map((s) => s.teams).sort((a, b) => a - b);
   console.log(`window ${windowId}: ${sessions.size} matches across ${Math.min(page, total)} of ${total} leaderboard pages;`
-    + ` added ${rows.length} new IDs to data/match_ids.csv.`);
+    + ` added ${rows.length} new IDs to ${path.relative(ROOT, CSV) || CSV}.`);
   console.log(`teams seen per match on these pages: median ${teams[Math.floor(teams.length / 2)]}.`
     + (page < total ? ' Use --pages all to reach every lobby.' : ''));
   const oldest = Math.min(...[...sessions.values()].map((s) => Date.parse(s.end)).filter(Number.isFinite));
   if (Number.isFinite(oldest) && Date.now() - oldest > 25 * 86400000) {
     console.log('Note: some matches are over 25 days old. Epic keeps tournament replays for about 30 days, so download them soon.');
   }
+}
+
+/** Download Epic's Power Rankings leaderboard to power_rankings.csv. */
+async function downloadPowerRankings() {
+  const eventId = typeof opt('event') === 'string' ? opt('event') : PR_EVENT;
+  const windowId = typeof opt('window') === 'string' ? opt('window') : PR_WINDOW;
+  const pagesOpt = opt('pages', 'all');
+  const maxPages = pagesOpt === 'all' || pagesOpt === true ? Infinity : Number(pagesOpt);
+  const rows = new Map(); // accountId -> { rank, score, points }
+  let page = 0;
+  let total = 1;
+  while (page < total && page < maxPages) {
+    const board = await leaderboardPage(eventId, windowId, page);
+    total = board?.totalPages ?? 1;
+    const entries = board?.entries || [];
+    if (page === 0 && entries.length && entries[0].score === undefined && entries[0].pointsEarned === undefined) {
+      console.log('Unexpected entry format; first entry:', JSON.stringify(entries[0]).slice(0, 400));
+    }
+    for (const e of entries) {
+      for (const acc of e.teamAccountIds || []) {
+        const id = String(acc).toLowerCase();
+        if (!rows.has(id)) rows.set(id, { rank: e.rank, score: e.score ?? '', points: e.pointsEarned ?? '' });
+      }
+    }
+    page += 1;
+    process.stdout.write(`  power rankings page ${page}/${Number.isFinite(maxPages) ? Math.min(total, maxPages) : total}, players: ${rows.size}\r`);
+    await sleep(PAUSE_MS);
+  }
+  console.log();
+  if (!rows.size) {
+    console.log('No players returned. The Power Rankings event may have changed name: open the Power Rankings page source '
+      + '(Ctrl+U), search for "eventId", and run with --event <eventId> --window <eventWindowId>.');
+    return;
+  }
+  fs.mkdirSync(DATA, { recursive: true });
+  const fetched = new Date().toISOString().slice(0, 10);
+  fs.writeFileSync(PR_CSV, ['account_id,pr_rank,pr_score,pr_points,fetched', ...[...rows]
+    .sort((a, b) => a[1].rank - b[1].rank)
+    .map(([id, r]) => [id, r.rank, r.score, r.points, fetched].join(','))].join('\n') + '\n');
+  const top = [...rows.values()].sort((a, b) => a.rank - b.rank).slice(0, 3);
+  console.log(`saved ${rows.size} players to ${path.relative(ROOT, PR_CSV) || PR_CSV}`);
+  console.log('top 3 (compare with fortnite.com/competitive/power-rankings):',
+    top.map((r) => `#${r.rank} rating ${r.score || r.points}`).join(', '));
+}
+
+/** Replace this window's rows in player_ranks.csv with the ranks just read. */
+function saveRanks(windowId, ranks) {
+  if (!ranks.size) return;
+  fs.mkdirSync(DATA, { recursive: true });
+  const keep = fs.existsSync(RANKS_CSV)
+    ? fs.readFileSync(RANKS_CSV, 'utf8').split('\n').slice(1).filter((l) => l && l.split(',')[0] !== windowId)
+    : [];
+  const read = Math.max(...[...ranks.values()].map((r) => r.rank));
+  const rows = [...ranks].map(([id, r]) => [windowId, id, r.rank, r.points, read].join(','));
+  fs.writeFileSync(RANKS_CSV, [RANKS_HEADER, ...keep, ...rows].join('\n') + '\n');
+  console.log(`saved leaderboard ranks for ${ranks.size} players (ranks 1-${read}) to ${path.relative(ROOT, RANKS_CSV) || RANKS_CSV}`);
 }
 
 // ---------------------------------------------------------------- main
@@ -261,10 +336,12 @@ try {
       console.log(`Epic login works: ${s.displayName || s.accountId}.`);
     }
   } else if (args[0] === 'tournaments') await listTournaments();
+  else if (args[0] === 'powerrankings') await downloadPowerRankings();
   else if (args[0] === 'window' && args[1] && !args[1].startsWith('--')) await collectWindow(args[1]);
   else {
     console.log('usage:\n  node find_matches.js test\n  node find_matches.js tournaments [--region EU] [--search text] [--days 30] [--upcoming]\n'
-      + '  node find_matches.js window <eventWindowId> [--event <eventId>] [--pages 10|all]');
+      + '  node find_matches.js window <eventWindowId> [--event <eventId>] [--pages 10|all]\n'
+      + '  node find_matches.js powerrankings [--pages all|N]');
   }
 } catch (e) {
   console.error(e instanceof ApiError || e instanceof EpicError ? e.message : `Error: ${e.message}`);

@@ -197,6 +197,8 @@ def write_demo(out: Path, data_dir: Path, per_season: int, seed: int, sample_dt:
     import datetime as dt
     rng = np.random.default_rng(seed)
     ids = ["match_id,event_window_id,region,session_date,is_server_replay,source"]
+    ranks = {}  # (window, account) -> rank: each window has one leaderboard
+    power = {}  # account -> (pr_rank, pr_score)
     n = 0
     for branch, d0, d1, pattern, strength in DEMO_SEASONS:
         start, end = dt.date.fromisoformat(d0), dt.date.fromisoformat(d1)
@@ -213,8 +215,21 @@ def write_demo(out: Path, data_dir: Path, per_season: int, seed: int, sample_dt:
             doc["game"]["playlist"] = "Demo_Trios_Cup"
             (out / f"{doc['match_id']}.json").write_text(json.dumps(doc))
             ids.append(f"{doc['match_id']},{window},{region},{day.isoformat()},1,synthetic")
+            # Lobby strength varies by match: in a strong lobby most players rank in the window's top 1,000.
+            strength = rng.beta(2, 2)
+            for p in doc["players"]:
+                top = rng.random() < strength
+                ranks[(window, p["player_id"].lower())] = int(rng.integers(1, 1001) if top else rng.integers(1001, 8001))
+                # Demo Power Rankings: top-1,000 players rate higher; some players are unranked (outside 10,000).
+                if top or rng.random() < 0.6:
+                    pr_rank = int(rng.integers(1, 1001) if top else rng.integers(1001, 10001))
+                    power[p["player_id"].lower()] = (pr_rank, int(40000 - pr_rank * 2.2))
             n += 1
     (data_dir / "match_ids.csv").write_text("\n".join(ids) + "\n")
+    (data_dir / "power_rankings.csv").write_text("account_id,pr_rank,pr_score,pr_points,fetched\n" + "".join(
+        f"{a},{r},{sc},,2026-10-01\n" for a, (r, sc) in power.items()))
+    (data_dir / "player_ranks.csv").write_text("event_window_id,account_id,rank,points,ranks_read\n" + "".join(
+        f"{w},{a},{r},0,8000\n" for (w, a), r in ranks.items()))
     print(f"wrote {n} demo matches across {len(DEMO_SEASONS)} seasons to {out}")
 
 

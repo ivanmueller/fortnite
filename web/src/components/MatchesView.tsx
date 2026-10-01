@@ -6,6 +6,7 @@ import { DataTable } from './DataTable';
 const LABELS: Record<string, string> = {
   match_id: 'Match', match_date: 'Date', season: 'Season', region: 'Region', event_window_id: 'Event window',
   playlist: 'Playlist', players: 'Players', teams: 'Teams', is_server_replay: 'Server replay', minutes: 'Minutes',
+  lobby_strength_pct: 'Lobby strength %',
 };
 
 export function MatchesView({ filters, bootId }: { filters: Filters; bootId?: string }) {

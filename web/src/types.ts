@@ -11,6 +11,7 @@ export interface Filters {
   event_windows: string[];
   playlist_contains?: string | null;
   server_only: boolean;
+  min_lobby_strength?: number | null;
 }
 
 export interface FacetValue { value: string; count: number }
@@ -21,6 +22,7 @@ export interface Facets {
   playlists: FacetValue[];
   date_min: string | null;
   date_max: string | null;
+  lobby_rated_matches?: number;
 }
 
 export interface DatasetInfo { label: string; available: boolean; matches: number; path: string }

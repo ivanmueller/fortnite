@@ -33,6 +33,19 @@ def run(ctx: Context) -> Result:
                  "Client replays only include nearby players" if len(known) else
                  "Not recorded for these matches (they weren't in data/match_ids.csv when processed)")
     r.metric("Median players", f"{m['n_humans'].median():.0f}")
+    if "lobby_strength" in m and m["lobby_strength"].notna().any():
+        ls = m["lobby_strength"].dropna()
+        pr = "lobby_strength_source" in m and (m["lobby_strength_source"] == "power_rankings").mean() > 0.5
+        r.metric("Median lobby strength", f"{ls.median():.0%}",
+                 "Share of each lobby in Epic's Power Rankings top 1,000" if pr else
+                 "Share of each lobby in that tournament's top 1,000 (download Power Rankings for a better measure)")
+        if "lobby_pr_mean" in m and m["lobby_pr_mean"].notna().any():
+            r.metric("Median lobby PR", f"{m['lobby_pr_mean'].median():,.0f}", "Average Power Ranking rating of ranked players in each lobby")
+        r.chart("histogram", "Lobby strength", [dict(name="Matches", values=(ls * 100).tolist())], bins=10, range=[0, 100],
+                x_label=("% of the lobby in the Power Rankings top 1,000" if pr else
+                         "% of the lobby ranked in the tournament's top 1,000"), y_label="Matches")
+    elif "lobby_strength" in m:
+        r.notes.append("Lobby strength is unknown for these matches: re-run option 4 on their tournament windows to record leaderboard ranks.")
 
     m["week"] = d.dt.to_period("W-SUN").dt.start_time
     weekly = m.groupby(["week", "season"]).size().unstack(fill_value=0).sort_index()

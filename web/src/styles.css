@@ -333,3 +333,5 @@ tbody tr:hover { background: #fff; }
   .guide__cols { grid-template-columns: 1fr; }
   .infotip__pop { max-width: 260px; }
 }
+
+.field__hint { margin: 0.3rem 0 0; font-size: var(--t-sm); color: var(--muted); line-height: 1.35; }

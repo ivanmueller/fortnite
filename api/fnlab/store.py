@@ -48,9 +48,13 @@ def has_table(con, name: str) -> bool:
     return con.execute("SELECT count(*) FROM duckdb_views() WHERE view_name = ?", [name]).fetchone()[0] > 0
 
 
+def columns(con, table: str) -> set[str]:
+    return set(con.execute(f"SELECT * FROM {table} LIMIT 0").df().columns)
+
+
 def select(con, f: Filters, name: str = "sel") -> int:
     """Create temp table <name>(match_id) for the filtered matches. Returns how many."""
-    where, params = f.where()
+    where, params = f.where(columns(con, "matches"))
     con.execute(f"CREATE OR REPLACE TEMP TABLE {name} AS SELECT match_id FROM matches WHERE {where}", params)
     return con.execute(f"SELECT count(*) FROM {name}").fetchone()[0]
 

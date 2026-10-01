@@ -48,6 +48,10 @@ powershell -ExecutionPolicy Bypass -File .\pipeline\setup.ps1 -FromSource
 
 **After an update** that changes how replays are read, choose **7** to re-process everything you've already downloaded. Nothing is downloaded again.
 
+**Power Rankings (recommended).** Choose **P** to download Epic's Power Rankings: the official cross-event skill rating for the top 10,000 players, read from the same Epic leaderboard service as match IDs (about 7 minutes). Every player then gets their PR rank and rating, and lobby strength becomes the share of each lobby in the PR top 1,000, which is comparable across rounds, regions and weeks. Rankings update weekly, so re-run P now and then.
+
+**Session ranks (fallback).** Option 4 also saves every player's rank from the leaderboard pages it reads (`player_ranks.csv`). Each match then gets a *lobby strength*: the share of its players ranked in that tournament's top 1,000. The dashboard's **Lobby strength** filter keeps only strong lobbies. Use it for strategy questions (positioning, fights, height), where mixed-skill lobbies blur decisions with skill gaps; storm and bus questions can use every lobby. Read at least 10 pages so the top 1,000 is covered. To add ranks to matches you already have, run option 4 again on their window, then option 7.
+
 **Pull tournaments within about 30 days.** Epic deletes tournament replays after roughly a month; option 4 warns when a window's matches are getting close to that.
 
 If option 5 fails for every match, Epic has changed something on the free route. **Option 8** downloads the same replays through api-fortnite.com instead, at 2 credits per match. It needs a free api-fortnite.com key saved with **option 9** (the free tier gives 15 credits a day; paid credit packs and plans add more).

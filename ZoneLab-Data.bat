@@ -24,6 +24,7 @@ echo   6  Process my own recent replays from the Fortnite Demos folder
 echo   7  Re-process everything already downloaded (after an update)
 echo   8  Download via api-fortnite.com instead (2 credits per match; use if 5 fails)
 echo   9  Save an api-fortnite.com key (only needed for option 8)
+echo   P  Download Epic Power Rankings (top 10,000 players, about 7 minutes)
 echo   D  Store downloaded data somewhere else (e.g. another drive)
 echo   K  Keep or delete raw replays after processing (saves about 95%% of disk space)
 echo   L  Log out of Epic (revokes the saved login)
@@ -42,6 +43,7 @@ if /i "%choice%"=="8" goto :pilotapi
 if /i "%choice%"=="9" goto :key
 if /i "%choice%"=="l" goto :logout
 if /i "%choice%"=="d" goto :datadir
+if /i "%choice%"=="p" goto :pr
 if /i "%choice%"=="k" goto :keepraw
 if /i "%choice%"=="q" goto :end
 goto :menu
@@ -103,6 +105,12 @@ goto :done
 
 :analyze
 %PS% "pipeline\run.ps1" reparse
+goto :done
+
+:pr
+echo.
+echo Reads Epic's Power Rankings leaderboard (400 pages, one per second) and rebuilds the tables.
+%PS% "pipeline\run.ps1" pr
 goto :done
 
 :keepraw

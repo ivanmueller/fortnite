@@ -29,17 +29,26 @@ GUIDES: dict[str, Guide] = {
                               "recorded on a player's own machine only include players near the recorder.",
             "Median players": "Median human players per match. Far below the lobby size suggests client replays "
                               "or replays that ended early.",
+            "Median lobby strength": "Share of each lobby's players in the top 1,000: by Epic's Power Rankings when "
+                                     "downloaded (data menu option P), otherwise by that tournament's own leaderboard. "
+                                     "High means an even, high-skill lobby.",
+            "Median lobby PR": "Average Power Ranking rating of the ranked players in each lobby. Power Rankings are "
+                               "Epic's cross-event skill rating (top 10,000 players).",
         },
         charts={
             "Matches per week": "Bars stacked by season. Gaps are weeks without data; a change of colour marks a new season.",
             "Matches by region": "How the selection splits across regions. Large imbalances mean pooled results mostly describe one region.",
             "Storm phases recorded per match": "Most matches should sit at the same high count. Low counts are replays "
                                                "that stopped early, for example when the recording player was eliminated.",
+            "Lobby strength": "How many matches have each level of lobby strength. Early qualifier rounds sit low and "
+                              "mixed; later rounds and finals sit high. Uses Power Rankings when downloaded.",
         },
         conclude=[
             "Use this page to choose what to study. Zone tests need roughly 200 or more matches from a single season "
             "to detect modest effects; position and fight pages need about 100.",
             "If server replays are below 100%, expect Position vs placement and High ground to under-count distant players.",
+            "For strategy pages (positioning, fights, height), filter to strong lobbies: in mixed lobbies, outcomes "
+            "reflect skill gaps as much as decisions. Storm and bus pages can use every lobby.",
         ],
         limits=["Counts only. Nothing on this page is a statistical test."],
     ),

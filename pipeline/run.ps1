@@ -11,6 +11,7 @@
 #   .\pipeline\run.ps1 reparse                      re-read every downloaded replay (after parser updates), then analyze
 #   .\pipeline\run.ps1 datadir -Path D:\ZoneLabData move downloaded data to another folder/drive and use it from now on
 #   .\pipeline\run.ps1 keepraw -Value yes|no        keep raw .replay files after processing (default yes)
+#   .\pipeline\run.ps1 pr [-Pages all]               download Epic Power Rankings (top 10,000), then rebuild tables
 param(
     [Parameter(Position = 0)][string]$Stage = "help",
     [int]$Limit = 10, [int]$Count = 3, [string]$Window, [string]$Season, [string]$Pages = "10",
@@ -93,6 +94,10 @@ switch ($Stage) {
         Analyze $Data
     }
     "analyze" { Analyze $Data }
+    "pr" {
+        Push-Location pipeline/node; node find_matches.js powerrankings --pages $(if ($Pages -eq "10") { "all" } else { $Pages }); Pop-Location
+        Analyze $Data
+    }
     "keepraw" {
         if ($Value -notin @("yes", "no")) { throw "Use: .\pipeline\run.ps1 keepraw -Value yes|no" }
         SetEnvValue "ZONELAB_KEEP_RAW" $Value

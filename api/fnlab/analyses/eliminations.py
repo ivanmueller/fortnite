@@ -47,7 +47,7 @@ def run(ctx: Context) -> Result:
             [dict(name=f"Phase {int(p)}", x=s.loc[s.phase == p, "x"].tolist(), y=s.loc[s.phase == p, "y"].tolist())
              for p in sorted(s["phase"].unique())], x_label="X", y_label="Y")
     worst = ph["out"].idxmax() if len(ph) else None
-    conclude(r, ctx, primary=[], alpha=0.005, recommended=100, single_season=False,
+    conclude(r, ctx, strategy=True, primary=[], alpha=0.005, recommended=100, single_season=False,
              descriptive=(f"{outside:.0%} of eliminations happen outside the closing circle, most in phase "
                           f"{int(worst)} ({ph['out'].max():.0%})." if worst is not None else "Not enough eliminations to describe."),
              next_none=["Compare with Position vs placement for the same phase.",

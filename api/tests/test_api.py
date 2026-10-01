@@ -92,3 +92,18 @@ def test_conclusion_does_not_overclaim_on_small_random_sample(client):
     c = j["conclusion"]
     assert c["status"] in {"insufficient", "none"}
     assert any(r["label"] == "Sample size" and not r["ok"] for r in c["reliability"])
+
+
+def test_lobby_strength_filter_and_trust_check(client):
+    all_ = client.post("/api/matches", json={"filters": DEMO}).json()["total"]
+    strong = client.post("/api/matches", json={"filters": {**DEMO, "min_lobby_strength": 0.5}}).json()
+    assert 0 < strong["total"] < all_
+    assert "lobby_strength_pct" in strong["columns"]
+    assert all(r[strong["columns"].index("lobby_strength_pct")] >= 50 for r in strong["rows"])
+    assert client.get("/api/facets?dataset=demo").json()["lobby_rated_matches"] == all_
+    c = client.post("/api/analyses/positioning/run", json={"filters": DEMO}).json()["conclusion"]
+    assert any(r["label"] == "Lobby strength" for r in c["reliability"])
+    o = client.post("/api/analyses/overview/run", json={"filters": DEMO}).json()
+    assert any(m["label"] == "Median lobby strength" for m in o["metrics"])
+    assert any(m["label"] == "Median lobby PR" for m in o["metrics"])
+    assert "Power Rankings" in next(m["detail"] for m in o["metrics"] if m["label"] == "Median lobby strength")

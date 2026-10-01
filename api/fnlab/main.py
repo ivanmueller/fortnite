@@ -59,9 +59,12 @@ def facets(dataset: str = "demo"):
             rows = con.execute(f"SELECT {col}, count(*) n FROM matches WHERE {col} IS NOT NULL GROUP BY 1 ORDER BY 1").fetchall()
             return [dict(value=str(v), count=n) for v, n in rows]
         lo, hi = con.execute("SELECT min(TRY_CAST(match_date AS DATE)), max(TRY_CAST(match_date AS DATE)) FROM matches").fetchone()
+        rated = 0
+        if "lobby_strength" in store.columns(con, "matches"):
+            rated = con.execute("SELECT count(lobby_strength) FROM matches").fetchone()[0]
         return clean(dict(seasons=distinct("season"), regions=distinct("region"),
                           event_windows=distinct("event_window_id"), playlists=distinct("playlist"),
-                          date_min=lo, date_max=hi))
+                          date_min=lo, date_max=hi, lobby_rated_matches=rated))
 
 
 class MatchQuery(BaseModel):
@@ -74,9 +77,10 @@ def matches(q: MatchQuery):
     _require(q.filters.dataset)
     with store.connect(q.filters.dataset) as con:
         n = store.select(con, q.filters)
+        strength = ", round(m.lobby_strength * 100) AS lobby_strength_pct" if "lobby_strength" in store.columns(con, "matches") else ""
         rows = store.df(con, f"""
             SELECT m.match_id, m.match_date, m.season, m.region, m.event_window_id, m.playlist,
-                   m.n_humans AS players, m.n_teams AS teams, m.is_server_replay, round(m.length_s / 60, 1) AS minutes
+                   m.n_humans AS players, m.n_teams AS teams, m.is_server_replay, round(m.length_s / 60, 1) AS minutes{strength}
             FROM matches m JOIN sel USING (match_id)
             ORDER BY TRY_CAST(m.match_date AS DATE) DESC NULLS LAST, m.match_id LIMIT {int(q.limit)}
         """)
