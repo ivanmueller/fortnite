@@ -79,7 +79,8 @@ def detect_slots(attr: pd.DataFrame, hits: pd.DataFrame) -> tuple[int | None, in
     hits["shield_hit"] = hits["shield_hit"].fillna(False).astype(bool)
     scores = {}
     for h, a in attr.groupby("handle"):
-        if len(a) < 10 or a["value"].max() > 250 or a["value"].min() < -100:
+        # Health and shield live in 0-100-ish ranges; ignore rare extremes (e.g. a boss or bot with 2,000 health).
+        if len(a) < 10 or a["value"].quantile(0.99) > 250 or a["value"].quantile(0.01) < -100:
             continue
         a = a.dropna(subset=["id"]).astype({"id": "int64"}).sort_values("t")
         e = hits.sort_values("t")
@@ -106,13 +107,22 @@ def detect_slots(attr: pd.DataFrame, hits: pd.DataFrame) -> tuple[int | None, in
     return health, shield, scores
 
 
-def health_from_attributes(attr: pd.DataFrame, dmg: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+def health_from_attributes(attr: pd.DataFrame, dmg: pd.DataFrame, players: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     """Rebuild the health table (t, id, health, shield) from raw record slots, per match."""
     frames, notes = [], []
+    bots = set(zip(players["match_id"], players["id"])) if players.empty else \
+        set(zip(players.loc[players["is_bot"].astype(bool), "match_id"], players.loc[players["is_bot"].astype(bool), "id"]))
     for mid, a in attr.groupby("match_id"):
+        a = a[[(mid, i) not in bots for i in a["id"]]]
         hits = dmg[(dmg["match_id"] == mid) & (dmg["target_kind"] == "player")] if not dmg.empty else dmg
-        hs, ss, _ = detect_slots(a, hits)
-        notes.append(f"{mid}: health slot {hs}, shield slot {ss}")
+        hs, ss, sc = detect_slots(a, hits)
+        note = f"{mid}: health slot {hs}, shield slot {ss}"
+        if hs is None or ss is None:
+            top = sorted(sc.items(), key=lambda kv: -max(kv[1]))[:6]
+            note += ("  [slot: drop rate on shield hits / on other hits: " +
+                     ", ".join(f"{k}: {v[0]:.2f}/{v[1]:.2f}" for k, v in top) + "]") if top else \
+                    f"  [no usable slots: {a['handle'].nunique()} slots, {len(hits)} player hits]"
+        notes.append(note)
         if hs is None:
             continue
         keep = a[a["handle"].isin([hs, ss])].dropna(subset=["id"])
@@ -134,7 +144,7 @@ def finish(out: dict, ev: dict[str, list[pd.DataFrame]]) -> None:
     # Health and shield from the raw health record, where the extractor captured it.
     attr = out.pop("attributes")
     if not attr.empty:
-        rebuilt, notes = health_from_attributes(attr, out["damage"])
+        rebuilt, notes = health_from_attributes(attr, out["damage"], out["players"])
         for n in notes[:3]:
             print(f"  health record: {n}")
         if len(notes) > 3:
