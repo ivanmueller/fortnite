@@ -1,5 +1,6 @@
 // fn-extract: turns Fortnite .replay files into compact "research JSON" files.
 // Usage: dotnet run -c Release -- <file-or-folder> <output-folder> [--sample-sec 1.0] [--mode normal|full] [--overwrite]
+//        ... --survey   list every data type and field the replay contains (writes <id>.survey.json)
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -21,6 +22,7 @@ string input = argv[0], outDir = argv[1];
 double sampleSec = 1.0;
 var mode = ParseMode.Normal;
 bool overwrite = argv.Contains("--overwrite");
+bool survey = argv.Contains("--survey");
 int si = argv.IndexOf("--sample-sec");
 if (si >= 0 && si + 1 < argv.Count) sampleSec = double.Parse(argv[si + 1], System.Globalization.CultureInfo.InvariantCulture);
 int mi = argv.IndexOf("--mode");
@@ -42,12 +44,22 @@ int ok = 0, failed = 0;
 foreach (var file in files)
 {
     var matchId = Path.GetFileNameWithoutExtension(file);
-    var outPath = Path.Combine(outDir, matchId + ".json");
+    var outPath = Path.Combine(outDir, matchId + (survey ? ".survey.json" : ".json"));
     if (File.Exists(outPath) && !overwrite) { Console.WriteLine($"skip   {matchId} (exists)"); continue; }
 
     var sw = Stopwatch.StartNew();
     try
     {
+        if (survey)
+        {
+            var sr = new ZoneLabReader(ParseMode.Full) { SurveyEnabled = true };
+            var rp = sr.ReadReplay(file);
+            var report = Survey.Report(matchId, rp, sr);
+            File.WriteAllText(outPath, JsonSerializer.Serialize(report, jsonOpts));
+            Survey.Print(report);
+            ok++;
+            continue;
+        }
         var reader = new ZoneLabReader(mode);
         var replay = reader.ReadReplay(file);
         var doc = Extract.Build(matchId, file, replay, sampleSec, reader.Buses);
@@ -281,8 +293,36 @@ class ZoneLabReader : ReplayReader
 
     public ZoneLabReader(ParseMode mode) : base(null, mode) { }
 
+    // ---- survey: every data type (export group) the replay registers, with its field names
+    public bool SurveyEnabled { get; set; }
+    public Dictionary<string, List<string>> SurveyGroups { get; } = new();
+    public Dictionary<string, int> SurveyReads { get; } = new();
+    int _surveySeen = -1;
+
+    void CaptureSchema()
+    {
+        if (!SurveyEnabled) return;
+        var map = _netGuidCache.NetFieldExportGroupMap;
+        if (map.Count == _surveySeen) return;
+        _surveySeen = map.Count;
+        foreach (var (path, group) in map)
+        {
+            var names = group.NetFieldExports?.Where(f => f is not null).Select(f => f!.Name).Where(n => !string.IsNullOrEmpty(n)).ToList() ?? new();
+            if (!SurveyGroups.TryGetValue(path, out var have) || have.Count < names.Count) SurveyGroups[path] = names;
+        }
+    }
+
+    public override void ReadNetFieldExports(Unreal.Core.FArchive archive) { base.ReadNetFieldExports(archive); CaptureSchema(); }
+    public override void ReceiveNetFieldExportsCompat(Unreal.Core.FBitArchive bitArchive) { base.ReceiveNetFieldExportsCompat(bitArchive); CaptureSchema(); }
+
     protected override void OnExportRead(uint channelIndex, INetFieldExportGroup? exportGroup)
     {
+        if (SurveyEnabled && exportGroup is not null)
+        {
+            var t = exportGroup.GetType();
+            var path = t.GetCustomAttributes(typeof(NetFieldExportGroupAttribute), false).OfType<NetFieldExportGroupAttribute>().FirstOrDefault()?.Path ?? t.Name;
+            SurveyReads[path] = SurveyReads.GetValueOrDefault(path) + 1;
+        }
         if (exportGroup is BusExport b)
         {
             if (!Buses.TryGetValue(channelIndex, out var m)) Buses[channelIndex] = m = new BusExport();
@@ -296,6 +336,70 @@ class ZoneLabReader : ReplayReader
         base.OnExportRead(channelIndex, exportGroup);
     }
 }
+static class Survey
+{
+    // Topics worth knowing about, and the words that point to them in field or type names.
+    static readonly (string Topic, string[] Words)[] Topics =
+    {
+        ("Health and shields", new[] { "health", "shield" }),
+        ("Damage", new[] { "damage" }),
+        ("Storm surge", new[] { "surge" }),
+        ("Storm", new[] { "storm", "safezone" }),
+        ("Weapons", new[] { "weapon", "ammo" }),
+        ("Inventory and items", new[] { "inventory", "itementry", "pickup", "itemdefinition" }),
+        ("Materials", new[] { "wood", "stone", "metal", "material", "resource" }),
+        ("Chests and containers", new[] { "container", "chest", "searched", "tiered", "ammobox" }),
+        ("Healing", new[] { "heal", "consum", "medkit", "bandage" }),
+        ("Revives and reboots", new[] { "revive", "reboot", "respawn", "dbno" }),
+        ("Building", new[] { "build", "structure", "edit" }),
+        ("Vehicles", new[] { "vehicle" }),
+        ("Player stats", new[] { "stat", "score", "kills", "assist" }),
+    };
+
+    public static object Report(string matchId, FortniteReplay r, ZoneLabReader reader)
+    {
+        var groups = reader.SurveyGroups.OrderBy(g => g.Key).Select(g => new
+        {
+            Path = g.Key,
+            Fields = g.Value,
+            Reads = reader.SurveyReads.GetValueOrDefault(g.Key),
+        }).ToList();
+        var topics = Topics.Select(t => new
+        {
+            t.Topic,
+            Matches = groups.SelectMany(g =>
+            {
+                bool inPath = t.Words.Any(w => g.Path.Contains(w, StringComparison.OrdinalIgnoreCase));
+                var fields = g.Fields.Where(f => t.Words.Any(w => f.Contains(w, StringComparison.OrdinalIgnoreCase))).ToList();
+                return inPath || fields.Count > 0
+                    ? new[] { new { g.Path, Fields = inPath ? g.Fields.Take(40).ToList() : fields, g.Reads } }
+                    : Array.Empty<object>().Select(_ => new { Path = "", Fields = new List<string>(), Reads = 0 });
+            }).ToList(),
+        }).ToList();
+        return new
+        {
+            MatchId = matchId,
+            Branch = r.Header?.Branch,
+            DataTypes = groups.Count,
+            DecodedTypes = reader.SurveyReads.Count,
+            Topics = topics,
+            Groups = groups,
+        };
+    }
+
+    public static void Print(object report)
+    {
+        var json = JsonSerializer.SerializeToElement(report);
+        Console.WriteLine($"survey {json.GetProperty("MatchId").GetString()}  {json.GetProperty("Branch").GetString()}: " +
+                          $"{json.GetProperty("DataTypes").GetInt32()} data types, {json.GetProperty("DecodedTypes").GetInt32()} decoded");
+        foreach (var t in json.GetProperty("Topics").EnumerateArray())
+        {
+            var m = t.GetProperty("Matches");
+            Console.WriteLine($"  {t.GetProperty("Topic").GetString(),-24} {m.GetArrayLength(),3} data types");
+        }
+    }
+}
+
 class ZoneRow { public int Seq { get; set; } public float Radius { get; set; } public float StartShrinkT { get; set; } public float FinishShrinkT { get; set; } public double[]? LastCenter { get; set; } public float LastRadius { get; set; } public double[]? NextCenter { get; set; } public float NextRadius { get; set; } public double[]? NextNextCenter { get; set; } public float NextNextRadius { get; set; } }
 class PlayerRow { public int? Id { get; set; } public string? PlayerId { get; set; } public string? Name { get; set; } public bool IsBot { get; set; } public int? TeamIndex { get; set; } public int? Placement { get; set; } public uint? Kills { get; set; } public uint? TeamKills { get; set; } public double? DeathT { get; set; } public int? DeathCause { get; set; } public double[]? DeathLocation { get; set; } public bool? Disconnected { get; set; } public string? Platform { get; set; } public int LocationSamplesRaw { get; set; } public int LocationSamplesUntimed { get; set; } }
 class TeamRow { public int? TeamIndex { get; set; } public int? Placement { get; set; } public uint? TeamKills { get; set; } public List<int?>? PlayerIds { get; set; } }

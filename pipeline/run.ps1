@@ -11,6 +11,7 @@
 #   .\pipeline\run.ps1 reparse                      re-read every downloaded replay (after parser updates), then analyze
 #   .\pipeline\run.ps1 datadir -Path D:\ZoneLabData move downloaded data to another folder/drive and use it from now on
 #   .\pipeline\run.ps1 keepraw -Value yes|no        keep raw .replay files after processing (default yes)
+#   .\pipeline\run.ps1 survey [-Path <match id>]       list every data type in one replay
 #   .\pipeline\run.ps1 plan                         preview which matches option 5 downloads next (strongest lobbies first)
 #   .\pipeline\run.ps1 pr [-Pages all]               download Epic Power Rankings (top 10,000), then rebuild tables
 param(
@@ -99,6 +100,16 @@ switch ($Stage) {
     "analyze" { Analyze $Data }
     "pois" { Push-Location pipeline/node; node pois.js; Pop-Location; if ($LASTEXITCODE -eq 0) { Analyze $Data } }
     "plan" { Push-Location pipeline/node; node download.js --plan; Pop-Location }
+    "survey" {
+        # List every data type in one replay (default: the newest downloaded), for planning new extractions.
+        $file = if ($Path) { Get-ChildItem "$Data/raw" -Filter "$Path*.replay" | Select-Object -First 1 }
+                else { Get-ChildItem "$Data/raw" -Filter *.replay | Sort-Object LastWriteTime -Descending | Select-Object -First 1 }
+        if (-not $file) { throw "No matching replay in $Data/raw" }
+        $out = Join-Path $Data "reports/survey"
+        New-Item -ItemType Directory -Force $out | Out-Null
+        dotnet (Extractor) $file.FullName $out --survey --overwrite
+        Write-Host "`nSurvey saved: $(Join-Path $out ($file.BaseName + '.survey.json'))" -ForegroundColor Green
+    }
     "pr" {
         Push-Location pipeline/node; node find_matches.js powerrankings --pages $(if ($Pages -eq "10") { "all" } else { $Pages }); Pop-Location
         Analyze $Data

@@ -36,6 +36,7 @@ case "${1:-help}" in
   pilot) (cd pipeline/node && node download.js --limit "${2:-10}" --via "${3:-epic}" ${4:+--window "$4"}); dotnet "$(extractor)" "$DATA/raw" "$DATA/parsed" --mode full; analyze "$DATA" ;;
   analyze) analyze "$DATA" "${2:-}" ;;
   pois) (cd pipeline/node && node pois.js) && analyze "$DATA" ;;
+  survey) f=$(ls -t "$DATA"/raw/${2:-}*.replay | head -1); mkdir -p "$DATA/reports/survey"; dotnet "$(extractor)" "$f" "$DATA/reports/survey" --survey --overwrite ;;
   plan) (cd pipeline/node && node download.js --plan) ;;
   pr) (cd pipeline/node && node find_matches.js powerrankings --pages "${2:-all}"); analyze "$DATA" ;;
   reparse) dotnet "$(extractor)" "$DATA/raw" "$DATA/parsed" --mode full --overwrite; analyze "$DATA" ;;
