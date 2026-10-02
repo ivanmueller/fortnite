@@ -669,59 +669,66 @@ GUIDES: dict[str, Guide] = {
     ),
 
     "zone_forecast": Guide(
-        question="Where will the next zone go, and which of the game's zone rules can a team rely on?",
+        question="Where will the next zone go, where will the game end, and how far can those forecasts be trusted?",
         method=[
-            "Playable map: the map is split into 25 m squares; a square counts as playable if players stood on the ground "
-            "there after landing, in the season's matches. Small gaps are filled in, and each square gets a ground height.",
-            "For every real zone change, hundreds of random alternatives are generated that follow the game's fixed rules: a "
-            "shrinking zone lands anywhere it fits inside the current one; 50/50, shifted and moving zones move their fixed "
-            "distance in a random direction.",
-            "Real zones are compared with their random alternatives on each measure: centre on playable ground, how much of the "
-            "zone covers playable ground, pull toward the island's centre, ground height, distance toward the edge, and "
-            "direction compared with the previous pull. A consistent difference is a rule of the game.",
-            "The forecast weights every possible next position by how much more often real zones show its measures than random "
-            "ones do. It's tested fairly: each match is forecast by a model trained only on the other matches.",
+            "Playable ground is mapped from where players stood before the storm first moves (drop and loot), in 25 m "
+            "squares, so it isn't shaped by where zones went.",
+            "For every zone change, the game's allowed alternatives are generated: a shrinking zone anywhere it fits inside the "
+            "current one; 50/50, shifted and moving zones at their fixed distance in any direction.",
+            "Models of increasing richness are compared: one zone back (where the current zone sits, the previous pull, land "
+            "and height), the whole zone history (the pull two zones back, the drift since zone 1, returning toward zone 1), "
+            "and map memory (where this zone number has landed in other matches this season).",
+            "Every model is scored on matches it never saw. A richer model is kept only if it does better there. A shuffle "
+            "control and a newest-matches test guard against patterns that wouldn't hold up.",
+            "The endgame forecast predicts the final zone directly from each earlier zone, compared with what the game's fixed "
+            "move distances alone imply.",
         ],
         terms={
-            "Forecast hit rate": "How often the real next zone landed in the forecast's most likely quarter of the possible "
-                                 "area, in matches the forecast never saw. 25% is random guessing; well above 25% is a usable "
-                                 "forecast.",
-            "Repeated zone positions": "Zone positions that appear identically in more than one match. Repeats would mean the "
-                                       "event reuses zone sets, which would make whole endgames predictable.",
-            "Zone changes analysed": "Zone changes with known circles in the season analysed.",
-            "Rules: real zones vs random placement": "For each zone type and measure: the average for real zones, the average "
-                "for random zones that follow the game's rules, and whether the difference is real.",
-            "Forecast beats random guessing": "Whether the forecast places real zones better than chance, across matches.",
-            "Forecast": "How well the forecast works on matches it never saw.",
-            "Shrinking": "Rules for zones that sit fully inside the current one.",
-            "50/50": "Rules for zones that partly overlap the current one.",
+            "Next zone forecast": "How often the real next zone landed in the forecast's most likely quarter of the possible "
+                                  "area, in matches it never saw. 25% is the game's rules alone.",
+            "On the newest matches": "The chosen model trained on older matches only and tested on the newest 20%. The most "
+                                     "honest estimate for matches that haven't happened yet.",
+            "Endgame forecast": "How often the real final zone landed in the forecast's most likely quarter, forecast from earlier zones.",
+            "Endgame from the rules alone": "The same using only what the fixed move distances imply. The forecast's real value "
+                                            "is the gap between these two.",
+            "Best-guess distance to the final zone": "Median distance from the forecast's single best spot to the real final zone.",
+            "Repeated zone positions": "Zone positions that appear identically in more than one match: reused zone sets.",
+            "Forecast models compared": "Each model's score on matches it never saw. 'Gain over the rules' is how much better "
+                                        "than the game's rules alone it pinpoints the next zone (0 = no better; each +1 "
+                                        "halves the uncertainty). The shuffle control should fall back toward 'One zone back'.",
+            "Rules: real zones vs random placement": "For each zone type and measure: real zones against the game-allowed "
+                                                     "alternatives, and whether the difference is real.",
+            "The chosen forecast beats the game's rules": "Whether the chosen model pinpoints next zones better than the rules alone.",
+            "Zone history adds to one zone back": "Whether earlier zones carry information beyond the previous zone.",
+            "Zone history and the map improve the endgame forecast": "Whether the endgame forecast beats the fixed move distances alone.",
+            "Forecast": "The next-zone forecast, on matches it never saw.",
+            "Endgame": "The final-zone forecast, on matches it never saw.",
+            "Shrinking": "Rules for zones fully inside the current one.",
+            "50/50": "Rules for zones partly overlapping the current one.",
             "Shifted": "Rules for zones that move fully outside after a wait.",
             "Moving": "Rules for zones that keep moving with no wait.",
             "p": P_VALUE,
         },
         charts={
-            "Forecast for the chosen zone": "One zone change, in a match the forecast didn't learn from. Dots are possible "
-                "centres for the next zone: dark teal is the forecast's most likely quarter, light teal the next quarter, grey "
-                "the rest. The amber dot is where the zone really went. Pick the match and zone above the takeaway.",
-            "Where zones land on the playable map": "Grey is playable ground; coloured dots are real zone centres by zone type. "
-                "Gaps and edges in the grey show where zones can't go.",
-            "Forecast hit rate by zone": "For each zone, how often the forecast's most likely quarter contained the real next "
-                                         "zone. Bars well above the dashed 25% line are zones where pre-rotating on the "
-                                         "forecast pays off.",
+            "Next zone forecast": "Standing in the current zone (light circle) of a match the model never saw: possible centres "
+                "for the next zone, dark teal for the most likely quarter, light teal the next quarter, grey the rest. The amber "
+                "dot is where it really went. Choose the match and zone above the takeaway.",
+            "Endgame forecast": "From the same moment: where the final zone is most likely to be. The amber dot is where the "
+                                "game really ended.",
+            "Endgame forecast accuracy, by the zone you're in": "How well the final zone is forecast from each zone, against the "
+                "fixed move distances alone. The zone where the two bars separate is when the endgame becomes readable.",
+            "Next zone forecast accuracy by zone": "For each zone, how often the forecast's most likely quarter held the real next zone.",
+            "Where zones land on the playable map": "Grey is playable ground; coloured dots are real zone centres by zone type.",
         },
         conclude=[
-            "Rules with strong evidence can be used mid-game: for example, if zones avoid putting their centre off the "
-            "playable ground, directions toward the coast can be ruled out.",
-            "A hit rate well above 25% means the forecast is worth acting on; check by zone, since some zones are far more "
-            "predictable than others.",
-            "Any repeated zone positions are worth investigating immediately: reused zone sets would make endgames predictable "
-            "from the first zone.",
+            "Trust 'On the newest matches' most: it's how the forecast performs on matches it couldn't have learned from.",
+            "The zone at which the endgame forecast clearly beats the rules alone is the earliest point to commit to an endgame side.",
+            "If 'Whole zone history' is chosen and the shuffle control falls back, earlier zones genuinely predict later ones.",
         ],
         limits=[
-            "The playable map is built from where players went, so rarely visited land can look unplayable, and lakes players "
-            "swim through count as playable.",
-            "One season at a time: the map changes between seasons, and the most common season in the selection is used.",
-            "Zone 1's starting circle isn't recorded, so the forecast starts with zone 2.",
+            "One season at a time, and at least 10 matches; patterns across whole zone sequences need many matches.",
+            "Playable ground is mapped from player positions, so rarely visited land can be missed and swimmable water counts.",
+            "The first calculation on a large selection takes about a minute; after that, switching matches and zones is instant.",
         ],
     ),
 

@@ -197,12 +197,37 @@ def test_zone_check_confirms_continuity(client):
     assert len(zmap["options"]["circles"]) >= 5
 
 
-def test_zone_forecast_is_honest(client):
-    """No planted zone rule: the forecast must not beat chance. Planted edge rule (v98): it must find it."""
-    import re
-    rand = client.post("/api/analyses/zone_forecast/run", json={"filters": {**DEMO, "seasons": ["v96.10"]}}).json()
-    hit = int(re.search(r"(\d+)%", next(m["value"] for m in rand["metrics"] if m["label"] == "Forecast hit rate")).group(1))
-    assert hit <= 40
-    edge = client.post("/api/analyses/zone_forecast/run", json={"filters": {**DEMO, "seasons": ["v98.10"]}}).json()
-    rows = {(r[0], r[1]): r for r in edge["tables"][0]["rows"]}
-    assert rows[("shrinking", "Distance toward the current zone's edge")][-1] == "Strong evidence"
+def test_zone_forecast_explains_small_selections(client):
+    """Fewer than 10 matches in a season: the page says so instead of forecasting from too little."""
+    j = client.post("/api/analyses/zone_forecast/run", json={"filters": {**DEMO, "seasons": ["v96.10"]}}).json()
+    assert "at least 10" in j["headline"]
+
+
+def test_zone_model_is_honest():
+    """Engine-level: random zones must not beat the rules; a one-step rule must be found."""
+    import numpy as np
+    import pandas as pd
+    from fnlab import zone_model as zm
+
+    xs, ys = np.meshgrid(np.arange(-40, 40), np.arange(-40, 40))
+    land = zm.LandMap(pd.DataFrame({"cx": xs.ravel(), "cy": ys.ravel(), "n": 5, "ground": 0.0}))
+    radii = [95000, 75000, 52500, 32500, 20000, 10000, 5000, 2500]
+
+    def season(cont, n=40, seed=1):
+        rng, seqs = np.random.default_rng(seed), {}
+        for m in range(n):
+            x, y = rng.uniform(-15000, 15000, 2)
+            rows, prev = [(1, x, y, radii[0], "shrinking")], None
+            for k in range(2, 9):
+                d = 32500 if k >= 5 else (radii[k - 2] - radii[k - 1]) * np.sqrt(rng.random())
+                a = prev + rng.normal(0, 0.4) if (cont and prev is not None) else rng.uniform(0, 2 * np.pi)
+                nx, ny = x + d * np.cos(a), y + d * np.sin(a)
+                prev = np.arctan2(ny - y, nx - x)
+                rows.append((k, nx, ny, radii[k - 1], "shrinking" if k < 5 else "moving"))
+                x, y = nx, ny
+            seqs[f"m{m}"] = pd.DataFrame(rows, columns=["phase", "x", "y", "r", "zone_type"])
+        return seqs
+    none = zm.ladder(land, season(False), {})
+    assert none["results"][none["best"]]["hit"].mean() <= 0.35
+    cont = zm.ladder(land, season(True), {})
+    assert cont["results"]["one_step"]["hit"].mean() >= 0.55

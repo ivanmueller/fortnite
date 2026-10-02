@@ -1,366 +1,276 @@
 """
-Zone forecast: where will the next zone go?
-
-1. Playable map. The map is divided into CELL_M squares; a square is playable if players stood on the
-   ground there (after landing) in the selected matches of one season. Small gaps are filled in. Each
-   square also gets a ground height (a low percentile of the heights seen there).
-2. Random zones that follow the game's known rules, many per real zone change: a shrinking zone's next
-   circle lands anywhere it fits inside the current one; 50/50, shifted and moving zones move their
-   fixed distance (the same for a given zone number) in a random direction.
-3. Real vs random. For each measure (centre on land, share of the circle on land, pull toward the
-   island's centre, ground height, distance toward the edge, direction vs the previous pull) we take
-   where the real zone falls among its random alternatives (0 = lowest, 1 = highest). With no rule,
-   that's 0.5 on average; a consistent lean is a rule of the game.
-4. Forecast. Each possible next position is weighted by how much more often real zones show its
-   measures than random ones do (learned from other matches only), and checked against where the zone
-   really went: how often it lands in the forecast's most likely quarter, against 25% by chance.
-5. Repeated zones: identical zone positions across matches.
+Zone forecast page. The engine (zone_model.py) compares models of increasing richness on matches they never
+saw, keeps a richer model only if it does better out of sample, checks its gain with a shuffle control and a
+fresh-matches test, and forecasts both the next zone and the final zone. Results are cached per selection.
 """
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import pandas as pd
-from scipy import ndimage
 
+from .. import zone_model as zm
 from ..conclusion import conclude
 from ..result import Result
 from ..stats import ttest_mean
 from ..store import df
 from . import ALPHA_PARAM, Context, Param, register
 
-CELL = 2500                 # 25 m squares (Unreal units are cm)
-N_DISK = 300                # random alternatives for a shrinking zone
-N_RING = 72                 # directions for a zone that moves a fixed distance
-TOP = 0.25                  # "most likely quarter"
-FOLDS = 5
-RNG = np.random.default_rng(7)
-# Fixed sample points inside a unit disk (sunflower pattern) to measure how much of a circle covers land.
-_k = np.arange(48) + 0.5
-DISK_PTS = np.c_[np.sqrt(_k / 48) * np.cos(np.pi * (3 - np.sqrt(5)) * _k), np.sqrt(_k / 48) * np.sin(np.pi * (3 - np.sqrt(5)) * _k)]
-TYPES = ["shrinking", "50/50", "shifted", "moving"]
-MEASURES = {
-    "on_land": "Centre on playable ground",
-    "land_share": "Share of the zone on playable ground",
-    "inward": "Pull toward the island's centre",
-    "height": "Ground height inside the zone",
-    "edge": "Distance toward the current zone's edge",
-    "turn": "Keeps the previous pull's direction",
+RUNGS = [("one_step", "One zone back", "Where the current zone sits, the previous pull, land and height"),
+         ("history", "Whole zone history", "Plus the pull two zones back, the drift since zone 1, and returning toward zone 1"),
+         ("memory", "History + map memory", "Plus where this zone number has landed in other matches this season")]
+RULE_MEASURES = {"on_land": "Centre on playable ground", "land": "Share of the zone on playable ground",
+                 "inward": "Pull toward the island's centre", "height": "Ground height inside the zone",
+                 "edge": "Distance toward the current zone's edge", "turn1": "Keeps the previous pull's direction",
+                 "drift": "Follows the overall drift since zone 1", "home": "Moves away from zone 1's centre"}
+READINGS = {
+    "on_land": ("Zones put their centre on playable ground more often than random placement would", "Zones put their centre off playable ground more often than random placement would"),
+    "land": ("Zones cover more playable ground than random placement would", "Zones cover less playable ground than random placement would"),
+    "inward": ("Zones pull toward the island's centre more than chance", "Zones pull away from the island's centre more than chance"),
+    "height": ("Zones land on higher ground than random placement would", "Zones land on lower ground than random placement would"),
+    "edge": ("Zones land closer to the current zone's edge than chance", "Zones land closer to the current zone's centre than chance"),
+    "turn1": ("Zones keep going in the previous pull's direction more than chance", "Zones reverse the previous pull's direction more than chance"),
+    "drift": ("Zones keep following the overall drift since zone 1", "Zones turn back against the overall drift since zone 1"),
+    "home": ("Zones move away from zone 1's centre more than chance", "Zones come back toward zone 1's centre more than chance"),
 }
+_CACHE: dict = {}
 
 
-class LandMap:
-    def __init__(self, cells: pd.DataFrame):
-        self.x0, self.y0 = int(cells["cx"].min()) - 2, int(cells["cy"].min()) - 2
-        w, h = int(cells["cx"].max()) - self.x0 + 3, int(cells["cy"].max()) - self.y0 + 3
-        grid = np.zeros((w, h), bool)
-        grid[cells["cx"] - self.x0, cells["cy"] - self.y0] = True
-        self.land = ndimage.binary_closing(grid, structure=np.ones((3, 3)), iterations=2) | grid
-        hgt = np.full((w, h), np.nan)
-        hgt[cells["cx"] - self.x0, cells["cy"] - self.y0] = cells["ground"]
-        # Fill heights of filled-in squares from their nearest measured neighbour.
-        idx = ndimage.distance_transform_edt(np.isnan(hgt), return_distances=False, return_indices=True)
-        self.height = hgt[tuple(idx)]
-        ii, jj = np.nonzero(self.land)
-        self.cx, self.cy = (ii.mean() + self.x0 + 0.5) * CELL, (jj.mean() + self.y0 + 0.5) * CELL
-
-    def lookup(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        i = np.floor(np.asarray(x) / CELL).astype(int) - self.x0
-        j = np.floor(np.asarray(y) / CELL).astype(int) - self.y0
-        ok = (i >= 0) & (j >= 0) & (i < self.land.shape[0]) & (j < self.land.shape[1])
-        land = np.zeros(i.shape, bool)
-        h = np.full(i.shape, np.nan)
-        land[ok] = self.land[i[ok], j[ok]]
-        h[ok] = self.height[i[ok], j[ok]]
-        return land, h
-
-
-def _land_map(ctx: Context, season: str) -> LandMap | None:
-    cells = df(ctx.con, f"""
-        SELECT floor(p.x / {CELL})::INT AS cx, floor(p.y / {CELL})::INT AS cy, count(*) AS n, quantile_cont(p.z, 0.2) AS ground
-        FROM positions p JOIN sel USING (match_id)
-        JOIN matches m USING (match_id)
-        JOIN landings l ON l.match_id = p.match_id AND l.id = p.id
-        WHERE m.season = '{season}' AND p.t >= l.land_t AND abs(coalesce(p.vz, 0)) < 300
-        GROUP BY 1, 2 HAVING count(*) >= 2
-    """)
-    return LandMap(cells) if len(cells) >= 50 else None
-
-
-def _features(land: LandMap, cur: tuple, nxt_x: np.ndarray, nxt_y: np.ndarray, next_r: float, prev_angle: float | None) -> dict:
-    """Measures for candidate next centres (arrays) given the current circle (x, y, r)."""
-    cx, cy, cr = cur
-    on, h_c = land.lookup(nxt_x, nxt_y)
-    px = nxt_x[:, None] + DISK_PTS[None, :, 0] * next_r
-    py = nxt_y[:, None] + DISK_PTS[None, :, 1] * next_r
-    lp, hp = land.lookup(px, py)
-    share = lp.mean(axis=1)
-    with np.errstate(invalid="ignore"):
-        height = np.nanmean(np.where(lp, hp, np.nan), axis=1) / 100
-    vx, vy = nxt_x - cx, nxt_y - cy
-    tx, ty = land.cx - cx, land.cy - cy
-    norm = np.hypot(vx, vy) * np.hypot(tx, ty)
-    inward = np.where(norm > 0, (vx * tx + vy * ty) / np.where(norm > 0, norm, 1), 0.0)
-    allowed = max(cr - next_r, 1.0)
-    edge = np.clip(np.hypot(vx, vy) / allowed, 0, 1)
-    turn = np.full(len(nxt_x), np.nan) if prev_angle is None else \
-        np.cos(np.arctan2(vy, vx) - np.radians(prev_angle))
-    return dict(on_land=on.astype(float), land_share=share, inward=inward, height=height, edge=edge, turn=turn)
-
-
-def _candidates(row: pd.Series) -> tuple[np.ndarray, np.ndarray]:
-    cx, cy, cr, nr = row["cur_x"], row["cur_y"], row["cur_r"], row["next_r"]
-    if row["zone_type"] == "shrinking":
-        rho = (cr - nr) * np.sqrt(RNG.random(N_DISK))
-        th = RNG.random(N_DISK) * 2 * np.pi
-    else:
-        rho = np.full(N_RING, np.hypot(row["next_x"] - cx, row["next_y"] - cy))
-        th = (np.arange(N_RING) + RNG.random()) * 2 * np.pi / N_RING
-    return cx + rho * np.cos(th), cy + rho * np.sin(th)
-
-
-def _bins(m: str) -> np.ndarray:
-    return {"on_land": np.array([-0.5, 0.5, 1.5]), "land_share": np.linspace(0, 1, 6), "inward": np.linspace(-1, 1, 6),
-            "edge": np.linspace(0, 1, 6), "turn": np.linspace(-1, 1, 7)}.get(m, np.array([]))
-
-
-def _measure_list(zone_type: str) -> list[str]:
-    return ["on_land", "land_share", "inward", "edge", "turn"] if zone_type == "shrinking" else ["on_land", "land_share", "inward", "turn"]
-
-
-def _fit(train: list[dict]) -> dict:
-    """Density ratios (real / random) per zone type, measure and bin, with light smoothing."""
-    model = {}
-    for zt in TYPES:
-        rows = [t for t in train if t["type"] == zt]
-        if len(rows) < 8:
-            continue
-        for m in _measure_list(zt):
-            b = _bins(m)
-            real = np.zeros(len(b) - 1)
-            rand = np.zeros(len(b) - 1)
-            for t in rows:
-                v = t["actual"][m]
-                if np.isnan(v):
-                    continue
-                real += np.histogram([v], b)[0]
-                cv = t["cand"][m]
-                cv = cv[~np.isnan(cv)]
-                if len(cv):
-                    rand += np.histogram(cv, b)[0] / len(cv)
-            if real.sum() >= 8:
-                model[(zt, m)] = (b, (real + 1) / (rand + 1))
-    return model
-
-
-def _weights(model: dict, zt: str, feats: dict, n: int) -> np.ndarray:
-    w = np.ones(n)
-    for m in _measure_list(zt):
-        key = (zt, m)
-        if key not in model:
-            continue
-        b, ratio = model[key]
-        v = np.atleast_1d(feats[m])
-        idx = np.clip(np.searchsorted(b, v, side="right") - 1, 0, len(ratio) - 1)
-        w = w * np.where(np.isnan(v), 1.0, ratio[idx])
-    return w
-
-
-def _percentile(value: float, cands: np.ndarray) -> float:
-    c = cands[~np.isnan(cands)]
-    if np.isnan(value) or not len(c):
-        return np.nan
-    return float(((c < value).sum() + 0.5 * (c == value).sum()) / len(c))
-
-
-warnings.filterwarnings("ignore", message="Mean of empty slice", category=RuntimeWarning)
+def _load(ctx: Context):
+    con = ctx.con
+    z = df(con, """SELECT z.match_id, z.phase, z.next_x, z.next_y, z.next_r, o.zone_type, m.season, m.match_date
+                   FROM zones z JOIN sel USING (match_id) JOIN matches m USING (match_id)
+                   LEFT JOIN zone_offsets o ON o.match_id = z.match_id AND o.phase = z.phase""")
+    if z.empty:
+        return None
+    season = z["season"].mode().iat[0]
+    z = z[z["season"] == season].copy()
+    z["zone_type"] = z["zone_type"].fillna("shrinking")
+    key = (season, tuple(sorted(z["match_id"].unique())), round(float(z["next_x"].sum()), 0))
+    if key in _CACHE:
+        return _CACHE[key]
+    cells = df(con, zm.land_cells_sql(season))
+    if len(cells) < 50:
+        return None
+    land = zm.LandMap(cells)
+    seqs = zm.sequences(z)
+    if len(seqs) < 10:
+        return None
+    dates = z.groupby("match_id")["match_date"].first().astype(str).to_dict()
+    lad = zm.ladder(land, seqs, dates)
+    end = zm.endgame(land, seqs, lad["folds"])
+    out = dict(season=season, z=z, land=land, seqs=seqs, lad=lad, end=end)
+    if len(_CACHE) > 4:
+        _CACHE.clear()
+    _CACHE[key] = out
+    return out
 
 
 @register("zone_forecast", "Zone forecast",
-          "Where will the next zone go? Real zones compared with random zones that follow the game's rules on a map of "
-          "the playable area, the rules that come out of it, and a forecast tested on matches it never saw.",
+          "Where will the next zone go, and where will the game end? Models of increasing richness, from one zone back to "
+          "the whole zone history and map memory, each tested on matches it never saw.",
           params=[ALPHA_PARAM, Param("match", "Match to forecast", "match", ""),
                   Param("zone", "Zone to forecast", "zone", 6, [{"value": z, "label": f"Zone {z}"} for z in range(3, 12)])])
 def run(ctx: Context) -> Result:
     alpha = float(ctx.params.get("alpha", 0.005))
-    r, con = Result(), ctx.con
-    z = df(con, """SELECT z.match_id, z.phase, z.cur_x, z.cur_y, z.cur_r, z.next_x, z.next_y, z.next_r, z.angle_deg, z.zone_type,
-                          m.season, m.match_date
-                   FROM zone_offsets z JOIN sel USING (match_id) JOIN matches m USING (match_id)
-                   WHERE z.cur_x IS NOT NULL ORDER BY z.match_id, z.phase""")
-    have = {t for (t,) in con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
-    if z.empty or "landings" not in have or "zone_type" not in z:
-        r.headline = "No zone changes with known circles in this selection (rebuild tables after updating)."
-        conclude(r, ctx, primary=[], alpha=alpha, recommended=50, descriptive=r.headline)
+    r = Result()
+    have = {t for (t,) in ctx.con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
+    data = _load(ctx) if {"landings", "zone_offsets"} <= have else None
+    if data is None:
+        r.headline = "Not enough matches with zones and player positions to forecast (at least 10 from one season)."
+        conclude(r, ctx, primary=[], alpha=alpha, recommended=100, descriptive=r.headline)
         return r
-    season = z["season"].mode().iat[0]
-    z = z[z["season"] == season].copy()
-    land = _land_map(ctx, season)
-    if land is None:
-        r.headline = "Not enough player positions to map the playable area."
-        conclude(r, ctx, primary=[], alpha=alpha, recommended=50, descriptive=r.headline)
-        return r
-    z["prev_angle"] = z.groupby("match_id")["angle_deg"].shift(1)
+    land, seqs, lad, end, season = data["land"], data["seqs"], data["lad"], data["end"], data["season"]
+    res, best = lad["results"], lad["best"]
+    states = lad["states"]
 
-    # ---- real zone vs its random alternatives, for every zone change
-    trans = []
-    for _, row in z.iterrows():
-        cur = (row["cur_x"], row["cur_y"], row["cur_r"])
-        prev = None if pd.isna(row["prev_angle"]) else float(row["prev_angle"])
-        cx, cy = _candidates(row)
-        cand = _features(land, cur, cx, cy, row["next_r"], prev)
-        act = _features(land, cur, np.array([row["next_x"]]), np.array([row["next_y"]]), row["next_r"], prev)
-        act = {k: float(v[0]) for k, v in act.items()}
-        trans.append(dict(match_id=row["match_id"], phase=int(row["phase"]), type=row["zone_type"], cur=cur,
-                          next=(row["next_x"], row["next_y"], row["next_r"]), cx=cx, cy=cy, cand=cand, actual=act, prev=prev))
+    # ---- the ladder: each model on matches it never saw
+    rows = [{"Model": "Game rules only", "Uses": "Fixed sizes and move distances", "Next zone in top quarter": "25%",
+             "Gain over the rules": "–", "Status": ""}]
+    for key, name, uses in RUNGS:
+        d = res[key]
+        rows.append({"Model": name, "Uses": uses, "Next zone in top quarter": f"{d['hit'].mean():.0%}",
+                     "Gain over the rules": f"{d['bits'].mean():+.2f} bits", "Status": "Chosen" if key == best else ""})
+    sh = res["shuffled"]
+    rows.append({"Model": "Shuffle control", "Uses": "Whole zone history, but taken from other matches",
+                 "Next zone in top quarter": f"{sh['hit'].mean():.0%}", "Gain over the rules": f"{sh['bits'].mean():+.2f} bits",
+                 "Status": "Should be no better than One zone back"})
+    r.table("Forecast models compared", pd.DataFrame(rows))
+    b = res[best]
+    per = b.groupby("match_id")["bits"].mean()
+    t = ttest_mean(per, 0.0)
+    if t["n"] >= 3:
+        r.test("Forecast", "The chosen forecast beats the game's rules", int(t["n"]), f"{b['hit'].mean():.0%} in the top quarter",
+               t["p"], alpha, ("The forecast places the next zone better than the game's rules alone",
+                               "The forecast does no better than the game's rules alone"), direction=t["mean"])
+    hist_gain = res["history"].groupby("match_id")["bits"].mean() - res["one_step"].groupby("match_id")["bits"].mean()
+    tg = ttest_mean(hist_gain.dropna(), 0.0)
+    if tg["n"] >= 3:
+        r.test("Forecast", "Zone history adds to one zone back", int(tg["n"]), f"{tg['mean']:+.2f} bits per zone", tg["p"], alpha,
+               ("Earlier zones help predict the next one beyond the previous zone",
+                "Earlier zones add nothing beyond the previous zone"), direction=tg["mean"])
 
-    # ---- rules: where real zones fall among random ones, one summary per match
-    rows = []
-    for zt in TYPES:
-        sub = [t for t in trans if t["type"] == zt]
+    fresh = lad["fresh"]
+    r.metric("Next zone forecast", f"{b['hit'].mean():.0%}", "How often the real next zone was in the forecast's most likely quarter of "
+             "the possible area, in matches the forecast never saw. 25% is the game's rules alone.")
+    if len(fresh):
+        r.metric("On the newest matches", f"{fresh['hit'].mean():.0%}", "Trained only on older matches, tested on the newest 20%: "
+                 "how it will do on matches that haven't happened yet.")
+
+    # ---- endgame
+    er = end["results"]
+    use_full = end.get("chosen") == "full"
+    if len(er):
+        er = er.assign(use_hit=er["hit"] if use_full else er["rules_hit"])
+        r.metric("Endgame forecast", f"{er['use_hit'].mean():.0%}", "How often the real final zone was in the forecast's most likely quarter, "
+                 "forecast from earlier zones. " + ("Uses zone history and the map: they beat the rules alone out of sample." if use_full else
+                 "Uses the game's rules alone: zone history and the map didn't improve it out of sample yet."))
+        r.metric("Endgame from the rules alone", f"{er['rules_hit'].mean():.0%}", "The same, using only what the fixed move distances imply.")
+        r.metric("Best-guess distance to the final zone", f"{er['err_m'].median():.0f} m",
+                 f"Median distance between the forecast's single best spot and the real final zone (a random guess in the same area: {er['err_random_m'].median():.0f} m)")
+        eg = er.groupby("match_id").apply(lambda g: (g["bits"] - g["rules_bits"]).mean(), include_groups=False)
+        te = ttest_mean(eg.dropna(), 0.0)
+        if te["n"] >= 3:
+            r.test("Endgame", "Zone history and the map improve the endgame forecast", int(te["n"]),
+                   f"{er['hit'].mean():.0%} vs {er['rules_hit'].mean():.0%} from the rules alone", te["p"], alpha,
+                   ("Earlier zones and the map tell you where the game will end, beyond the fixed move distances",
+                    "Earlier zones and the map add nothing to the endgame forecast beyond the fixed move distances"), direction=te["mean"])
+        bz = er.groupby("zone_now").agg(full=("hit", "mean"), rules=("rules_hit", "mean"), n=("hit", "size"))
+        bz = bz[bz["n"] >= 5]
+        r.chart("bar", "Endgame forecast accuracy, by the zone you're in",
+                [dict(name="Forecast", x=[f"Zone {int(k)}" for k in bz.index], y=(bz["full"] * 100).round(0).tolist()),
+                 dict(name="Game rules alone", x=[f"Zone {int(k)}" for k in bz.index], y=(bz["rules"] * 100).round(0).tolist())],
+                y_label="Final zone in the forecast's top quarter (%)", reference_lines=[dict(axis="y", value=25, label="Random")])
+
+    by = b.groupby("zone").agg(hit=("hit", "mean"), n=("hit", "size"))
+    by = by[by["n"] >= 5]
+    r.chart("bar", "Next zone forecast accuracy by zone",
+            [dict(name="Next zone in the top quarter", x=[f"Zone {int(k)}" for k in by.index], y=(by["hit"] * 100).round(0).tolist())],
+            y_label="% forecast correctly", reference_lines=[dict(axis="y", value=25, label="Game rules alone")])
+
+    # ---- rules: where real zones fall among the game-allowed alternatives
+    rule_rows = []
+    for zt in ["shrinking", "50/50", "shifted", "moving"]:
+        sub = [s for s in states if s["type"] == zt]
         if len(sub) < 5:
             continue
-        for m in _measure_list(zt) + ["height"]:
-            pct = pd.DataFrame([(t["match_id"], _percentile(t["actual"][m], t["cand"][m])) for t in sub], columns=["match_id", "p"]).dropna()
-            if len(pct) < 5:
+        for m, label in RULE_MEASURES.items():
+            if m == "edge" and zt != "shrinking":
                 continue
-            per = pct.groupby("match_id")["p"].mean()
-            tt = ttest_mean(per, 0.5) if len(per) >= 3 else {"n": len(per), "p": np.nan, "mean": per.mean()}
-            real = np.nanmean([t["actual"][m] for t in sub])
-            rand = np.nanmean([np.nanmean(t["cand"][m]) for t in sub])
-            label = MEASURES[m]
-            reading = {
-                "on_land": ("Zones put their centre on playable ground more often than random placement would",
-                            "Zones put their centre on playable ground less often than random placement would"),
-                "land_share": ("Zones cover more playable ground than random placement would",
-                               "Zones cover less playable ground than random placement would"),
-                "inward": ("Zones pull toward the island's centre more than chance", "Zones pull away from the island's centre more than chance"),
-                "height": ("Zones land on higher ground than random placement would", "Zones land on lower ground than random placement would"),
-                "edge": ("Zones land closer to the current zone's edge than chance", "Zones land closer to the current zone's centre than chance"),
-                "turn": ("Zones keep going in the previous pull's direction more than chance", "Zones reverse the previous pull's direction more than chance"),
-            }[m]
+            vals = []
+            for s in sub:
+                c, tv = s["base_c"][m], float(s["base_t"][m][0])
+                if np.allclose(c, c[0]):
+                    continue
+                vals.append((s["match_id"], ((c < tv).sum() + 0.5 * (c == tv).sum()) / len(c), tv, float(np.mean(c))))
+            if len(vals) < 5:
+                continue
+            v = pd.DataFrame(vals, columns=["match_id", "pct", "real", "rand"])
+            pm = v.groupby("match_id")["pct"].mean()
+            tt = ttest_mean(pm, 0.5) if len(pm) >= 3 else {"n": len(pm), "p": np.nan, "mean": pm.mean()}
+            grp = "50/50" if zt == "50/50" else zt.capitalize()
             if tt["n"] >= 3:
-                r.test(zt.capitalize() if zt != "50/50" else "50/50", label, int(tt["n"]),
-                       f"real {real:.2f} vs random {rand:.2f}", tt["p"], alpha, reading, direction=tt.get("mean"), null=0.5)
-            fmt = (lambda v: f"{v:.0%}") if m in ("on_land", "land_share", "edge") else (lambda v: f"{v:+.2f}") if m in ("inward", "turn") else (lambda v: f"{v:.0f} m")
-            rows.append({"Zone type": zt, "Rule": label, "Real zones": fmt(real), "Random zones": fmt(rand),
-                         "Zone changes": len(sub), "_p": tt["p"], "_dir": (tt.get("mean") or 0.5) - 0.5})
-    rules = pd.DataFrame(rows)
-    if len(rules):
-        rules["Verdict"] = [("Strong evidence" if p < alpha else "Some evidence" if p < 0.05 else "No difference") if p == p else "No difference"
-                            for p in rules["_p"]]
-        r.table("Rules: real zones vs random placement", rules.drop(columns=["_p", "_dir"]))
+                r.test(grp, label, int(tt["n"]), f"real {v['real'].mean():.2f} vs random {v['rand'].mean():.2f}", tt["p"], alpha,
+                       READINGS[m], direction=tt.get("mean"), null=0.5)
+            fmt = (lambda x: f"{x:.0%}") if m in ("on_land", "land", "edge") else (lambda x: f"{x:+.2f}")
+            p = tt["p"]
+            rule_rows.append({"Zone type": zt, "Rule": label, "Real zones": fmt(v["real"].mean()), "Random zones": fmt(v["rand"].mean()),
+                              "Verdict": ("Strong evidence" if p < alpha else "Some evidence" if p < 0.05 else "No difference") if p == p else "No difference"})
+    if rule_rows:
+        r.table("Rules: real zones vs random placement", pd.DataFrame(rule_rows))
 
-    # ---- repeated zones: identical positions across matches
+    # ---- repeated zone positions
+    z = data["z"]
     key = z.assign(kx=(z["next_x"] / 100).round(0), ky=(z["next_y"] / 100).round(0))
     reps = key.groupby(["phase", "kx", "ky"])["match_id"].nunique()
     reps = reps[reps > 1]
     r.metric("Repeated zone positions", f"{len(reps)}" if len(reps) else "None",
              "Zone positions that appear identically (to the metre) in more than one match")
     if len(reps):
-        r.table("Repeated zone positions", reps.reset_index().rename(columns={"phase": "Zone", "kx": "Centre X (m)", "ky": "Centre Y (m)",
-                                                                               "match_id": "Matches"}))
+        r.table("Repeated zone positions", reps.reset_index().rename(columns={"phase": "Zone", "kx": "Centre X (m)", "ky": "Centre Y (m)", "match_id": "Matches"}))
 
-    # ---- forecast, backtested: each match forecast by a model trained on the other matches
-    matches = sorted({t["match_id"] for t in trans})
-    folds = {m: i % FOLDS for i, m in enumerate(RNG.permutation(matches))}
-    scored = []
-    for f in range(FOLDS):
-        model = _fit([t for t in trans if folds[t["match_id"]] != f])
-        for t in (t for t in trans if folds[t["match_id"]] == f):
-            w = _weights(model, t["type"], t["cand"], len(t["cx"]))
-            wa = _weights(model, t["type"], {k: np.array([v]) for k, v in t["actual"].items()}, 1)[0]
-            rank = float(((w < wa).sum() + 0.5 * (w == wa).sum()) / len(w))
-            scored.append(dict(match_id=t["match_id"], phase=t["phase"], type=t["type"], rank=rank, hit=rank >= 1 - TOP))
-    sc = pd.DataFrame(scored)
-    if len(sc):
-        per = sc.groupby("match_id")["rank"].mean()
-        tt = ttest_mean(per, 0.5)
-        if tt["n"] >= 3:
-            r.test("Forecast", "Forecast beats random guessing", int(tt["n"]),
-                   f"real zone in the forecast's top quarter {sc['hit'].mean():.0%} of the time (25% by chance)", tt["p"], alpha,
-                   ("The forecast places the real next zone better than random guessing", "The forecast does no better than random guessing"),
-                   direction=tt.get("mean"), null=0.5)
-        r.metric("Forecast hit rate", f"{sc['hit'].mean():.0%}", "How often the real next zone landed in the forecast's most likely "
-                 "quarter of the possible area, in matches the forecast never saw. 25% is random guessing.")
-        by = sc.groupby("phase").agg(hit=("hit", "mean"), n=("hit", "size"))
-        by = by[by["n"] >= 5]
-        r.chart("bar", "Forecast hit rate by zone",
-                [dict(name="Next zone in the forecast's top quarter", x=[f"Zone {int(p)}" for p in by.index], y=(by["hit"] * 100).round(0).tolist())],
-                y_label="% of zones forecast correctly", reference_lines=[dict(axis="y", value=25, label="Random guess")])
-    r.metric("Zone changes analysed", f"{len(trans):,}", f"From {len(matches)} matches of {season}")
+    # ---- the two forecast maps for the chosen match and zone (models that never saw this match)
+    want = int(ctx.params.get("zone") or 6)
+    mid = ctx.params.get("match") or sorted(seqs, key=lambda m: str(z.loc[z["match_id"] == m, "match_date"].iat[0]))[-1]
+    if mid not in seqs:
+        mid = next(iter(seqs))
+    st = next((s for s in states if s["match_id"] == mid and s["zone"] == want), None) or next((s for s in states if s["match_id"] == mid), None)
+    if st is not None:
+        f = lad["folds"][mid]
+        fm = lad["fold_models"][f]
+        t_f, c_f = lad["with_prior"](st, fm["prior"].get(st["zone"]))
+        sc = fm["models"][best].scores(c_f, st["type"])
+        r.chart("map_points", "Next zone forecast", _bands(st["cand_x"], st["cand_y"], sc, (st["true_x"], st["true_y"]), "Where it really went"),
+                x_label="Map X", y_label="Map Y", **_frame(st["h"], st["true_x"], st["true_y"], st["next_r"], st["zone"]))
+        eb = next((bb for bb in end.get("base", []) if bb["match_id"] == mid and bb["zone_now"] == st["zone"] - 1), None)
+        efm = end["fold_models"].get(f)
+        if eb is not None and efm is not None:
+            t_e, c_e = end["rows_for"](eb, efm["prior"])
+            esc = (efm["model"] if use_full else efm["rules"]).scores(c_e, "end")
+            fin = seqs[mid].iloc[-1]
+            circles = [dict(x=eb["h"]["cx"], y=eb["h"]["cy"], r=eb["h"]["cr"], label=f"Zone {st['zone'] - 1} (now)"),
+                       dict(x=float(fin["x"]), y=float(fin["y"]), r=float(fin["r"]), label=f"Final zone ({int(fin['phase'])})")]
+            pad = eb["R"] * 1.1
+            r.chart("map_points", "Endgame forecast", _bands(eb["px"], eb["py"], esc, (eb["true_x"], eb["true_y"]), "Where the game really ended"),
+                    x_label="Map X", y_label="Map Y", circles=circles, zone_circles=True,
+                    range_x=[eb["h"]["cx"] - pad, eb["h"]["cx"] + pad], range_y=[eb["h"]["cy"] - pad, eb["h"]["cy"] + pad])
+        r.notes.insert(0, f"Maps: match {mid}, standing in zone {st['zone'] - 1}. Both forecasts come from models trained without this match.")
 
-    # ---- the playable map with every real zone centre
+    # ---- playable map with real zone centres
     ii, jj = np.nonzero(land.land)
-    series = [dict(name="Playable ground", x=((ii + land.x0 + 0.5) * CELL).round(0).tolist(), y=((jj + land.y0 + 0.5) * CELL).round(0).tolist(),
+    series = [dict(name="Playable ground", x=((ii + land.x0 + 0.5) * zm.CELL).round(0).tolist(), y=((jj + land.y0 + 0.5) * zm.CELL).round(0).tolist(),
                    color="#C9D3DD", size=3, opacity=0.6)]
-    for zt in TYPES:
+    for zt in ["shrinking", "50/50", "shifted", "moving"]:
         s = z[z["zone_type"] == zt]
         if len(s):
-            series.append(dict(name=f"{zt.capitalize() if zt != '50/50' else '50/50'} zone centres", x=s["next_x"].round(0).tolist(), y=s["next_y"].round(0).tolist()))
-    if "pois" in have:
-        pois = df(con, "SELECT * FROM pois WHERE kind = 'poi'")
-        if len(pois):
-            series.append(dict(name="Named places", x=pois["x"].tolist(), y=pois["y"].tolist(), text=pois["name"].tolist()))
+            series.append(dict(name=f"{'50/50' if zt == '50/50' else zt.capitalize()} zone centres", x=s["next_x"].round(0).tolist(), y=s["next_y"].round(0).tolist()))
     r.chart("map_points", "Where zones land on the playable map", series, x_label="Map X", y_label="Map Y", marker_size=5)
 
-    # ---- one forecast drawn: the chosen match and zone
-    want_zone = int(ctx.params.get("zone") or 6)
-    mid = ctx.params.get("match") or (matches[-1] if matches else None)
-    pick = next((t for t in trans if t["match_id"] == mid and t["phase"] == want_zone), None) or \
-        next((t for t in trans if t["match_id"] == mid), None)
-    if pick is not None:
-        model = _fit([t for t in trans if t["match_id"] != pick["match_id"]])
-        w = _weights(model, pick["type"], pick["cand"], len(pick["cx"]))
-        order = np.argsort(-w)
-        top = np.zeros(len(w), bool)
-        top[order[: max(1, int(len(w) * TOP))]] = True
-        mid_band = np.zeros(len(w), bool)
-        mid_band[order[int(len(w) * TOP): int(len(w) * 0.5)]] = True
-        cx, cy, cr = pick["cur"]
-        nx, ny, nr = pick["next"]
-        fs = [dict(name="Most likely quarter", x=pick["cx"][top].round(0).tolist(), y=pick["cy"][top].round(0).tolist(), color="#0F766E", size=7),
-              dict(name="Next quarter", x=pick["cx"][mid_band].round(0).tolist(), y=pick["cy"][mid_band].round(0).tolist(), color="#7FC8C0", size=6),
-              dict(name="Less likely", x=pick["cx"][~top & ~mid_band].round(0).tolist(), y=pick["cy"][~top & ~mid_band].round(0).tolist(),
-                   color="#C9D3DD", size=5),
-              dict(name="Where it really went", x=[round(nx)], y=[round(ny)], color="#D08A12", size=14)]
-        pad = max(cr, np.hypot(nx - cx, ny - cy) + nr) * 1.25
-        r.chart("map_points", "Forecast for the chosen zone", fs, x_label="Map X", y_label="Map Y",
-                circles=[dict(x=cx, y=cy, r=cr, label=f"Zone {pick['phase'] - 1}"), dict(x=nx, y=ny, r=nr, label=f"Zone {pick['phase']}")],
-                zone_circles=True, range_x=[cx - pad, cx + pad], range_y=[cy - pad, cy + pad])
-        r.notes.insert(0, f"Forecast map: match {pick['match_id']}, zone {pick['phase']} ({pick['type']}). The forecast was trained on "
-                          "the other matches only. Dots are possible centres for the next zone.")
-
-    hit = sc["hit"].mean() if len(sc) else np.nan
-    # Plain takeaway: the forecast's accuracy, then the three strongest distinct rules with their zone type.
-    sig = sorted([x for x in r.tests if x["significant"] and x["group"] != "Forecast"], key=lambda x: x["p"])
-    seen, top_rules = set(), []
+    # ---- headline and conclusion
+    chosen = dict((k, n) for k, n, _ in RUNGS)[best]
+    r.headline = (f"Next zone: {b['hit'].mean():.0%} in the forecast's most likely quarter (25% from the game's rules alone), using "
+                  f"{chosen.lower()}." + (f" Endgame: {er['use_hit'].mean():.0%} (rules alone {er['rules_hit'].mean():.0%})." if len(er) else ""))
+    sig = sorted([x for x in r.tests if x["significant"] and x["group"] not in ("Forecast", "Endgame")], key=lambda x: x["p"])
+    seen, top = set(), []
     for x in sig:
         if x["reading"] not in seen:
             seen.add(x["reading"])
-            top_rules.append(f"{x['reading'].lower()} ({x['group'].lower()} zones)")
-        if len(top_rules) == 3:
+            top.append(f"{x['reading'].lower()} ({x['group'].lower()} zones)")
+        if len(top) == 3:
             break
-    lead = (f"The forecast put the next zone in its most likely quarter {hit:.0%} of the time, against 25% by chance. "
-            if hit == hit else "")
-    strong = rules[rules["Verdict"] == "Strong evidence"] if len(rules) else rules
-    r.headline = (f"Across {len(trans):,} zone changes, the forecast put the real next zone in its most likely quarter "
-                  f"{hit:.0%} of the time, against 25% by chance." if hit == hit else f"{len(trans):,} zone changes analysed.") + \
-        (f" {len(strong)} rule{'s' if len(strong) != 1 else ''} found." if len(strong) else "")
-    conclude(r, ctx, primary=["Forecast"] + [zt.capitalize() if zt != "50/50" else "50/50" for zt in TYPES], alpha=alpha,
-             recommended=100, single_season=True,
-             takeaway_found=lead + ("Strongest rules: " + "; ".join(top_rules) + "." if top_rules else ""),
-             takeaway_none=lead + "No rule beyond the game's fixed sizes and distances in this selection yet.",
-             next_found=["Use the rules table to rule out directions mid-game (for example, toward the coast).",
-                         "Watch the hit rate by zone: zones where the forecast is strong are where pre-rotating pays off."],
-             next_none=["Add matches: rules about land and the coast need many zone changes near the coast."])
+    conclude(r, ctx, primary=["Forecast", "Endgame"], alpha=alpha, recommended=100, single_season=True,
+             takeaway_found=("Zones follow patterns a team can plan around: " + "; ".join(top) + "." if top else
+                             "The forecast pinpoints the next zone better than the game's rules alone."),
+             takeaway_none="Zones don't yet follow patterns beyond the game's fixed rules in this selection; plan rotations to stay flexible.",
+             next_found=["Check 'On the newest matches': it's the honest estimate for upcoming matches.",
+                         "Use the endgame accuracy by zone to decide from which zone to commit to an endgame side."],
+             next_none=["Add matches: patterns across whole zone sequences need many matches to show."])
     r.notes += [
-        f"Playable ground: {CELL // 100} m squares where players stood on the ground after landing in {season} matches, with small "
-        "gaps filled in. Lakes players swim through count as playable.",
-        "Random zones follow the game's fixed rules: a shrinking zone lands anywhere it fits inside the current one; other zones "
-        "move their fixed distance in a random direction.",
-        "Rules compare where each real zone falls among its random alternatives; 'Real zones' and 'Random zones' are averages.",
-        f"The forecast is checked with {FOLDS}-fold cross-validation: every match is forecast by a model trained on the other matches.",
+        f"Season {season}: {len(seqs)} matches, {len(states):,} zone changes. Playable ground is mapped from positions before the storm "
+        "first moves (drop and loot), so it isn't shaped by where zones went.",
+        "Every model is scored on matches it never saw (5-fold, grouped by match). A richer model is chosen only if it does better.",
+        "Shuffle control: the whole-history model with each match's history swapped for another match's. If it still did as well, "
+        "the history gain would be fake; it should fall back toward the one-zone-back score.",
+        "Endgame: the final zone's centre forecast from each earlier zone, against what the fixed move distances alone imply.",
     ]
     return r
+
+
+def _bands(px, py, sc, real, real_name):
+    order = np.argsort(-sc)
+    n = len(sc)
+    top = order[: max(1, int(n * zm.TOP))]
+    mid = order[int(n * zm.TOP): int(n * 0.5)]
+    rest = order[int(n * 0.5):]
+
+    def pick(idx):
+        return np.asarray(px)[idx].round(0).tolist(), np.asarray(py)[idx].round(0).tolist()
+    return [dict(name="Most likely quarter", x=pick(top)[0], y=pick(top)[1], color="#0F766E", size=7),
+            dict(name="Next quarter", x=pick(mid)[0], y=pick(mid)[1], color="#7FC8C0", size=6),
+            dict(name="Less likely", x=pick(rest)[0], y=pick(rest)[1], color="#C9D3DD", size=5),
+            dict(name=real_name, x=[round(real[0])], y=[round(real[1])], color="#D08A12", size=14)]
+
+
+def _frame(h, tx, ty, nr, zone):
+    pad = max(h["cr"], np.hypot(tx - h["cx"], ty - h["cy"]) + nr) * 1.25
+    return dict(circles=[dict(x=h["cx"], y=h["cy"], r=h["cr"], label=f"Zone {zone - 1}"), dict(x=tx, y=ty, r=nr, label=f"Zone {zone}")],
+                zone_circles=True, range_x=[h["cx"] - pad, h["cx"] + pad], range_y=[h["cy"] - pad, h["cy"] + pad])
