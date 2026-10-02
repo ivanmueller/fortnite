@@ -29,9 +29,9 @@ export function confidence(c: Conclusion | null): { label: string; tone: string 
 const TOP_ROWS = 10;
 
 /** The featured version of a table: its key columns and first rows (the full table stays under Details). */
-function featured(t: TableSpec, columns: string[] | null): TableSpec {
+function featured(t: TableSpec, columns: string[] | null, limit: number = TOP_ROWS): TableSpec {
   const idx = columns ? columns.map((c) => t.columns.indexOf(c)).filter((i) => i >= 0) : t.columns.map((_, i) => i);
-  return { title: t.title, columns: idx.map((i) => t.columns[i]), rows: t.rows.slice(0, TOP_ROWS).map((r) => idx.map((i) => r[i])) };
+  return { title: t.title, columns: idx.map((i) => t.columns[i]), rows: t.rows.slice(0, limit).map((r) => idx.map((i) => r[i])) };
 }
 
 interface Props {
@@ -150,9 +150,13 @@ export function SectionView({ section, info, filters, compare, bootId, enabled, 
               {featuredCharts.map((c, i) => <ChartView key={`${c.title}-${i}`} spec={c} help={info?.guide?.charts[c.title]} />)}
             </div>
           )}
-          {featuredTable && <DataTable table={featured(featuredTable, section.table!.columns)} />}
-          {featuredTable && featuredTable.rows.length > TOP_ROWS && (
-            <p className="muted small">Showing the first {TOP_ROWS} of {featuredTable.rows.length} rows. The full table is under Details.</p>
+          {featuredTable && (
+            <div className={section.table!.wrap ? 'table--wrap' : ''}>
+              <DataTable table={featured(featuredTable, section.table!.columns, section.table!.rows ?? TOP_ROWS)} />
+            </div>
+          )}
+          {featuredTable && featuredTable.rows.length > (section.table!.rows ?? TOP_ROWS) && (
+            <p className="muted small">Showing the first {section.table!.rows ?? TOP_ROWS} of {featuredTable.rows.length} rows. The full table is under Details.</p>
           )}
 
           <details className="more">

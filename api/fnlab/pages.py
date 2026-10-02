@@ -7,9 +7,11 @@ from __future__ import annotations
 
 
 def section(analysis: str, title: str, question: str, charts: list[str] | None = None,
-            table: str | None = None, columns: list[str] | None = None, metrics: list[str] | None = None) -> dict:
+            table: str | None = None, columns: list[str] | None = None, metrics: list[str] | None = None,
+            rows: int | None = None, wrap: bool = False) -> dict:
+    """rows: how many featured-table rows to show (default 10); wrap: let long text wrap instead of scrolling."""
     return dict(analysis=analysis, title=title, question=question, charts=charts or [],
-                table=dict(title=table, columns=columns) if table else None, metrics=metrics or [])
+                table=dict(title=table, columns=columns, rows=rows, wrap=wrap) if table else None, metrics=metrics or [])
 
 
 PAGES = [
@@ -17,6 +19,11 @@ PAGES = [
         section("overview", "The data", "How many matches, from when, and how strong were the lobbies?",
                 charts=["Matches per week", "Lobby strength"],
                 metrics=["Matches", "Days covered", "Server replays", "Median lobby strength"]),
+    ]),
+    dict(id="review", title="Game review", question="One game, three stages: what you did, what the system recommends, why, and what it was worth.", sections=[
+        section("review", "Game review", "Type the team's names, choose a game, and select matching lobbies in the left panel for the evidence.",
+                charts=["Early game map", "Mid game map"], table="Review", rows=40, wrap=True,
+                metrics=["Result", "Biggest single decision"]),
     ]),
     dict(id="storm", title="Storm", question="How do zones behave, and where will the next one go?", sections=[
         section("zone_geometry", "Zone rules", "What kind of zone is each one, and how does it move?",

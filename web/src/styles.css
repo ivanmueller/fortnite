@@ -454,3 +454,6 @@ tbody tr:hover { background: #fff; }
 .plans__row label { font-size: var(--t-sm); color: var(--muted); }
 .plans__name { font-weight: 600; }
 .plans__diff { border-color: var(--accent); background: var(--accent-soft); }
+
+.table--wrap th, .table--wrap td { white-space: normal; vertical-align: top; min-width: 7rem; max-width: 26rem; line-height: 1.35; }
+.table--wrap td:first-child { font-weight: 600; color: var(--accent); white-space: nowrap; min-width: auto; }

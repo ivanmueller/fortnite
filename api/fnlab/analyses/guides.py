@@ -772,6 +772,48 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "review": Guide(
+        question="For one team in one game: what did they do in each stage, what would the system have recommended knowing only "
+                 "what they knew then, why, and what was it worth?",
+        method=[
+            "Early game: the drop (contested or not), time to two rare-or-better weapons against top-10 finishers, and where they "
+            "were when zone 2 appeared against the spot the zone forecast favoured. The forecast never saw this game.",
+            "Mid game, zones 3–6: rotation timing against comparable teams. In shrinking zones (3–4), a recommended surge base facing "
+            "the routes teams outside the zone must take, worked out from where those teams were when the zone appeared (not where "
+            "they later went), at 20–80 m, from natural height where possible, with no enemy within 30 m. In 50/50 zones (5–6), "
+            "the inner half of the zone.",
+            "Endgame, zone 7 on: inside or outside, distance from the centre, height rank, teammates' distance apart, and how the "
+            "game ended, with evidence from the selected matches on staying together and pushing up onto a higher team.",
+            "Worth: the expected-points model's value of their real situation against the recommended one, at that moment, priced "
+            "by a model that never saw this game, and only shown when the model clearly beats its baseline.",
+        ],
+        terms={
+            "Result": "Placement, eliminations and points (FNCS scoring) in this game.",
+            "Biggest single decision": "The largest gain in expected points from following one recommendation.",
+            "Review": "The whole game, stage by stage: early game (drop, loot, first rotation), mid game (zones 3–6) and endgame "
+                      "(zone 7 on). For each moment: what they did, the recommendation, the evidence, and its worth in expected points.",
+            "Evidence: staying together": "Duos in zones 7+ by how far apart the teammates were, and how they finished against the "
+                                          "teams alive then.",
+            "Evidence: pushing a higher team": "Endgame fights by the attacker's height against the defender's, and how often the "
+                                               "attacker won.",
+            "Teams in the selected matches": "Every team with its results, to identify a team at a LAN.",
+        },
+        charts={
+            "Early game map": "Their path to zone 2, where they were when it appeared (amber), and the forecast's recommended spot (navy).",
+            "Mid game map": "Their path through zones 3–6, the teams outside the zone when it appeared (red), and the recommended surge base.",
+            "Endgame map": "Their path from zone 7 on, over the late zones.",
+        },
+        conclude=[
+            "Rows with the largest Worth are the decisions to review on video first.",
+            "Recommendations that repeat across games (for example, always outside when zone 5 appears) are habits; one-offs are moments.",
+        ],
+        limits=[
+            "Worth values stand alone: one changed decision changes everything after it, so they don't add up.",
+            "Surge bases use predicted routes (straight lines in); real routes bend around terrain and fights.",
+            "The evidence and the models come from the matches selected in the left panel: select lobbies that match the team.",
+        ],
+    ),
+
     "audit": Guide(
         question="For one team: where did their points come from, game by game, and which risks cost them?",
         method=[

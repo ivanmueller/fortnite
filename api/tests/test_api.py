@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook", "decides", "audit_zones"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook", "decides", "audit_zones", "review"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -148,7 +148,7 @@ def test_pages_point_at_real_analyses(client):
     """Every dashboard section must name a registered analysis, and featured charts must exist on demo data."""
     ids = {a["id"] for a in client.get("/api/analyses").json()}
     pages = client.get("/api/pages").json()
-    assert [p["id"] for p in pages][:2] == ["overview", "storm"]
+    assert [p["id"] for p in pages][:3] == ["overview", "review", "storm"]
     for p in pages:
         for s in p["sections"]:
             assert s["analysis"] in ids, s["analysis"]
@@ -260,3 +260,13 @@ def test_expected_points_prices_plans(client):
     k = client.post("/api/analyses/expected_points/run", json={"filters": DEMO, "params": {"plans": json.dumps(plans)}}).json()
     rows = k["tables"][0]["rows"]
     assert {r[0] for r in rows} >= {"Teams left", "Zone"}
+
+
+def test_game_review_has_three_stages(client):
+    """A named team's game is reviewed in early, mid and endgame tables."""
+    tl = client.post("/api/analyses/review/run", json={"filters": DEMO}).json()["tables"][0]["rows"]
+    name = tl[0][1].split(",")[0]
+    j = client.post("/api/analyses/review/run", json={"filters": DEMO, "params": {"team": name}}).json()
+    review = next(t for t in j["tables"] if t["title"] == "Review")
+    assert {"Early game", "Mid game", "Endgame"} <= {row[0] for row in review["rows"]}
+    assert any(row[1] in ("How it ended", "Won the game") for row in review["rows"])

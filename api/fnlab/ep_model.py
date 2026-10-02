@@ -138,13 +138,16 @@ def fit(team: pd.DataFrame, folds: int = 6, seed: int = 3):
                                              l2_regularization=1.0, random_state=seed)
     oos, base = np.zeros(len(y)), np.zeros(len(y))
     bcols = [FEATURES.index("teams_alive"), FEATURES.index("zone")]
+    fold_models = {}
     for k in range(folds):
         tr, te = f != k, f == k
         if tr.sum() < 200 or te.sum() == 0:
             continue
-        oos[te] = model().fit(X[tr], y[tr]).predict(X[te])
+        fold_models[k] = model().fit(X[tr], y[tr])
+        oos[te] = fold_models[k].predict(X[te])
         base[te] = model().fit(X[tr][:, bcols], y[tr]).predict(X[te][:, bcols])
     full = model().fit(X, y)
+    full.fold_models_, full.fold_of_ = fold_models, dict(zip(matches, [int(fold[m]) for m in matches]))   # models that never saw each match
     return full, oos, base
 
 

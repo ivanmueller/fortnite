@@ -139,7 +139,7 @@ export interface SectionInfo {
   title: string;
   question: string;
   charts: string[];
-  table: { title: string; columns: string[] | null } | null;
+  table: { title: string; columns: string[] | null; rows?: number | null; wrap?: boolean } | null;
   metrics: string[];
 }
 

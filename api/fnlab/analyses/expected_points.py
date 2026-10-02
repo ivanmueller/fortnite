@@ -35,7 +35,10 @@ def _load(ctx: Context):
     team = team.assign(pred=oos, base=base)
     from ._events_common import has_tables
     expo = ep.exposure(team, ctx.con) if has_tables(ctx.con, "damage") else pd.DataFrame()
-    out = dict(team=team, model=model, expo=expo)
+    y = team["future_pts"]
+    r2 = 1 - ((y - team["pred"]) ** 2).sum() / ((y - y.mean()) ** 2).sum()
+    r2b = 1 - ((y - team["base"]) ** 2).sum() / ((y - y.mean()) ** 2).sum()
+    out = dict(team=team, model=model, expo=expo, reliable=bool(r2 - r2b >= 0.05 and r2 >= 0.15), r2=r2, r2b=r2b)
     _CACHE.clear()
     _CACHE[key] = out
     return out
