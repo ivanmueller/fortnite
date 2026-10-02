@@ -56,6 +56,8 @@ export function SectionView({ section, info, filters, compare, bootId, enabled, 
   const zoneParam = info?.params.find((p) => p.kind === 'zone');
   const textParam = info?.params.find((p) => p.kind === 'text');
   const plansParam = info?.params.find((p) => p.kind === 'plans');
+  const settingParams = info?.params.filter((p) => p.kind === 'setting') ?? [];
+  const [settings, setSettings] = useState<Record<string, number>>({});
   const [plans, setPlans] = useState('');
   const [localText, setLocalText] = useState('');
   const text = onSharedText ? (sharedText ?? '') : localText;
@@ -68,6 +70,7 @@ export function SectionView({ section, info, filters, compare, bootId, enabled, 
     ...(zoneParam && zone ? { [zoneParam.name]: Number(zone) } : {}),
     ...(textParam && text ? { [textParam.name]: text } : {}),
     ...(plansParam && plans ? { [plansParam.name]: plans } : {}),
+    ...settings,
   };
   const run = useQuery({
     queryKey: ['run', section.analysis, filters, compare ?? null, params, bootId],
@@ -95,6 +98,17 @@ export function SectionView({ section, info, filters, compare, bootId, enabled, 
       {run.isError && <p className="notice notice--error">{(run.error as Error).message}</p>}
       {run.data?.status === 'empty' && <p className="notice">{run.data.message}</p>}
 
+      {settingParams.length > 0 && (
+        <div className="row">
+          {settingParams.map((sp) => (
+            <label key={sp.name} className="inline">{sp.label}
+              <input className="input" type="number" style={{ width: '6rem' }} defaultValue={String(sp.default)}
+                     onBlur={(e) => { const v = Number(e.target.value); if (v > 0) setSettings((s) => ({ ...s, [sp.name]: v })); }}
+                     onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+            </label>
+          ))}
+        </div>
+      )}
       {plansParam && <PlanCompare initial={plans || String(plansParam.default)} onCompare={setPlans} />}
       {textParam && (
         <form className="row text-pick" onSubmit={(e) => { e.preventDefault(); setText(draft.trim()); }}>

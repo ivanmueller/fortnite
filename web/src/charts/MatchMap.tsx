@@ -41,6 +41,7 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
     tracks: Track[]; storm: Storm[]; plans: Plan[]; hp: { id: number; t: number[]; hp: number[] }[]; land: { cell: number; x: number[]; y: number[] } | [];
     pois: { name: string; x: number; y: number }[]; kills: { t: number; x: number; y: number; victim: number; killer: number }[];
     team: number; team_name: string; t0: number; t1: number; calibration: Calib;
+    engine?: { t: number; engine: string; you: string; stake: number; followed: boolean; options: string[] }[];
   };
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -91,6 +92,8 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
   }, [playing, speed, o.t1]);
 
   const plan = useMemo(() => [...o.plans].reverse().find((p) => p.t <= t + 0.5) ?? null, [o.plans, t]);
+  const call = useMemo(() => [...(o.engine ?? [])].reverse().find((c) => c.t <= t + 0.5 && t - c.t < 20) ?? null, [o.engine, t]);
+  const misses = useMemo(() => (o.engine ?? []).filter((c) => !c.followed && c.stake >= 1), [o.engine]);
   const st = useMemo(() => stormAt(o.storm, t), [o.storm, t]);
 
   // the view: follow the team (zoomed to the current zone) or free pan/zoom
@@ -252,6 +255,11 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
           <span className="matchmap__clock">{fmt(t)}</span>
           <div className="matchmap__timeline">
             <input type="range" min={o.t0} max={o.t1} step={0.5} value={t} onChange={(e) => setT(+e.target.value)} />
+            {misses.map((c) => (
+              <button key={`e${c.t}`} className="matchmap__miss" style={{ left: `${((c.t - o.t0) / (o.t1 - o.t0)) * 100}%` }}
+                      title={`${fmt(c.t)} · engine: ${c.engine} · you: ${c.you} · ${c.stake.toFixed(1)} pts`}
+                      onClick={() => { setT(c.t); setPlaying(false); }} />
+            ))}
             {zoneTicks.map((z) => (
               <button key={z.zone} className="matchmap__tick" style={{ left: `${z.f * 100}%` }} title={`Zone ${z.zone} appears`}
                       onClick={() => { setT(o.plans.find((p) => p.zone === z.zone)!.t); setPlaying(false); }}>{z.zone}</button>
@@ -269,6 +277,14 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
         <p className="matchmap__status"><strong>{st.label}</strong><br />{alive} teams alive
           {outside !== null && <> · you are {outside < 1 ? 'inside the next zone' : `${outside.toFixed(0)} m outside it`}</>}
           {hpNow.some((v) => v !== null) && <> · health {hpNow.map((v) => (v === null ? '–' : v)).join(' / ')}</>}</p>
+        {call && (
+          <div className={`matchmap__engine ${call.followed ? 'is-ok' : 'is-miss'}`}>
+            <h4>Engine at {fmt(call.t)} <span className="muted small">(live knowledge only)</span></h4>
+            <p><strong>Engine:</strong> {call.engine}<br /><strong>You:</strong> {call.you}
+              {!call.followed && <> · <strong>{call.stake.toFixed(1)} points at stake</strong></>}</p>
+            <p className="muted small">{call.options.join(' · ')}</p>
+          </div>
+        )}
         {plan ? (
           <div className="matchmap__plan">
             <h4>Zone {plan.zone}: the rotation plan</h4>

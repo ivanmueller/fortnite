@@ -772,6 +772,60 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "engine_review": Guide(
+        question="If the team had played by a decision engine that only knows what a player knows live, what would it have "
+                 "said at each moment, and do teams that play that way actually finish better?",
+        method=[
+            "What the engine knows (live only): its own position, health and shield, teammates alive, eliminations, the current "
+            "and next zone and their timers, distance outside the next zone and into the storm, teams left, damage just taken, "
+            "surge as the HUD shows it (damage above or below the cut-off), enemy teams within the perception radius (how many, "
+            "how close, how far above), and the natural ground under it. Never far enemies' positions or anyone else's health.",
+            "A points model trained on those live inputs only (FNCS scoring, the top-15 cliff) prices every situation. It's told "
+            "the directions the game fixes (more health never hurts, more storm never helps, fewer teams left never hurts a team "
+            "that's alive) and learns how much each matters. Each game is priced by a model that never saw it.",
+            "Every 20 seconds the engine compares five options 20 seconds ahead: hold, rotate by the direct route, rotate by a less "
+            "crowded entry (perceived enemies only), heal (when there's health to gain), and engage a visible enemy (the measured "
+            "win rate for its health; a loss means being placed now, on the cliff).",
+            "What the team actually did over the same 20 seconds is read from the data (held, rotated by which route, healed, "
+            "engaged) and priced the same way: the difference is the points at stake.",
+            "The real test: across every team in the selected matches, teams that happened to follow the engine at most key "
+            "decisions against teams that didn't, within the same match and for the same team across games.",
+        ],
+        terms={
+            "Engine knowledge": "How much of the points still to come the live-only model explains on matches it never saw, "
+                                "against the full-information model. The gap is the price of the fog of war.",
+            "Followed 90%+ vs under 60%": "Average points per game of teams that followed the engine at 90%+ of key decisions, "
+                                          "against teams under 60%.",
+            "Decisions followed": "Key decisions (an option beat holding by half a point, or the team did something else) where the "
+                                  "team did what the engine recommends, within half a point.",
+            "Disagreements worth 1+ point": "Decisions where the engine's call was worth at least one expected point more.",
+            "Following the engine vs results": "Team-games grouped by how often they followed the engine: average points and how "
+                                               "many teams they finished ahead of.",
+            "Decisions where the engine disagreed": "Each disagreement: the time and zone, what the team knew, the engine's call, "
+                                                    "what they did, the points at stake, and every option's expected points.",
+            "Across teams": "Following the engine against finishing, within the same match.",
+            "Same team": "The same team across games: did it finish better in the games where it followed the engine more?",
+            "Teams in the selected matches": "Every team with its results, to identify a team at a LAN.",
+        },
+        charts={
+            "Points per game, by how often teams followed the engine": "Every team-game in the selection by how often it followed "
+                "the engine at key decisions. A rising chart means playing the engine's way goes with more points.",
+            "Points at stake by zone": "Where in the game this team's disagreements with the engine were worth the most.",
+        },
+        conclude=[
+            "If the same team finishes better in the games it follows the engine more, the engine is worth teaching, not just a "
+            "description of better teams.",
+            "The biggest disagreements are the moments to review on video and to drill.",
+        ],
+        limits=[
+            "The engine looks 20 seconds ahead with a simple movement model; it can't see builds, cover or fights in detail.",
+            "Healing assumes healing items are available; materials and inventory aren't in replays.",
+            "Teams that follow the engine may also be stronger teams; the same-team result is the one that rules that out.",
+            "The first calculation on a large selection takes a few minutes; it's cached afterwards. Changing the perception "
+            "radius recalculates.",
+        ],
+    ),
+
     "match_map": Guide(
         question="How did the game unfold for the team, and what was the reasoning behind each rotation?",
         method=[

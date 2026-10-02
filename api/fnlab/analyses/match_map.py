@@ -217,7 +217,26 @@ def run(ctx: Context) -> Result:
         calib = calibration()
     except Exception:  # noqa: BLE001
         calib = None
+    # the engine's calls for this team (live knowledge only), shown on the timeline and in the panel
+    engine_calls = []
+    try:
+        from .engine_review import decisions as engine_decisions
+        from .. import engine as eng
+        ed = engine_decisions(ctx, 120.0)
+        if ed is not None and len(ed["d"]):
+            em = ed["d"][(ed["d"]["match_id"] == mid) & (ed["d"]["team_index"] == ti)].sort_values("t")
+            for _, q in em.iterrows():
+                opts = sorted(((eng.ACTIONS[k], float(q[f"ev_{k}"])) for k in eng.ACTIONS if q[f"ev_{k}"] > -1e8), key=lambda x: -x[1])
+                engine_calls.append(dict(t=float(q["t"]), engine=eng.ACTIONS[q["engine"]], you=eng.ACTIONS[q["actual"]],
+                                         stake=round(float(q["stake"]), 1), followed=bool(q["followed"]),
+                                         options=[f"{a}: {v:.1f}" for a, v in opts[:4]]))
+    except Exception as e:  # noqa: BLE001 - the map works without the engine
+        import traceback
+        traceback.print_exc()
+        r.notes.append(f"The engine's calls couldn't be added to the map ({type(e).__name__}).")
+        engine_calls = []
     r.chart("match_replay", "Match map", [], tracks=tracks, storm=storm, plans=plans, hp=hp, land=land_cells, pois=pois, calibration=calib,
+            engine=engine_calls,
             kills=[dict(t=float(t), x=float(x) / 100, y=float(y) / 100, victim=int(v) if v == v else -1, killer=int(k_) if k_ == k_ else -1)
                    for t, x, y, v, k_ in zip(kills["t"], kills["x"], kills["y"], kills["victim_team"], kills["killer_team"]) if x == x],
             team=ti, team_name=" & ".join(sorted(me["name"].dropna().unique())), t0=t_start, t1=float(pos["t"].max()), match=mid)

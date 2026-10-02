@@ -482,3 +482,10 @@ tbody tr:hover { background: #fff; }
 .matchmap__calib { position: fixed; inset: 0; background: rgba(15,27,45,0.6); z-index: 50; display: flex; align-items: center; justify-content: center; }
 .matchmap__calibbox { background: #fff; border-radius: 10px; padding: 1rem; max-width: min(92vw, 900px); max-height: 92vh; overflow: auto; }
 .matchmap__calibbox img { max-width: 100%; cursor: crosshair; display: block; margin: 0.6rem 0; }
+
+.matchmap__miss { position: absolute; bottom: -0.55rem; transform: translateX(-50%); width: 5px; height: 9px; border: 0; padding: 0; border-radius: 2px; background: #B4535F; cursor: pointer; }
+.matchmap__engine { background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 8px; padding: 0.55rem 0.75rem; margin-top: 0.6rem; }
+.matchmap__engine.is-miss { border-left-color: #B4535F; }
+.matchmap__engine.is-ok { border-left-color: var(--accent); }
+.matchmap__engine h4 { margin: 0 0 0.3rem; font-size: var(--t-base); }
+.matchmap__engine p { margin: 0.2rem 0; }

@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook", "decides", "audit_zones", "review", "match_map"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook", "decides", "audit_zones", "review", "match_map", "engine_review"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -281,3 +281,13 @@ def test_match_map_replay_and_plans(client):
     o = ch["options"]
     assert len(o["tracks"]) > 10 and len(o["storm"]) >= 5 and any(t["mine"] for t in o["tracks"])
     assert all(p["reasons"] for p in o["plans"])
+
+
+def test_engine_rotates_when_outside_and_holds_inside(client):
+    """Sanity: the live engine says rotate for most decisions outside the next zone and almost never inside it."""
+    client.post("/api/analyses/engine_review/run", json={"filters": DEMO})
+    from fnlab.analyses.engine_review import _CACHE
+    d = list(_CACHE.values())[-1]["d"]
+    out, ins = d[d["outside_m"] > 30], d[d["outside_m"] == 0]
+    assert out["engine"].str.startswith("rotate").mean() >= 0.6
+    assert ins["engine"].str.startswith("rotate").mean() <= 0.05
