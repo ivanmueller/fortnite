@@ -8,6 +8,7 @@
 //   node download.js --plan                  show the download order and stop
 //   node download.js --order list            download in list order instead of strongest lobbies first
 //   node download.js --min-top1000 3         only matches with at least 3 Power Rankings top-1,000 players seen
+//   node download.js --parallel 2            download 1-3 matches at a time (default: ZONELAB_PARALLEL in .env, else 2)
 //   node download.js --window <eventWindowId> download every match from one tournament window, in any order
 //                                            (for events whose players aren't in Power Rankings, e.g. LAN accounts)
 //
@@ -147,42 +148,73 @@ if (args.includes('--plan')) {
 }
 console.log(`${ids.length} IDs listed, ${todo.length} to download ${via === 'api-fortnite' ? 'via api-fortnite.com (2 credits each)' : 'from Epic'}`);
 
-let ok = 0;
-for (const [n, matchId] of todo.entries()) {
-  const t0 = Date.now();
-  try {
-    if (via === 'api-fortnite') {
-      const buf = await viaApiFortnite(matchId);
-      fs.writeFileSync(path.join(RAW, `${matchId}.replay`), buf);
-      ok += 1;
-      console.log(`[${n + 1}/${todo.length}] ok   ${matchId}  ${(buf.length / 1e6).toFixed(1)} MB  ${((Date.now() - t0) / 1000).toFixed(0)}s`);
-      if (n < todo.length - 1) await new Promise((r) => setTimeout(r, 500));
-      continue;
-    }
-    const meta = await downloader.downloadMetadata({ matchId, chunkDownloadLinks: false });
-    if (!meta) throw new Error('no metadata (match has no server replay, or it expired)');
-    fs.writeFileSync(path.join(RAW, `${matchId}.meta.json`), JSON.stringify(meta, null, 2));
-    if (meta.bIsLive) throw new Error('match is still live; try again later');
+// Parallel downloads: --parallel N, else ZONELAB_PARALLEL in .env, else 2 (1-3). If Epic signals that it's
+// limiting requests, drop to one at a time, wait, and retry the match instead of failing it.
+const parallelArg = args.includes('--parallel') ? Number(args[args.indexOf('--parallel') + 1]) : Number(process.env.ZONELAB_PARALLEL || 2);
+let concurrency = via === 'api-fortnite' ? 1 : Math.max(1, Math.min(3, Number.isFinite(parallelArg) ? parallelArg : 2));
+const isThrottle = (msg) => /\b429\b|too many requests|throttl|rate.?limit/i.test(msg);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+if (concurrency > 1 && todo.length > 1) console.log(`Downloading ${concurrency} matches at a time.`);
 
-    const buf = await downloader.downloadReplay({
-      matchId,
-      maxConcurrentDownloads: 5,
-      checkpointCount: WITH_CHECKPOINTS ? 1000 : 0,
-      updateCallback: (d) => {
-        const c = d.dataChunks || d.data || {};
-        if (c.max) process.stdout.write(`  ${matchId}: data ${c.current}/${c.max}\r`);
-      },
-    });
-    fs.writeFileSync(path.join(RAW, `${matchId}.replay`), buf);
-    ok += 1;
-    console.log(`[${n + 1}/${todo.length}] ok   ${matchId}  ${(buf.length / 1e6).toFixed(1)} MB  ${((Date.now() - t0) / 1000).toFixed(0)}s`);
-  } catch (err) {
-    const msg = err?.message || String(err);
-    console.log(`[${n + 1}/${todo.length}] FAIL ${matchId}: ${msg}`);
-    fs.appendFileSync(path.join(RAW, 'failed.txt'), `${new Date().toISOString()}\t${matchId}\t${msg}\n`);
+async function fetchOne(matchId) {
+  if (process.env.VANTAGE_FAKE_DOWNLOAD) {   // test hook: simulated download time in ms; ids containing "throttle" fail once
+    await sleep(Number(process.env.VANTAGE_FAKE_DOWNLOAD));
+    if (matchId.includes('7777') && !fetchOne.tripped) { fetchOne.tripped = true; throw new Error('Epic 429 Too Many Requests'); }
+    return Buffer.alloc(1000);
   }
-  if (n < todo.length - 1) await new Promise((r) => setTimeout(r, PAUSE_MS));
+  if (via === 'api-fortnite') return viaApiFortnite(matchId);
+  const meta = await downloader.downloadMetadata({ matchId, chunkDownloadLinks: false });
+  if (!meta) throw new Error('no metadata (match has no server replay, or it expired)');
+  fs.writeFileSync(path.join(RAW, `${matchId}.meta.json`), JSON.stringify(meta, null, 2));
+  if (meta.bIsLive) throw new Error('match is still live; try again later');
+  return downloader.downloadReplay({
+    matchId,
+    maxConcurrentDownloads: 5,
+    checkpointCount: WITH_CHECKPOINTS ? 1000 : 0,
+    updateCallback: (d) => {
+      const c = d.dataChunks || d.data || {};
+      if (c.max && concurrency === 1) process.stdout.write(`  ${matchId}: data ${c.current}/${c.max}\r`);
+    },
+  });
 }
+
+let ok = 0;
+let finished = 0;
+let next = 0;
+async function worker(slot) {
+  while (slot < concurrency) {           // a slot retires if the concurrency was lowered
+    const i = next++;
+    if (i >= todo.length) return;
+    const matchId = todo[i];
+    const t0 = Date.now();
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const buf = await fetchOne(matchId);
+        fs.writeFileSync(path.join(RAW, `${matchId}.replay`), buf);
+        ok += 1;
+        finished += 1;
+        console.log(`[${finished}/${todo.length}] ok   ${matchId}  ${(buf.length / 1e6).toFixed(1)} MB  ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+        break;
+      } catch (err) {
+        const msg = err?.message || String(err);
+        if (isThrottle(msg) && attempt < 3) {
+          if (concurrency > 1) {
+            concurrency = 1;
+            console.log('Epic is limiting requests: dropping to one download at a time.');
+          }
+          await sleep(15000 * (attempt + 1));
+          continue;
+        }
+        finished += 1;
+        console.log(`[${finished}/${todo.length}] FAIL ${matchId}: ${msg}`);
+        fs.appendFileSync(path.join(RAW, 'failed.txt'), `${new Date().toISOString()}\t${matchId}\t${msg}\n`);
+        break;
+      }
+    }
+    if (next < todo.length) await sleep(via === 'api-fortnite' ? 500 : PAUSE_MS);
+  }
+}
+await Promise.all(Array.from({ length: concurrency }, (_, slot) => worker(slot)));
 console.log(`done: ${ok}/${todo.length} downloaded`);
 if (via === 'epic' && ok === 0 && todo.length) {
   console.log('Nothing downloaded from Epic. If every match failed the same way, try the fallback: '

@@ -20,7 +20,7 @@ Everything below can be done from the dashboard: open Vantage (`Start-Vantage.ba
 - **Tournaments:** refresh the list from Epic, search it, then **Collect matches** and **Download** for any window. Each row shows how many matches are collected and downloaded.
 - **Download collected matches** with a lobby-strength filter, and a preview of what's next.
 - **Import replay files** from a team's archive or your own folder.
-- **Settings and advanced tools:** data folder, keeping or deleting raw replays, re-processing one match, the season survey and parser rebuild, the api-fortnite.com fallback, and signing out.
+- **Settings and advanced tools:** data folder, keeping or deleting raw replays, parallel downloads (1–3 at a time; 2 by default), re-processing one match, the season survey and parser rebuild, the api-fortnite.com fallback, and signing out.
 
 Jobs run one at a time with a live progress bar, the current step, time remaining and a log, and can be cancelled. When a job finishes, every page refreshes. `Vantage-Data.bat` still works and does the same things from a menu.
 

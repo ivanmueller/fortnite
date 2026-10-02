@@ -42,7 +42,7 @@ export const api = {
     request<{ rows: TournamentRow[]; total: number }>(`/api/data/tournaments?${new URLSearchParams({
       search: q.search, region: q.region, days: String(q.days), upcoming: String(q.upcoming) })}`),
   plan: (limit: number, minTop: number) => request<DownloadPlan>(`/api/data/plan?limit=${limit}&min_top=${minTop}`),
-  saveSettings: (s: { data_dir?: string; keep_raw?: boolean; fortnite_api_key?: string }) =>
+  saveSettings: (s: { data_dir?: string; keep_raw?: boolean; fortnite_api_key?: string; parallel?: number }) =>
     request<{ ok: boolean }>('/api/data/settings', { method: 'PUT', body: JSON.stringify(s) }),
   matches: (filters: Filters, limit = 200) =>
     request<MatchList>('/api/matches', { method: 'POST', body: JSON.stringify({ filters: cleanFilters(filters), limit }) }),

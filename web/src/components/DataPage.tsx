@@ -228,7 +228,8 @@ function Downloads({ s }: { s: DataStatus }) {
   return (
     <section className="dcard">
       <h2>Download collected matches</h2>
-      <p className="muted">{s.counts.waiting.toLocaleString()} collected matches haven't been downloaded yet. The strongest lobbies go first.</p>
+      <p className="muted">{s.counts.waiting.toLocaleString()} collected matches haven't been downloaded yet. The strongest lobbies go first,
+        {s.parallel > 1 ? ` ${s.parallel} at a time` : ' one at a time'} (change under Settings).</p>
       <div className="row">
         <label className="inline">Up to<select className="input" value={limit} onChange={(e) => setLimit(+e.target.value)}>{[10, 25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} matches</option>)}</select></label>
         <label className="inline">Lobby strength<select className="input" value={minTop} onChange={(e) => setMinTop(+e.target.value)}>
@@ -286,6 +287,14 @@ function Advanced({ s }: { s: DataStatus }) {
             <button className="btn btn--ghost" onClick={() => save.mutate({ data_dir: dir })}>Save</button></div>
           <label className="check"><input type="checkbox" checked={!s.keep_raw} onChange={(e) => save.mutate({ keep_raw: !e.target.checked })} />
             Delete raw replays after processing (saves about 95% of the space; re-processing then needs a fresh download)</label>
+        </div>
+        <div>
+          <h3>Parallel downloads</h3>
+          <p className="muted small">How many matches download at once. 2–3 is roughly 2–3× faster. If Epic starts limiting requests,
+            downloads drop to one at a time automatically and retry.</p>
+          <select className="input" value={s.parallel} onChange={(e) => save.mutate({ parallel: +e.target.value })}>
+            <option value={1}>1 at a time</option><option value={2}>2 at a time</option><option value={3}>3 at a time</option>
+          </select>
         </div>
         <div>
           <h3>Re-process one match</h3>

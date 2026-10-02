@@ -574,6 +574,7 @@ def status(request: Request):
         parser=dict(ready=extractor_path() is not None, dotnet=shutil.which("dotnet") is not None),
         data_dir=str(d), data_exists=d.exists(), size_gb=round(_dir_size(d) / 1e9, 2) if d.exists() else 0,
         keep_raw=(env_get("ZONELAB_KEEP_RAW") or "yes").lower() != "no",
+        parallel=int(env_get("ZONELAB_PARALLEL") or 2),
         api_key_set=bool(env_get("FORTNITE_API_KEY")),
         counts=dict(collected=len(ids_set), waiting=waiting, raw=len(raw), parsed=len(parsed), in_tables=in_tables),
         power_rankings=dict(players=len(pr), fetched=pr[0].get("fetched") if pr else None),
@@ -642,6 +643,7 @@ def plan(request: Request, limit: int = 15, min_top: int = 0):
 class Settings(BaseModel):
     data_dir: str | None = None
     keep_raw: bool | None = None
+    parallel: int | None = Field(default=None, ge=1, le=3)
     fortnite_api_key: str | None = None
 
 
@@ -655,6 +657,8 @@ def put_settings(s: Settings, request: Request):
         config.DATASETS["real"] = path
     if s.keep_raw is not None:
         env_set("ZONELAB_KEEP_RAW", "yes" if s.keep_raw else "no")
+    if s.parallel is not None:
+        env_set("ZONELAB_PARALLEL", str(s.parallel))
     if s.fortnite_api_key is not None:
         env_set("FORTNITE_API_KEY", s.fortnite_api_key.strip() or None)
     return {"ok": True}

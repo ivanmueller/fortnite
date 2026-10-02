@@ -146,6 +146,7 @@ export interface DataStatus {
   data_exists: boolean;
   size_gb: number;
   keep_raw: boolean;
+  parallel: number;
   api_key_set: boolean;
   counts: { collected: number; waiting: number; raw: number; parsed: number; in_tables: number };
   power_rankings: { players: number; fetched: string | null };
