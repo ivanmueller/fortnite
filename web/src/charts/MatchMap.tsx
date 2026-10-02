@@ -111,9 +111,18 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
     return fit(bounds.x1 - bounds.x0, bounds.y1 - bounds.y0, (bounds.x0 + bounds.x1) / 2, (bounds.y0 + bounds.y1) / 2);
   }, [view, follow, mineTracks, t, st, bounds, width]);
 
-  // Drawn as the in-game map shows it: north (+Y) up and +X to the left (Fortnite's world is left-handed).
+  // Drawn as the in-game map shows it. With a calibrated map image, the orientation comes from the image itself (it IS the
+  // in-game view); otherwise game +X points right and game +Y points down.
+  const orient = useMemo(() => {
+    const g = calib?.game_to_image;
+    if (g && Math.abs(g[0][0]) >= Math.abs(g[0][1]) && Math.abs(g[1][1]) >= Math.abs(g[1][0])) {
+      return { fx: Math.sign(g[0][0]) || 1, fy: Math.sign(g[1][1]) || 1 };
+    }
+    return { fx: 1, fy: 1 };
+  }, [calib]);
   const toScreen = useCallback((x: number, y: number): [number, number] =>
-    [-(x - currentView.cx) * currentView.s + width / 2, -(y - currentView.cy) * currentView.s + H / 2], [currentView, width]);
+    [orient.fx * (x - currentView.cx) * currentView.s + width / 2, orient.fy * (y - currentView.cy) * currentView.s + H / 2],
+  [currentView, width, orient]);
 
   const draw = useCallback(() => {
     const cv = canvasRef.current; if (!cv) return;
@@ -127,17 +136,19 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
     if (useImage && calib && imgRef.current) {
       const m = calib.image_to_game;   // [[a, b, c], [d, e, f]] px -> game cm
       const a = m[0][0] / 100, b = m[0][1] / 100, c = m[0][2] / 100, d = m[1][0] / 100, e = m[1][1] / 100, f = m[1][2] / 100;
-      // screen = V(game): sx = -(gx - cx)s + W/2, sy = -(gy - cy)s + H/2
+      // screen = V(game): sx = fx(gx - cx)s + W/2, sy = fy(gy - cy)s + H/2
+      const { fx, fy } = orient;
       ctx.save();
-      ctx.setTransform(dpr * -a * s, dpr * -d * s, dpr * -b * s, dpr * -e * s,
-        dpr * (-(c - currentView.cx) * s + width / 2), dpr * (-(f - currentView.cy) * s + H / 2));
+      ctx.setTransform(dpr * fx * a * s, dpr * fy * d * s, dpr * fx * b * s, dpr * fy * e * s,
+        dpr * (fx * (c - currentView.cx) * s + width / 2), dpr * (fy * (f - currentView.cy) * s + H / 2));
       ctx.drawImage(imgRef.current, 0, 0);
       ctx.restore();
     } else if (!Array.isArray(o.land)) {
       ctx.fillStyle = C.land;
       const w = o.land.cell * s + 0.6;
       for (let i = 0; i < o.land.x.length; i++) {
-        const [sx, sy] = toScreen(o.land.x[i] + o.land.cell, o.land.y[i] + o.land.cell);   // top-left corner on screen
+        // the cell's top-left corner on screen, whichever way the axes point
+        const [sx, sy] = toScreen(o.land.x[i] + (orient.fx < 0 ? o.land.cell : 0), o.land.y[i] + (orient.fy < 0 ? o.land.cell : 0));
         ctx.fillRect(sx, sy, w, w);
       }
     }
@@ -206,7 +217,7 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
       ctx.fillStyle = C.mine; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
-  }, [width, currentView, useImage, calib, o, st, plan, t, mineTracks, toScreen]);
+  }, [width, currentView, useImage, calib, o, st, plan, t, mineTracks, toScreen, orient]);
   useEffect(() => { draw(); }, [draw]);
 
   // interaction: wheel zoom, drag pan, hover names
@@ -215,16 +226,17 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
     e.preventDefault();
     const v = currentView, k = e.deltaY < 0 ? 1.2 : 1 / 1.2;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
-    const gx = -(e.clientX - rect.left - width / 2) / v.s + v.cx, gy = -(e.clientY - rect.top - H / 2) / v.s + v.cy;
+    const { fx, fy } = orient;
+    const gx = fx * (e.clientX - rect.left - width / 2) / v.s + v.cx, gy = fy * (e.clientY - rect.top - H / 2) / v.s + v.cy;
     const s = v.s * k;
     setFollow(false);
-    setView({ s, cx: gx + (e.clientX - rect.left - width / 2) / s, cy: gy + (e.clientY - rect.top - H / 2) / s });
+    setView({ s, cx: gx - fx * (e.clientX - rect.left - width / 2) / s, cy: gy - fy * (e.clientY - rect.top - H / 2) / s });
   };
   const onDown = (e: React.MouseEvent) => { drag.current = { x: e.clientX, y: e.clientY, v: currentView }; setFollow(false); };
   const onMove = (e: React.MouseEvent) => {
     if (drag.current) {
       const d = drag.current;
-      setView({ s: d.v.s, cx: d.v.cx + (e.clientX - d.x) / d.v.s, cy: d.v.cy + (e.clientY - d.y) / d.v.s });
+      setView({ s: d.v.s, cx: d.v.cx - orient.fx * (e.clientX - d.x) / d.v.s, cy: d.v.cy - orient.fy * (e.clientY - d.y) / d.v.s });
       return;
     }
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();

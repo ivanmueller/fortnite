@@ -117,29 +117,29 @@ function layout(spec: ChartSpec): Record<string, unknown> {
   if (spec.kind === 'polar_histogram') {
     base.polar = {
       bgcolor: 'rgba(0,0,0,0)',
-      // Fortnite's world is left-handed: on the in-game map +Y is north (up) and +X points west (left). Angles are
-      // measured counter-clockwise from +X in game coordinates, so they're drawn clockwise; compass charts start at west.
+      // On the in-game map, game +X points right (east) and game +Y points down (south). Angles are measured
+      // counter-clockwise from +X in game coordinates, which on the in-game map turns clockwise.
       angularaxis: {
-        rotation: o.zero_label ? 0 : 180, direction: 'clockwise', gridcolor: GRID, linecolor: GRID,
+        rotation: 0, direction: 'clockwise', gridcolor: GRID, linecolor: GRID,
         tickfont: { ...FONT, size: 11, color: MUTED },
         ...(o.zero_label ? { tickmode: 'array', tickvals: [0, 90, 180, 270], ticktext: [o.zero_label, '90°', '180°', '270°'] }
-          : { tickmode: 'array', tickvals: [0, 90, 180, 270], ticktext: ['W', 'N', 'E', 'S'] }),
+          : { tickmode: 'array', tickvals: [0, 90, 180, 270], ticktext: ['E', 'S', 'W', 'N'] }),
       },
       radialaxis: { gridcolor: GRID, linecolor: GRID, showticklabels: false, ticks: '' },
     };
     base.margin = { l: 40, r: 40, t: 24, b: 40 };
   }
   if (spec.kind === 'map_points') {
-    // Maps match the in-game map: north (+Y) up and +X to the left (Fortnite's world is left-handed).
+    // Maps match the in-game map (and the official map image): game +X to the right, game +Y downward.
     const xa = base.xaxis as Record<string, unknown>, ya = base.yaxis as Record<string, unknown>;
     ya.scaleanchor = 'x';
-    xa.autorange = 'reversed';
+    ya.autorange = 'reversed';
     xa.showticklabels = false; ya.showticklabels = false;
     xa.title = { text: '' }; ya.title = { text: '' };
     const rev = (r: number[]) => [Math.max(r[0], r[1]), Math.min(r[0], r[1])];
-    if (o.range) { xa.range = rev(o.range); ya.range = o.range; }
-    if (o.range_x) xa.range = rev(o.range_x);
-    if (o.range_y) ya.range = o.range_y;
+    if (o.range) { xa.range = o.range; ya.range = rev(o.range); }
+    if (o.range_x) xa.range = o.range_x;
+    if (o.range_y) ya.range = rev(o.range_y);
     if (o.circles?.length) {
       // Zone sets: colour each circle from light teal (early) to deep navy (endgame), solid lines.
       const n = o.circles.length;
