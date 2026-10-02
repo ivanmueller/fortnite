@@ -61,4 +61,23 @@ def select(con, f: Filters, name: str = "sel") -> int:
 
 
 def df(con, sql: str, params: list | None = None) -> pd.DataFrame:
-    return con.execute(sql, params or []).df()
+    return plain(con.execute(sql, params or []).df())
+
+
+def plain(out: pd.DataFrame) -> pd.DataFrame:
+    """Standard numpy types for every query result. DuckDB returns whole-number and true/false columns with gaps as
+    pandas' nullable types, whose missing value (pd.NA) can't be used in yes/no checks; analyses expect NaN / None."""
+    for c in out.columns:
+        dt = out[c].dtype
+        if not isinstance(dt, pd.api.extensions.ExtensionDtype):
+            continue
+        s = out[c]
+        if pd.api.types.is_bool_dtype(dt):
+            out[c] = s.astype(bool) if not s.isna().any() else s.astype(object).where(s.notna(), None)
+        elif pd.api.types.is_integer_dtype(dt):
+            out[c] = s.astype("int64") if not s.isna().any() else s.astype("float64")
+        elif pd.api.types.is_float_dtype(dt):
+            out[c] = s.astype("float64")
+        elif pd.api.types.is_string_dtype(dt) and getattr(dt, "na_value", None) is pd.NA:
+            out[c] = s.astype(object).where(s.notna(), None)        # only the NA-based text type; the default one uses NaN
+    return out

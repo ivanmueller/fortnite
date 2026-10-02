@@ -291,3 +291,15 @@ def test_engine_rotates_when_outside_and_holds_inside(client):
     out, ins = d[d["outside_m"] > 30], d[d["outside_m"] == 0]
     assert out["engine"].str.startswith("rotate").mean() >= 0.6
     assert ins["engine"].str.startswith("rotate").mean() <= 0.05
+
+
+def test_query_results_never_carry_pd_na():
+    """Whole-number and true/false columns with gaps (e.g. eliminations with no eliminating player) must come back as
+    NaN / None, never pd.NA, which breaks yes/no checks ('boolean value of NA is ambiguous')."""
+    import duckdb
+    import pandas as pd
+    from fnlab.store import df
+    out = df(duckdb.connect(), "SELECT * FROM (VALUES (1, TRUE, 'a'), (NULL, NULL, NULL)) t(a, b, c)")
+    for col in out.columns:
+        assert not any(v is pd.NA for v in out[col]), col
+    assert out["a"].isna().iloc[1] and out["b"].iloc[1] is None
