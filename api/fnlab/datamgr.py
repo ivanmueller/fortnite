@@ -109,6 +109,7 @@ class Job:
     count: int = 0
     expected: int | None = None
     flags: dict = field(default_factory=dict)
+    durations: list = field(default_factory=list)      # seconds per finished step
 
     def progress(self) -> float | None:
         if self.status == "done":
@@ -130,7 +131,7 @@ class Job:
                     steps=[s.label for s in self.steps], step_label=self.step_label, detail=self.detail,
                     progress=self.progress(), step_frac=self.step_frac, eta_s=self.eta_s(), params=self.params,
                     created=self.created, started=self.started, ended=self.ended, error=self.error,
-                    failed_steps=self.failed_steps)
+                    failed_steps=self.failed_steps, durations=self.durations)
 
 
 JOBS: dict[str, Job] = {}
@@ -145,6 +146,7 @@ PATTERNS = [
 ]
 PARSER_LINE = re.compile(r"^(ok|skip|FAIL)\s+\S+")
 TABLE_LINE = re.compile(r"^(\w+)\s+[\d,]+ rows")
+BUILT_LINE = re.compile(r"^built \S+ \((\d+) new, match (\d+) of (\d+)\)")
 TO_DOWNLOAD = re.compile(r"(\d+) IDs listed, (\d+) to download")
 
 
@@ -166,6 +168,11 @@ def _parse(job: Job, line: str) -> None:
         job.count += 1
         job.step_frac = min(1.0, job.count / job.expected)
         job.detail = f"Processing replay {job.count} of {job.expected}"
+        return
+    m = BUILT_LINE.match(line.strip())
+    if m:
+        job.step_frac = int(m.group(2)) / max(1, int(m.group(3)))
+        job.detail = f"Building tables for new matches ({m.group(1)} so far)"
         return
     m = TABLE_LINE.match(line.strip())
     if m:
@@ -237,6 +244,10 @@ def _explain(job: Job) -> None:
             return
 
 
+def _fmt_s(s: float) -> str:
+    return f"{s:.0f} s" if s < 60 else f"{int(s // 60)} min {int(s % 60)} s"
+
+
 def _worker() -> None:
     while True:
         WAKE.wait()
@@ -258,6 +269,7 @@ def _worker() -> None:
                 job.step_started, job.count, job.detail = time.time(), 0, ""
                 if step.when and not step.when(job):
                     job.step_frac = 1.0
+                    job.durations.append(0.0)
                     continue
                 job.expected = step.total() if step.total else None
                 if step.fn:
@@ -268,6 +280,9 @@ def _worker() -> None:
                     job.proc = None
                 if job.status == "cancelled":
                     break
+                took = time.time() - job.step_started
+                job.durations.append(round(took, 1))
+                job.lines.append(f"— {step.label}: {_fmt_s(took)}")
                 job.step_frac = 1.0
                 if rc != 0:
                     job.failed_steps.append(step.label)

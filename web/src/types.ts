@@ -181,6 +181,7 @@ export interface JobSummary {
   ended: number | null;
   error: string | null;
   failed_steps: string[];
+  durations?: number[];
 }
 
 export interface JobDetail extends JobSummary { log: string[] }

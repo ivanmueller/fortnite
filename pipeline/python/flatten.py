@@ -355,119 +355,80 @@ def add_lobby_strength(out: dict, data: Path) -> None:
 
 
 # --------------------------------------------------------------------------- main
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--data-dir", default=str(ROOT / "data"))
-    ap.add_argument("--match-ids", help="defaults to <data-dir>/match_ids.csv")
-    args = ap.parse_args()
-
-    data = Path(args.data_dir)
-    parsed, raw, tables_dir = data / "parsed", data / "raw", data / "tables"
-    tables_dir.mkdir(parents=True, exist_ok=True)
-
-    ids_info = {}
-    args.match_ids = args.match_ids or str(data / "match_ids.csv")
-    if Path(args.match_ids).exists():
-        df_ids = pd.read_csv(args.match_ids, comment="#", dtype=str)
-        if "match_id" in df_ids:
-            ids_info = df_ids.set_index("match_id").to_dict("index")
-
-    T = {k: [] for k in ["matches", "players", "teams", "zones", "bus", "positions", "kills", "eliminations"]}
+def build_match(f: Path, raw: Path, info: dict, data: Path) -> dict[str, pd.DataFrame]:
+    """Every table for one match: the per-match work, done once and cached."""
+    doc = json.loads(f.read_text())
+    mid = doc.get("match_id") or f.stem
+    rep, game = doc.get("replay", {}), doc.get("game", {})
+    meta_path = raw / f"{mid}.meta.json"
+    meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+    players = doc.get("players", [])
+    T = {k: [] for k in ["matches", "players", "teams", "zones", "bus", "kills", "eliminations"]}
     EV: dict[str, list] = {k: [] for k in match_events.TABLES}
-    files = sorted(parsed.glob("*.json"))
-    if not files:
-        raise SystemExit(f"No parsed JSON files found in {parsed}")
 
-    for f in files:
-        doc = json.loads(f.read_text())
-        mid = doc.get("match_id") or f.stem
-        rep, game = doc.get("replay", {}), doc.get("game", {})
-        meta_path = raw / f"{mid}.meta.json"
-        meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
-        info = ids_info.get(mid, {})
-        players = doc.get("players", [])
+    p = doc.get("positions") or {}
+    pos = pd.DataFrame(p.get("rows", []), columns=p.get("columns"))
+    if not pos.empty:
+        pos.insert(0, "match_id", mid)
+        team_of = {pl["id"]: pl.get("team_index") for pl in players}
+        pos["team_index"] = pos["id"].map(team_of)
+    for name, frame in match_events.collect(doc, mid).items():
+        EV[name].append(frame)
 
-        # positions
-        p = doc.get("positions") or {}
-        pos = pd.DataFrame(p.get("rows", []), columns=p.get("columns"))
-        if not pos.empty:
-            pos.insert(0, "match_id", mid)
-            team_of = {pl["id"]: pl.get("team_index") for pl in players}
-            pos["team_index"] = pos["id"].map(team_of)
-            T["positions"].append(pos)
-
-        for name, frame in match_events.collect(doc, mid).items():
-            EV[name].append(frame)
-
-        humans = [pl for pl in players if not pl.get("is_bot")]
-        T["matches"].append(dict(
-            match_id=mid, source_file=doc.get("source_file"),
-            event_window_id=info.get("event_window_id"), region=info.get("region"),
-            session_date=info.get("session_date"),
-            match_date=(info.get("session_date") or (rep.get("timestamp") or "")[:10]) or None,
-            is_server_replay=(str(info.get("is_server_replay")) == "1") if info.get("is_server_replay") is not None else None,
-            replay_timestamp=rep.get("timestamp"), length_s=(rep.get("length_ms") or 0) / 1000,
-            season=season_label(rep.get("branch")), branch=rep.get("branch"),
-            network_version=rep.get("network_version") or meta.get("NetworkVersion"),
-            changelist=rep.get("changelist") or meta.get("Changelist"),
-            engine_network_version=rep.get("engine_network_version"),
-            is_encrypted=rep.get("is_encrypted"), recorded_on=rep.get("platform"),
-            playlist=game.get("playlist"), tournament_round=game.get("tournament_round"),
-            max_players=game.get("max_players"),
-            aircraft_start_t=game.get("aircraft_start_t"), safe_zones_start_t=game.get("safe_zones_start_t"),
-            match_end_t=game.get("match_end_t"), winning_team=game.get("winning_team"),
-            n_players=len(players), n_humans=len(humans),
-            n_teams=len({pl.get("team_index") for pl in humans if pl.get("team_index") is not None}),
+    humans = [pl for pl in players if not pl.get("is_bot")]
+    T["matches"].append(dict(
+        match_id=mid, source_file=doc.get("source_file"),
+        event_window_id=info.get("event_window_id"), region=info.get("region"),
+        session_date=info.get("session_date"),
+        match_date=(info.get("session_date") or (rep.get("timestamp") or "")[:10]) or None,
+        is_server_replay=(str(info.get("is_server_replay")) == "1") if info.get("is_server_replay") is not None else None,
+        replay_timestamp=rep.get("timestamp"), length_s=(rep.get("length_ms") or 0) / 1000,
+        season=season_label(rep.get("branch")), branch=rep.get("branch"),
+        network_version=rep.get("network_version") or meta.get("NetworkVersion"),
+        changelist=rep.get("changelist") or meta.get("Changelist"),
+        engine_network_version=rep.get("engine_network_version"),
+        is_encrypted=rep.get("is_encrypted"), recorded_on=rep.get("platform"),
+        playlist=game.get("playlist"), tournament_round=game.get("tournament_round"),
+        max_players=game.get("max_players"),
+        aircraft_start_t=game.get("aircraft_start_t"), safe_zones_start_t=game.get("safe_zones_start_t"),
+        match_end_t=game.get("match_end_t"), winning_team=game.get("winning_team"),
+        n_players=len(players), n_humans=len(humans),
+        n_teams=len({pl.get("team_index") for pl in humans if pl.get("team_index") is not None}),
+    ))
+    for pl in players:
+        dl = pl.get("death_location")
+        T["players"].append(dict(
+            match_id=mid, id=pl.get("id"), player_id=pl.get("player_id"), name=pl.get("name"),
+            is_bot=pl.get("is_bot", False), team_index=pl.get("team_index"),
+            placement=pl.get("placement"), kills=pl.get("kills"), team_kills=pl.get("team_kills"),
+            death_t=pl.get("death_t"), death_cause=pl.get("death_cause"),
+            death_x=vec(dl, 0), death_y=vec(dl, 1), death_z=vec(dl, 2),
+            disconnected=pl.get("disconnected"), platform=pl.get("platform"),
+            raw_location_samples=pl.get("location_samples_raw"),
         ))
-
-        for pl in players:
-            dl = pl.get("death_location")
-            T["players"].append(dict(
-                match_id=mid, id=pl.get("id"), player_id=pl.get("player_id"), name=pl.get("name"),
-                is_bot=pl.get("is_bot", False), team_index=pl.get("team_index"),
-                placement=pl.get("placement"), kills=pl.get("kills"), team_kills=pl.get("team_kills"),
-                death_t=pl.get("death_t"), death_cause=pl.get("death_cause"),
-                death_x=vec(dl, 0), death_y=vec(dl, 1), death_z=vec(dl, 2),
-                disconnected=pl.get("disconnected"), platform=pl.get("platform"),
-                raw_location_samples=pl.get("location_samples_raw"),
-            ))
-
-        for t in doc.get("teams", []):
-            T["teams"].append(dict(match_id=mid, team_index=t.get("team_index"), placement=t.get("placement"),
-                                   team_kills=t.get("team_kills"), n_players=len(t.get("player_ids") or []),
-                                   player_ids=",".join(str(i) for i in (t.get("player_ids") or []))))
-
-        T["zones"] += zone_phases(mid, doc.get("zones", []))
-        T["bus"].append(bus_row(mid, doc, pos))
-
-        for k in doc.get("kill_feed", []):
-            loc = k.get("location")
-            T["kills"].append(dict(match_id=mid, t=k.get("t"), victim_id=k.get("victim_id"),
-                                   finisher_id=k.get("finisher_id"), downed=k.get("downed"),
-                                   revived=k.get("revived"), distance=k.get("distance"),
-                                   death_cause=k.get("death_cause"),
-                                   x=vec(loc, 0), y=vec(loc, 1), z=vec(loc, 2)))
-
-        for e in doc.get("eliminations", []):
-            T["eliminations"].append(dict(match_id=mid, time_s=mmss_to_seconds(e.get("time")),
-                                          eliminated=(e.get("eliminated") or "").lower() or None,
-                                          eliminator=(e.get("eliminator") or "").lower() or None,
-                                          knocked=e.get("knocked"), gun_type=e.get("gun_type")))
-
-    out = {}
-    for name, rows in T.items():
-        if name == "positions":
-            out[name] = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
-        else:
-            out[name] = pd.DataFrame(rows)
+    for t in doc.get("teams", []):
+        T["teams"].append(dict(match_id=mid, team_index=t.get("team_index"), placement=t.get("placement"),
+                               team_kills=t.get("team_kills"), n_players=len(t.get("player_ids") or []),
+                               player_ids=",".join(str(i) for i in (t.get("player_ids") or []))))
+    T["zones"] += zone_phases(mid, doc.get("zones", []))
+    T["bus"].append(bus_row(mid, doc, pos))
+    for k in doc.get("kill_feed", []):
+        loc = k.get("location")
+        T["kills"].append(dict(match_id=mid, t=k.get("t"), victim_id=k.get("victim_id"),
+                               finisher_id=k.get("finisher_id"), downed=k.get("downed"),
+                               revived=k.get("revived"), distance=k.get("distance"),
+                               death_cause=k.get("death_cause"),
+                               x=vec(loc, 0), y=vec(loc, 1), z=vec(loc, 2)))
+    for e in doc.get("eliminations", []):
+        T["eliminations"].append(dict(match_id=mid, time_s=mmss_to_seconds(e.get("time")),
+                                      eliminated=(e.get("eliminated") or "").lower() or None,
+                                      eliminator=(e.get("eliminator") or "").lower() or None,
+                                      knocked=e.get("knocked"), gun_type=e.get("gun_type")))
+    out = {name: pd.DataFrame(rows) for name, rows in T.items()}
+    out["positions"] = pos
     out["zone_offsets"] = add_zone_features(out["zones"]) if not out["zones"].empty else pd.DataFrame()
-
     match_events.finish(out, EV)
     infer_missing_winners(out)
-    add_lobby_strength(out, data)
-
-    # Team placement = best placement of any human on the team. Players who
-    # disconnect keep the placement from when they left, so members can differ.
     pl = out["players"]
     if not pl.empty:
         best = (pl[~pl.is_bot.astype(bool)].groupby(["match_id", "team_index"]).placement.min()
@@ -475,14 +436,117 @@ def main() -> None:
         out["players"] = pl.merge(best, on=["match_id", "team_index"], how="left")
         if not out["teams"].empty:
             out["teams"] = out["teams"].merge(best, on=["match_id", "team_index"], how="left")
-
     out["landings"] = build_landings(out, data)
+    return out
+
+
+def _cache_key(f: Path, data: Path) -> str:
+    """Changes when the match's processed file, the table-building code or the map place names change."""
+    import hashlib
+    h = hashlib.sha1()
+    st = f.stat()
+    h.update(f"{st.st_size}:{st.st_mtime_ns}".encode())
+    here = Path(__file__).resolve().parent
+    for src in ("flatten.py", "events.py", "landings.py"):
+        h.update((here / src).read_bytes())
+    pois = data / "pois.csv"
+    if pois.exists():
+        h.update(str(pois.stat().st_mtime_ns).encode())
+    return h.hexdigest()
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data-dir", default=str(ROOT / "data"))
+    ap.add_argument("--match-ids", help="defaults to <data-dir>/match_ids.csv")
+    ap.add_argument("--rebuild", action="store_true", help="ignore the per-match cache and rebuild every match")
+    args = ap.parse_args()
+
+    data = Path(args.data_dir)
+    parsed, raw, tables_dir = data / "parsed", data / "raw", data / "tables"
+    parts_dir = tables_dir / "_parts"
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    parts_dir.mkdir(parents=True, exist_ok=True)
+
+    ids_info = {}
+    args.match_ids = args.match_ids or str(data / "match_ids.csv")
+    if Path(args.match_ids).exists():
+        df_ids = pd.read_csv(args.match_ids, comment="#", dtype=str)
+        if "match_id" in df_ids:
+            ids_info = df_ids.drop_duplicates("match_id").set_index("match_id").to_dict("index")
+
+    files = sorted(parsed.glob("*.json"))
+    if not files:
+        raise SystemExit(f"No parsed JSON files found in {parsed}")
+
+    # 1. per-match tables, built once and cached (only new or re-processed matches are built)
+    import time as _time
+    t0, built = _time.time(), 0
+    keep = set()
+    for i, f in enumerate(files, 1):
+        mid = f.stem
+        keep.add(mid)
+        mdir = parts_dir / mid
+        key = _cache_key(f, data)
+        if not args.rebuild and (mdir / "key.txt").exists() and (mdir / "key.txt").read_text() == key:
+            continue
+        out = build_match(f, raw, ids_info.get(mid, {}), data)
+        mdir.mkdir(parents=True, exist_ok=True)
+        for old in mdir.glob("*.parquet"):
+            old.unlink()
+        for name, frame in out.items():
+            if frame is not None and len(frame.columns) and len(frame):
+                frame.to_parquet(mdir / f"{name}.parquet", index=False)
+        (mdir / "key.txt").write_text(key)
+        built += 1
+        print(f"built {mid} ({built} new, match {i} of {len(files)})", flush=True)
+    for stale in parts_dir.iterdir():
+        if stale.is_dir() and stale.name not in keep:
+            for x in stale.glob("*"):
+                x.unlink()
+            stale.rmdir()
+    print(f"{built} match(es) built, {len(files) - built} reused from the cache ({_time.time() - t0:.0f}s)", flush=True)
+
+    # 2. assemble every table from the cached pieces (DuckDB: fast, column types unified by name)
+    import duckdb
+    con = duckdb.connect()
+    names = sorted({p.stem for p in parts_dir.glob("*/*.parquet")})
+    out = {}
+    for name in names:
+        glob = str(parts_dir / "*" / f"{name}.parquet").replace("\\", "/")
+        if name in ("matches", "players", "teams", "landings"):
+            out[name] = con.execute(f"SELECT * FROM read_parquet('{glob}', union_by_name=true)").df()
+        else:
+            target = tables_dir / f"{name}.parquet"
+            con.execute(f"COPY (SELECT * FROM read_parquet('{glob}', union_by_name=true)) TO '{str(target).replace(chr(92), '/')}' (FORMAT PARQUET)")
+            n = con.execute(f"SELECT count(*) FROM '{str(target).replace(chr(92), '/')}'").fetchone()[0]
+            print(f"{name:13s} {n:>9,} rows  -> {tables_dir / name}.parquet")
+
+    # 3. what depends on files outside the matches: tournament details from match_ids.csv, lobby strength, place names
+    m = out.get("matches", pd.DataFrame())
+    if len(m) and ids_info:
+        for col in ("event_window_id", "region", "session_date"):
+            cur = m["match_id"].map(lambda x: ids_info.get(x, {}).get(col))
+            m[col] = cur.where(cur.notna(), m[col] if col in m else None)
+        srv = m["match_id"].map(lambda x: ids_info.get(x, {}).get("is_server_replay"))
+        m["is_server_replay"] = np.where(srv.notna(), srv.astype(str) == "1", m.get("is_server_replay"))
+        m["match_date"] = m["session_date"].where(m["session_date"].notna(), m["match_date"])
+        out["matches"] = m
+    add_lobby_strength(out, data)
+    # landings carry each player's Power Rankings rank (rankings change without the matches changing)
+    if "landings" in out and "players" in out and "pr_rank" in out["players"]:
+        out["landings"] = out["landings"].drop(columns=["pr_rank"], errors="ignore").merge(
+            out["players"][["match_id", "id", "pr_rank"]], on=["match_id", "id"], how="left")
     if (data / "pois.csv").exists():
         out["pois"] = pd.read_csv(data / "pois.csv")
-
-    for name, df in out.items():
-        fmt = write_table(df, tables_dir / name)
-        print(f"{name:13s} {len(df):>9,} rows  -> {tables_dir / name}.{fmt}")
+    for name in ("matches", "players", "teams", "landings", "pois"):
+        if name in out:
+            fmt = write_table(out[name], tables_dir / name)
+            print(f"{name:13s} {len(out[name]):>9,} rows  -> {tables_dir / name}.{fmt}")
+    # tables no longer produced (none of the matches have them) are removed so they can't go stale
+    for old in tables_dir.glob("*.parquet"):
+        if old.stem not in set(names) | {"pois"}:
+            old.unlink()
 
 
 if __name__ == "__main__":

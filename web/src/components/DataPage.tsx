@@ -75,9 +75,13 @@ function JobCard({ job, onCancel }: { job: JobSummary; onCancel: () => void }) {
       <p className="job__label">{label}</p>
       {j.steps.length > 1 && (
         <ol className="job__steps">
-          {j.steps.map((s, i) => (
-            <li key={s} className={i < j.step || j.status === 'done' ? 'is-done' : i === j.step && j.status === 'running' ? 'is-now' : ''}>{s}</li>
-          ))}
+          {j.steps.map((s, i) => {
+            const d = j.durations?.[i];
+            const took = d === undefined ? '' : d < 60 ? ` (${Math.round(d)} s)` : ` (${Math.floor(d / 60)} min ${Math.round(d % 60)} s)`;
+            return (
+              <li key={s} className={i < j.step || j.status === 'done' ? 'is-done' : i === j.step && j.status === 'running' ? 'is-now' : ''}>{s}{took}</li>
+            );
+          })}
         </ol>
       )}
       <button className="link" onClick={() => setShowLog(!showLog)}>{showLog ? 'Hide log' : 'Show log'}</button>
