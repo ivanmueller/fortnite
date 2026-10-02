@@ -342,11 +342,31 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
   );
 }
 
-type Ref = { key: string; name: string; x: number; y: number; kind: string };      // game coordinates in cm
-type Pick = Ref & { px: number; py: number };
+type Ref = { key: string; name: string; x: number; y: number; kind: string; r?: number };      // game coordinates (and zone radius) in cm
+type Pick = Ref & { px: number; py: number; rpx?: number; edges?: number };
+
+/** Least-squares circle through 3+ points (Kasa fit): x^2 + y^2 + Dx + Ey + F = 0. */
+function fitCircle(pts: { px: number; py: number }[]): { cx: number; cy: number; r: number } | null {
+  if (pts.length < 3) return null;
+  let sxx = 0, sxy = 0, syy = 0, sx = 0, sy = 0, sxz = 0, syz = 0, sz = 0;
+  const n = pts.length;
+  for (const p of pts) {
+    const z = p.px * p.px + p.py * p.py;
+    sxx += p.px * p.px; sxy += p.px * p.py; syy += p.py * p.py; sx += p.px; sy += p.py; sxz += p.px * z; syz += p.py * z; sz += z;
+  }
+  // [sxx sxy sx; sxy syy sy; sx sy n] [D E F]' = -[sxz syz sz]'
+  const M = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, n]], b = [-sxz, -syz, -sz];
+  const det = (A: number[][]) => A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) - A[0][1] * (A[1][0] * A[2][2] - A[1][2] * A[2][0])
+    + A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
+  const d = det(M);
+  if (Math.abs(d) < 1e-9) return null;
+  const [D, E, F] = [0, 1, 2].map((k) => det(M.map((row, i) => row.map((v, j) => (j === k ? b[i] : v)))) / d);
+  const cx = -D / 2, cy = -E / 2, r2 = cx * cx + cy * cy - F;
+  return r2 > 0 ? { cx, cy, r: Math.sqrt(r2) } : null;
+}
 
 /** Least-squares affine fit image px -> game cm from 3+ picks, with each pick's error in metres. */
-function fitAffine(picks: Pick[]): { err: number[]; toImage: (x: number, y: number) => [number, number] } | null {
+function fitAffine(picks: Pick[]): { err: number[]; toImage: (x: number, y: number) => [number, number]; scale: number } | null {
   if (picks.length < 3) return null;
   const S = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], Bx = [0, 0, 0], By = [0, 0, 0];
   for (const p of picks) {
@@ -366,7 +386,8 @@ function fitAffine(picks: Pick[]): { err: number[]; toImage: (x: number, y: numb
     const gx = x - ax[2], gy = y - ay[2];
     return [(ay[1] * gx - ax[1] * gy) / d2, (-ay[0] * gx + ax[0] * gy) / d2];
   };
-  return { err, toImage };
+  const scale = Math.sqrt(Math.abs(d2));                     // cm per image pixel (area-preserving average)
+  return { err, toImage, scale };
 }
 
 /** Line the map image up with game coordinates: click any named places, landmarks or real zone centres, as many as you like. */
@@ -402,7 +423,16 @@ function Calibrator({ storm, existing, image, onDone, onCancel }: {
     }).catch(() => setPlaces([]));
   }, [existing, kind]);
 
-  const zones: Ref[] = storm.map((z) => ({ key: `zone:${z.zone}`, name: `Zone ${z.zone} centre`, x: z.next[0] * 100, y: z.next[1] * 100, kind: 'zone' }));
+  const zones: Ref[] = storm.map((z) => ({ key: `zone:${z.zone}`, name: `Zone ${z.zone}`, x: z.next[0] * 100, y: z.next[1] * 100, r: z.next[2] * 100, kind: 'zone' }));
+  const [edges, setEdges] = useState<{ px: number; py: number }[]>([]);      // edge clicks for the zone being traced
+  const traced = target?.kind === 'zone' ? fitCircle(edges) : null;
+  const finishZone = () => {
+    if (target?.kind === 'zone' && traced) {
+      setPicks((ps) => [...ps.filter((p) => p.key !== target.key), { ...target, px: traced.cx, py: traced.cy, rpx: traced.r, edges: edges.length }]);
+    }
+    setEdges([]); setTarget(null);
+  };
+  const choose = (r: Ref) => { if (target?.kind === 'zone') finishZone(); setEdges([]); setTarget(r); };
   const fit = useMemo(() => fitAffine(picks), [picks]);
   const list = (tab === 'places' ? places : zones).filter((r) => r.name.toLowerCase().includes(q.toLowerCase()));
   const picked = new Set(picks.map((p) => p.key));
@@ -427,6 +457,7 @@ function Calibrator({ storm, existing, image, onDone, onCancel }: {
     const r = imgRef.current.getBoundingClientRect();         // includes the zoom, so this is exact at any zoom level
     const px = (e.clientX - r.left) * (nat.w / r.width), py = (e.clientY - r.top) * (nat.h / r.height);
     if (px < 0 || py < 0 || px > nat.w || py > nat.h) return;
+    if (target.kind === 'zone') { setEdges((es) => [...es, { px, py }]); return; }      // outlining a zone: keep collecting edge points
     setPicks((ps) => [...ps.filter((p) => p.key !== target.key), { ...target, px, py }]);
     setTarget(null);
   };
@@ -450,6 +481,22 @@ function Calibrator({ storm, existing, image, onDone, onCancel }: {
               const [ix, iy] = onScreen(...fit.toImage(r.x, r.y));
               return <span key={`f${r.key}`} className={`calib__ghost ${r.kind === 'zone' ? 'is-zone' : ''}`} style={{ left: ix, top: iy }} title={r.name} />;
             })}
+            <svg className="calib__svg" width={imgRef.current?.clientWidth ?? 0} height={imgRef.current?.clientHeight ?? 0}>
+              {fit && zones.map((z) => {
+                const [zx, zy] = onScreen(...fit.toImage(z.x, z.y));
+                const rr = ((z.r ?? 0) / fit.scale) * (imgRef.current?.clientWidth ?? 1) / nat.w;
+                return <circle key={`pz${z.key}`} cx={zx} cy={zy} r={rr} className="calib__zonefit" />;
+              })}
+              {picks.filter((p) => p.rpx).map((p) => {
+                const [cx, cy] = onScreen(p.px, p.py);
+                return <circle key={`zc${p.key}`} cx={cx} cy={cy} r={(p.rpx ?? 0) * (imgRef.current?.clientWidth ?? 1) / nat.w} className="calib__zone" />;
+              })}
+              {traced && (() => {
+                const [cx, cy] = onScreen(traced.cx, traced.cy);
+                return <circle cx={cx} cy={cy} r={traced.r * (imgRef.current?.clientWidth ?? 1) / nat.w} className="calib__zone is-live" />;
+              })()}
+              {edges.map((e, i) => { const [x, y] = onScreen(e.px, e.py); return <circle key={`e${i}`} cx={x} cy={y} r={3.5} className="calib__edge" />; })}
+            </svg>
             {picks.map((p, i) => {
               const [ix, iy] = onScreen(p.px, p.py);
               return <span key={p.key} className={`calib__pin ${fit && fit.err[i] > 25 ? 'is-bad' : ''}`} style={{ left: ix, top: iy }} title={p.name}>{i + 1}</span>;
@@ -458,19 +505,28 @@ function Calibrator({ storm, existing, image, onDone, onCancel }: {
         </div>
         <div className="calib__side">
           <h4>Calibrate the map image</h4>
-          <p className="muted small">{target ? <>Now click <strong>{target.name}</strong> on the image. Scroll to zoom in for a precise click; drag to move.</> :
-            'Choose a place, landmark or zone centre, then click exactly where it is on the image. Use at least 3, spread across the map; 6 or more is better.'}</p>
+          <p className="muted small">{target?.kind === 'zone' ? <>Click points around the <strong>edge of {target.name}</strong>, matching the circle you see on
+            Fortnite's replay map. At least 3; 5–8 spread around the edge is best. The fitted circle updates as you click.</> : target ?
+            <>Now click <strong>{target.name}</strong> on the image. Scroll to zoom in for a precise click; drag to move.</> :
+            'Choose a place or landmark and click exactly where it is, or choose a zone and trace its edge. Use at least 3, spread across the map; 6 or more is better.'}</p>
           <div className="row">
             <button className={`btn btn--sm ${tab === 'places' ? '' : 'btn--ghost'}`} onClick={() => setTab('places')}>Places and landmarks</button>
             <button className={`btn btn--sm ${tab === 'zones' ? '' : 'btn--ghost'}`} onClick={() => setTab('zones')}>Zones in this game</button>
           </div>
-          {tab === 'zones' && <p className="muted small">Open this game in Fortnite's replay viewer, note where a zone's centre is on the in-game map, and click the same spot here.
-            Zones are exact positions, so they make excellent calibration points.</p>}
+          {tab === 'zones' && <p className="muted small">Open this game in Fortnite's replay viewer, look at a zone on the in-game map, and trace the same circle here by
+            clicking around its edge. Vantage fits the circle and uses its centre; you never need to find the centre yourself.</p>}
+          {target?.kind === 'zone' && (
+            <div className="row">
+              <span className="muted small">{edges.length} edge point{edges.length === 1 ? '' : 's'}{traced ? ' · circle fitted' : ''}</span>
+              <button className="btn btn--sm btn--ghost" disabled={!edges.length} onClick={() => setEdges((es) => es.slice(0, -1))}>Undo last point</button>
+              <button className="btn btn--sm" disabled={!traced} onClick={finishZone}>Finish {target.name}</button>
+            </div>
+          )}
           <input className="input" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
           <ul className="calib__list">
             {list.map((r) => (
               <li key={r.key}>
-                <button className={`calib__ref ${target?.key === r.key ? 'is-on' : ''}`} onClick={() => setTarget(r)}>
+                <button className={`calib__ref ${target?.key === r.key ? 'is-on' : ''}`} onClick={() => choose(r)}>
                   {picked.has(r.key) ? '✓ ' : ''}{r.name} <span className="muted small">{r.kind === 'landmark' ? 'landmark' : r.kind === 'zone' ? '' : 'place'}</span>
                 </button>
               </li>
@@ -483,14 +539,21 @@ function Calibrator({ storm, existing, image, onDone, onCancel }: {
           <ol className="calib__picks">
             {picks.map((p, i) => (
               <li key={p.key}>
-                {p.name}{fit && <span className={`calib__err ${fit.err[i] > 25 ? 'is-bad' : ''}`}>{fit.err[i].toFixed(0)} m</span>}
-                <button className="link" onClick={() => setTarget(p)}>re-click</button>{' · '}
+                {p.name}{p.kind === 'zone' && p.edges ? <span className="muted small"> (circle from {p.edges} edge points)</span> : null}
+                {fit && <span className={`calib__err ${fit.err[i] > 25 ? 'is-bad' : ''}`}>{fit.err[i].toFixed(0)} m</span>}
+                {fit && p.kind === 'zone' && p.rpx && p.r ? (() => {
+                  const off = (p.rpx * fit.scale) / p.r - 1;
+                  return <span className={`calib__err ${Math.abs(off) > 0.1 ? 'is-bad' : ''}`} title="Your circle's size against the zone's real size">
+                    size {Math.round(off * 100) === 0 ? '0' : `${off > 0 ? '+' : ''}${Math.round(off * 100)}`}%</span>;
+                })() : null}
+                <button className="link" onClick={() => choose(p)}>{p.kind === 'zone' ? 're-trace' : 're-click'}</button>{' · '}
                 <button className="link" onClick={() => setPicks((ps) => ps.filter((x) => x.key !== p.key))}>remove</button>
               </li>
             ))}
           </ol>
-          {fit && <p className="muted small">Largest error {Math.max(...fit.err).toFixed(0)} m. The white dots show where every place and zone centre lands with
-            this fit; a point in red is probably clicked in the wrong spot (re-click or remove it).</p>}
+          {fit && <p className="muted small">Largest error {Math.max(...fit.err).toFixed(0)} m. The white dots show where every place lands with this fit, and the
+            dashed circles where every zone of this game lands; a point in red is probably clicked in the wrong spot (re-click or remove it). For a traced
+            zone, "size" compares your circle with the zone's real size: more than 10% off suggests the edge was traced in the wrong place.</p>}
           {image !== 'custom' && <label className="check"><input type="checkbox" checked={labelled} onChange={(e) => setLabelled(e.target.checked)} /> Show place names on the image</label>}
           {error && <p className="notice notice--error">{error}</p>}
           <div className="row">
