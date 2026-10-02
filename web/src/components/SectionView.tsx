@@ -50,7 +50,12 @@ export function SectionView({ section, info, filters, compare, bootId, enabled, 
   const matchList = useQuery({
     queryKey: ['match-list', filters, bootId], queryFn: () => api.matches(filters, 500), enabled: !!matchParam && enabled,
   });
-  const params = matchParam && match ? { [matchParam.name]: match } : {};
+  const zoneParam = info?.params.find((p) => p.kind === 'zone');
+  const [zone, setZone] = useState<string>('');
+  const params: Record<string, unknown> = {
+    ...(matchParam && match ? { [matchParam.name]: match } : {}),
+    ...(zoneParam && zone ? { [zoneParam.name]: Number(zone) } : {}),
+  };
   const run = useQuery({
     queryKey: ['run', section.analysis, filters, compare ?? null, params, bootId],
     queryFn: () => api.run(section.analysis, filters, params, compare),
@@ -91,6 +96,11 @@ export function SectionView({ section, info, filters, compare, bootId, enabled, 
               ));
             })()}
           </select>
+          {zoneParam && (
+            <select className="input" value={zone || String(zoneParam.default)} onChange={(e) => setZone(e.target.value)}>
+              {(zoneParam.options ?? []).map((o) => <option key={o.value} value={String(o.value)}>{o.label}</option>)}
+            </select>
+          )}
         </label>
       )}
 

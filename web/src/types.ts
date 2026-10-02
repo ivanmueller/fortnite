@@ -31,7 +31,7 @@ export interface Health { ok: boolean; boot_id: string; datasets: Record<Dataset
 export interface ParamSpec {
   name: string;
   label: string;
-  kind: 'select' | 'number' | 'boolean' | 'match';
+  kind: 'select' | 'number' | 'boolean' | 'match' | 'zone';
   default: unknown;
   options?: { value: string | number; label: string }[] | null;
   help?: string | null;

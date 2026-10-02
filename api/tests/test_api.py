@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -195,3 +195,14 @@ def test_zone_check_confirms_continuity(client):
     assert n == of
     zmap = next(c for c in j["charts"] if c["title"] == "Zone replay map")
     assert len(zmap["options"]["circles"]) >= 5
+
+
+def test_zone_forecast_is_honest(client):
+    """No planted zone rule: the forecast must not beat chance. Planted edge rule (v98): it must find it."""
+    import re
+    rand = client.post("/api/analyses/zone_forecast/run", json={"filters": {**DEMO, "seasons": ["v96.10"]}}).json()
+    hit = int(re.search(r"(\d+)%", next(m["value"] for m in rand["metrics"] if m["label"] == "Forecast hit rate")).group(1))
+    assert hit <= 40
+    edge = client.post("/api/analyses/zone_forecast/run", json={"filters": {**DEMO, "seasons": ["v98.10"]}}).json()
+    rows = {(r[0], r[1]): r for r in edge["tables"][0]["rows"]}
+    assert rows[("shrinking", "Distance toward the current zone's edge")][-1] == "Strong evidence"

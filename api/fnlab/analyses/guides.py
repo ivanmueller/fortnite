@@ -668,6 +668,63 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "zone_forecast": Guide(
+        question="Where will the next zone go, and which of the game's zone rules can a team rely on?",
+        method=[
+            "Playable map: the map is split into 25 m squares; a square counts as playable if players stood on the ground "
+            "there after landing, in the season's matches. Small gaps are filled in, and each square gets a ground height.",
+            "For every real zone change, hundreds of random alternatives are generated that follow the game's fixed rules: a "
+            "shrinking zone lands anywhere it fits inside the current one; 50/50, shifted and moving zones move their fixed "
+            "distance in a random direction.",
+            "Real zones are compared with their random alternatives on each measure: centre on playable ground, how much of the "
+            "zone covers playable ground, pull toward the island's centre, ground height, distance toward the edge, and "
+            "direction compared with the previous pull. A consistent difference is a rule of the game.",
+            "The forecast weights every possible next position by how much more often real zones show its measures than random "
+            "ones do. It's tested fairly: each match is forecast by a model trained only on the other matches.",
+        ],
+        terms={
+            "Forecast hit rate": "How often the real next zone landed in the forecast's most likely quarter of the possible "
+                                 "area, in matches the forecast never saw. 25% is random guessing; well above 25% is a usable "
+                                 "forecast.",
+            "Repeated zone positions": "Zone positions that appear identically in more than one match. Repeats would mean the "
+                                       "event reuses zone sets, which would make whole endgames predictable.",
+            "Zone changes analysed": "Zone changes with known circles in the season analysed.",
+            "Rules: real zones vs random placement": "For each zone type and measure: the average for real zones, the average "
+                "for random zones that follow the game's rules, and whether the difference is real.",
+            "Forecast beats random guessing": "Whether the forecast places real zones better than chance, across matches.",
+            "Forecast": "How well the forecast works on matches it never saw.",
+            "Shrinking": "Rules for zones that sit fully inside the current one.",
+            "50/50": "Rules for zones that partly overlap the current one.",
+            "Shifted": "Rules for zones that move fully outside after a wait.",
+            "Moving": "Rules for zones that keep moving with no wait.",
+            "p": P_VALUE,
+        },
+        charts={
+            "Forecast for the chosen zone": "One zone change, in a match the forecast didn't learn from. Dots are possible "
+                "centres for the next zone: dark teal is the forecast's most likely quarter, light teal the next quarter, grey "
+                "the rest. The amber dot is where the zone really went. Pick the match and zone above the takeaway.",
+            "Where zones land on the playable map": "Grey is playable ground; coloured dots are real zone centres by zone type. "
+                "Gaps and edges in the grey show where zones can't go.",
+            "Forecast hit rate by zone": "For each zone, how often the forecast's most likely quarter contained the real next "
+                                         "zone. Bars well above the dashed 25% line are zones where pre-rotating on the "
+                                         "forecast pays off.",
+        },
+        conclude=[
+            "Rules with strong evidence can be used mid-game: for example, if zones avoid putting their centre off the "
+            "playable ground, directions toward the coast can be ruled out.",
+            "A hit rate well above 25% means the forecast is worth acting on; check by zone, since some zones are far more "
+            "predictable than others.",
+            "Any repeated zone positions are worth investigating immediately: reused zone sets would make endgames predictable "
+            "from the first zone.",
+        ],
+        limits=[
+            "The playable map is built from where players went, so rarely visited land can look unplayable, and lakes players "
+            "swim through count as playable.",
+            "One season at a time: the map changes between seasons, and the most common season in the selection is used.",
+            "Zone 1's starting circle isn't recorded, so the forecast starts with zone 2.",
+        ],
+    ),
+
     "zone_check": Guide(
         question="Are the zones in the data right?",
         method=[
