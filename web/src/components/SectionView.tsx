@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { api } from '../api';
 import type { AnalysisInfo, AnalysisResult, Conclusion, Filters, SectionInfo, TableSpec } from '../types';
@@ -42,11 +42,9 @@ interface Props {
   bootId?: string;
   enabled: boolean;
   scope: string;
-  sharedText?: string;
-  onSharedText?: (v: string) => void;
 }
 
-export function SectionView({ section, info, filters, compare, bootId, enabled, scope, sharedText, onSharedText }: Props) {
+export function SectionView({ section, info, filters, compare, bootId, enabled, scope }: Props) {
   // A section can offer a match picker (a parameter of kind "match"), e.g. the zone replay map.
   const matchParam = info?.params.find((p) => p.kind === 'match');
   const [match, setMatch] = useState('');
@@ -57,11 +55,8 @@ export function SectionView({ section, info, filters, compare, bootId, enabled, 
   const textParam = info?.params.find((p) => p.kind === 'text');
   const plansParam = info?.params.find((p) => p.kind === 'plans');
   const [plans, setPlans] = useState('');
-  const [localText, setLocalText] = useState('');
-  const text = onSharedText ? (sharedText ?? '') : localText;
-  const setText = onSharedText ?? setLocalText;
-  const [draft, setDraft] = useState(text);
-  useEffect(() => { setDraft(text); }, [text]);
+  const [text, setText] = useState('');
+  const [draft, setDraft] = useState('');
   const [zone, setZone] = useState<string>('');
   const params: Record<string, unknown> = {
     ...(matchParam && match ? { [matchParam.name]: match } : {}),

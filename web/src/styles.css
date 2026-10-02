@@ -447,3 +447,10 @@ tbody tr:hover { background: #fff; }
 
 .match-pick { margin: 0 0 0.9rem; }
 .match-pick select { max-width: 32rem; }
+
+.plans { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 0.9rem 1rem; margin-bottom: 1rem; }
+.plans__grid { display: grid; grid-template-columns: minmax(14rem, 1fr) 9rem 9rem; gap: 0.35rem 0.75rem; align-items: center; margin-bottom: 0.75rem; }
+.plans__row { display: contents; }
+.plans__row label { font-size: var(--t-sm); color: var(--muted); }
+.plans__name { font-weight: 600; }
+.plans__diff { border-color: var(--accent); background: var(--accent-soft); }

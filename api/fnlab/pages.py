@@ -94,11 +94,6 @@ PAGES = [
                 charts=["Points per game", "Their path vs the winner's"], table="Game by game",
                 columns=["Game", "Placement", "Elims", "Points", "Drop", "Already inside the next zone", "Rotated behind", "How it ended", "Risks taken"],
                 metrics=["Games found", "Points (computed)", "Average placement"]),
-        section("audit_zones", "Zone positions and surge",
-                "Where they set up each zone, whether a stronger surge base was available given where other teams rotated, and their surge.",
-                charts=["Their base vs stronger surge bases", "Tag opportunities: their base vs the best spot nearby"],
-                table="Where they set up each zone",
-                metrics=["Zones with a stronger base anywhere", "Zones with a stronger base nearby", "Their bases vs the zone", "Surged", "Their tags"]),
     ]),
     dict(id="compare", title="Compare", question="How does group A differ from group B?", needs_compare=True, sections=[
         section("divergence", "A vs B", "Which measures differ between the two groups?",
