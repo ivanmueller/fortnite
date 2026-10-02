@@ -23,3 +23,6 @@ export function seriesColors(names: string[]): string[] {
   if (names.length > 1 && names.every((n) => n in tiers)) return names.map((n) => tiers[n]);
   return names.map((_, i) => CATEGORICAL[i % CATEGORICAL.length]);
 }
+
+/** Ordered zone colour: 0 = first zone (light teal) to 1 = last zone (deep navy). */
+export const zoneColor = (f: number) => mix('#7FC8C0', NAVY, Math.max(0, Math.min(1, f)));

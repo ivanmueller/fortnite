@@ -668,6 +668,53 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "zone_check": Guide(
+        question="Are the zones in the data right?",
+        method=[
+            "Continuity: each zone's next circle must be exactly the following zone's circle, and shrinks must run in order.",
+            "Storm damage: the storm is rebuilt second by second (the current zone while waiting, then moving and shrinking "
+            "to the next one). Health lost with no player hitting that player should happen only outside it, and players "
+            "clearly outside it should take damage. This is an independent test: if a centre, a size or a timing were "
+            "wrong, the two would disagree.",
+            "Endgame: when the final zone finishes closing, the winner should be at it. Matches often continue in the storm "
+            "afterwards, so the winner's very last position isn't used.",
+        ],
+        terms={
+            "Matches checked": "Matches with zones in the selection.",
+            "Zone-to-zone continuity": "Zone transitions where the next circle matches the following zone's circle within 1 m.",
+            "Storm damage where our storm says outside": "Of all health lost with no player hit (zone 2 on), the share taken "
+                                                         "outside the rebuilt storm. Close to 100% means the zones are right.",
+            "Clearly outside and damaged": "Moments when a player was more than 5 m outside the rebuilt storm and then took "
+                                           "storm damage within 2.5 s. Close to 100% is expected.",
+            "Clearly inside but damaged": "Moments when a player was more than 5 m inside the rebuilt storm but still lost "
+                                          "health with no player hit. Should be near zero: fall damage, and surge.",
+            "Winner at the final zone": "Matches where the winner was within 25 m of the final zone's edge when it closed.",
+            "Zone timeline": "For the match on the map: each zone's centre, radius, wait before it, when its shrink starts "
+                             "and how long the shrink takes.",
+            "Every match checked": "Each match's checks.",
+            "Matches that need a look": "Matches where a check failed. Compare them with Fortnite's own replay viewer.",
+        },
+        charts={
+            "Zone replay map": "Every zone of one match drawn to scale (light teal = early zones, navy = late), with named "
+                               "places and the spots where players took storm damage. With correct zones, the damage spots sit "
+                               "just outside the circles. Pick another match above the takeaway.",
+            "Endgame zones close-up": "Zones 5 and later, zoomed in so the small endgame circles and their labels are readable. "
+                                      "Storm-damage spots (amber) should sit outside the circles.",
+            "Storm damage taken outside our storm, by zone": "For each zone, the share of storm damage taken outside the "
+                                                             "rebuilt storm. Bars near 100% mean that zone's data is right.",
+            "Where storm damage happened, relative to our storm edge": "Distance from the rebuilt storm edge for every storm "
+                "damage tick. Almost everything should sit to the right of the dashed line (outside).",
+        },
+        conclude=[
+            "If the agreement stays near 100% across your matches, the zone positions, sizes and timings can be trusted.",
+            "For any flagged match, open it in Fortnite's replay viewer and compare a couple of zones by eye.",
+        ],
+        limits=[
+            "Zone 1's starting circle isn't recorded, so storm checks start at zone 2.",
+            "The storm check needs in-match health data (matches processed since the in-match update).",
+        ],
+    ),
+
     "height": Guide(
         question="Does being higher than your opponents win fights and games, and from which storm phase does it start to matter?",
         method=[

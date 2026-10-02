@@ -90,7 +90,8 @@ How much data each page needs before its conclusions are trustworthy (the dashbo
 
 1. Open `data/reports/validation.md`. Every match is marked PASS, WARN or FAIL, with the reason. If more than 1 in 10 fail, stop and send me the report before adding more.
 2. Open the dashboard on **Overview**: **Server replays** should be 100%. Under **Details and method**, *Storm phases recorded per match* should show nearly every match at the same high count.
-3. Check three matches by eye in Fortnite's own replay viewer. Confirm that the storm circles and one elimination per match match what the dashboard shows. This catches problems no automated check will.
+3. Open **Storm → Zone accuracy**. It checks every match's zones three ways: zone-to-zone continuity, agreement with the storm damage players actually took (near 100% means positions, sizes and timings are right), and the winner at the final zone when it closed. Any match that fails is listed by ID.
+4. Check three matches by eye in Fortnite's own replay viewer, using the Zone accuracy map (pick the match above the takeaway) and the endgame close-up. This catches problems no automated check will.
 
 ## 5. Reading the pages
 

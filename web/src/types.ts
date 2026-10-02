@@ -31,7 +31,7 @@ export interface Health { ok: boolean; boot_id: string; datasets: Record<Dataset
 export interface ParamSpec {
   name: string;
   label: string;
-  kind: 'select' | 'number' | 'boolean';
+  kind: 'select' | 'number' | 'boolean' | 'match';
   default: unknown;
   options?: { value: string | number; label: string }[] | null;
   help?: string | null;
@@ -71,6 +71,9 @@ export type ChartKind = 'bar' | 'stacked_bar' | 'line' | 'histogram' | 'polar_hi
 export interface Series {
   name: string;
   text?: string[];
+  color?: string;
+  size?: number;
+  opacity?: number;
   x?: (string | number)[];
   y?: (number | null)[];
   values?: (number | null)[];
@@ -93,6 +96,10 @@ export interface ChartSpec {
     horizontal?: boolean;
     circles?: { x: number; y: number; r: number; label?: string }[];
     marker_size?: number;
+    zone_circles?: boolean;
+    range_x?: number[];
+    range_y?: number[];
+    match?: string;
   };
 }
 

@@ -3,7 +3,7 @@
 import createPlotlyComponent from 'react-plotly.js/factory';
 import Plotly from 'plotly.js-dist-min';
 import type { ChartSpec, Series } from '../types';
-import { GRID, INK, MUTED, seriesColors } from './palette';
+import { GRID, INK, MUTED, seriesColors, zoneColor } from './palette';
 
 const Plot = createPlotlyComponent(Plotly);
 const FONT = { family: 'Barlow, system-ui, sans-serif', size: 13, color: INK };
@@ -68,7 +68,8 @@ function traces(spec: ChartSpec): unknown[] {
                    marker: { color: INK, size: 6, symbol: 'diamond' }, hoverinfo: 'text' };
         }
         return { type: 'scattergl', mode: 'markers', name: s.name, x: s.x, y: s.y,
-                 marker: { color, size: spec.options.marker_size ?? 4, opacity: spec.options.marker_size ? 0.8 : 0.55 } };
+                 marker: { color: s.color ?? color, size: s.size ?? spec.options.marker_size ?? 4,
+                           opacity: s.opacity ?? (spec.options.marker_size ? 0.8 : 0.55) } };
       default:
         return {};
     }
@@ -131,11 +132,20 @@ function layout(spec: ChartSpec): Record<string, unknown> {
       (base.xaxis as Record<string, unknown>).range = o.range;
       (base.yaxis as Record<string, unknown>).range = o.range;
     }
+    if (o.range_x) (base.xaxis as Record<string, unknown>).range = o.range_x;
+    if (o.range_y) (base.yaxis as Record<string, unknown>).range = o.range_y;
     if (o.circles?.length) {
-      base.shapes = o.circles.map((c) => ({ type: 'circle', xref: 'x', yref: 'y', x0: c.x - c.r, x1: c.x + c.r,
-        y0: c.y - c.r, y1: c.y + c.r, line: { color: INK, width: 1.5, dash: 'dot' } }));
-      base.annotations = o.circles.filter((c) => c.label).map((c) => ({ x: c.x, y: c.y + c.r, text: c.label,
-        showarrow: false, yanchor: 'bottom', font: { ...FONT, size: 11, color: MUTED } }));
+      // Zone sets: colour each circle from light teal (early) to deep navy (endgame), solid lines.
+      const n = o.circles.length;
+      const col = (i: number) => (o.zone_circles ? zoneColor(n === 1 ? 1 : i / (n - 1)) : INK);
+      base.shapes = o.circles.map((c, i) => ({ type: 'circle', xref: 'x', yref: 'y', x0: c.x - c.r, x1: c.x + c.r,
+        y0: c.y - c.r, y1: c.y + c.r, line: { color: col(i), width: o.zone_circles ? 2 : 1.5, dash: o.zone_circles ? 'solid' : 'dot' } }));
+      // Nested zones share nearly the same top point, so each zone's label sits at its own angle around its circle.
+      base.annotations = o.circles.map((c, i) => ({ c, i })).filter(({ c }) => c.label).map(({ c, i }) => {
+        const a = o.zone_circles ? ((90 + i * 28) * Math.PI) / 180 : Math.PI / 2;
+        return { x: c.x + c.r * Math.cos(a), y: c.y + c.r * Math.sin(a), text: c.label, showarrow: false,
+                 bgcolor: 'rgba(255,255,255,0.75)', font: { ...FONT, size: o.zone_circles ? 10 : 11, color: o.zone_circles ? col(i) : MUTED } };
+      });
     }
     base.legend = { font: { ...FONT, size: 11 }, x: 1.02, y: 1 };
     base.margin = { l: 56, r: 100, t: 12, b: 48 };

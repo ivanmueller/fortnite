@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -185,3 +185,13 @@ def test_data_actions_are_local_only():
         client = type("C", (), {"host": "203.0.113.9"})()
     with pytest.raises(HTTPException):
         local_only(Req())
+
+
+def test_zone_check_confirms_continuity(client):
+    """Zone accuracy: every zone transition in the demo data must be exact, and the replay map must draw every zone."""
+    j = client.post("/api/analyses/zone_check/run", json={"filters": DEMO}).json()
+    cont = next(m["value"] for m in j["metrics"] if m["label"] == "Zone-to-zone continuity")
+    n, of = cont.replace(",", "").split(" exact")[0].split(" of ")
+    assert n == of
+    zmap = next(c for c in j["charts"] if c["title"] == "Zone replay map")
+    assert len(zmap["options"]["circles"]) >= 5

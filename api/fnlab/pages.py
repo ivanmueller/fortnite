@@ -25,6 +25,10 @@ PAGES = [
         section("zone_randomness", "Is zone placement random?", "Do zones favour the edge, a direction, or the bus route?",
                 charts=["How far toward the edge each zone lands", "Turn from previous pull"],
                 metrics=["Matches", "Storm pulls"]),
+        section("zone_check", "Zone accuracy", "Are the zones in the data right? Checked against the storm damage players took.",
+                charts=["Zone replay map", "Endgame zones close-up"], table="Zone timeline",
+                metrics=["Zone-to-zone continuity", "Storm damage where our storm says outside", "Clearly inside but damaged",
+                         "Winner at the final zone"]),
     ]),
     dict(id="drops", title="Drops and loot", question="Where should we land?", sections=[
         section("drops", "Drop spots", "How contested is each spot, and how do players who land there finish?",

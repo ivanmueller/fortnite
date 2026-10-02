@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { api } from '../api';
 import type { AnalysisInfo, AnalysisResult, Conclusion, Filters, SectionInfo, TableSpec } from '../types';
@@ -43,9 +44,16 @@ interface Props {
 }
 
 export function SectionView({ section, info, filters, compare, bootId, enabled, scope }: Props) {
+  // A section can offer a match picker (a parameter of kind "match"), e.g. the zone replay map.
+  const matchParam = info?.params.find((p) => p.kind === 'match');
+  const [match, setMatch] = useState('');
+  const matchList = useQuery({
+    queryKey: ['match-list', filters, bootId], queryFn: () => api.matches(filters, 500), enabled: !!matchParam && enabled,
+  });
+  const params = matchParam && match ? { [matchParam.name]: match } : {};
   const run = useQuery({
-    queryKey: ['run', section.analysis, filters, compare ?? null, bootId],
-    queryFn: () => api.run(section.analysis, filters, {}, compare),
+    queryKey: ['run', section.analysis, filters, compare ?? null, params, bootId],
+    queryFn: () => api.run(section.analysis, filters, params, compare),
     enabled,
     placeholderData: keepPreviousData,
   });
@@ -68,6 +76,23 @@ export function SectionView({ section, info, filters, compare, bootId, enabled, 
       {run.isPending && <p className="muted">Working it out…</p>}
       {run.isError && <p className="notice notice--error">{(run.error as Error).message}</p>}
       {run.data?.status === 'empty' && <p className="notice">{run.data.message}</p>}
+
+      {matchParam && matchList.data && (
+        <label className="inline match-pick">{matchParam.label}
+          <select className="input" value={match} onChange={(e) => setMatch(e.target.value)}>
+            <option value="">Most recent match</option>
+            {(() => {
+              const c = matchList.data.columns;
+              const iId = c.indexOf('match_id'), iDate = c.indexOf('match_date'), iWin = c.indexOf('event_window_id');
+              return matchList.data.rows.map((row) => (
+                <option key={String(row[iId])} value={String(row[iId])}>
+                  {`${String(row[iDate] ?? '').slice(0, 10)} · ${row[iWin] ?? ''} · ${String(row[iId]).slice(0, 8)}`}
+                </option>
+              ));
+            })()}
+          </select>
+        </label>
+      )}
 
       {r && (
         <>

@@ -444,3 +444,6 @@ tbody tr:hover { background: #fff; }
 .row .input, .row select, .form-grid select { width: auto; }
 .row .input--grow { width: auto; flex: 1 1 14rem; }
 .inline { white-space: nowrap; }
+
+.match-pick { margin: 0 0 0.9rem; }
+.match-pick select { max-width: 32rem; }
