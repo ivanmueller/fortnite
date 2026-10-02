@@ -42,6 +42,8 @@ export function App() {
   const pages = useQuery({ queryKey: ['pages', bootId], queryFn: api.pages, enabled: !!bootId });
   const analyses = useQuery({ queryKey: ['analyses', bootId], queryFn: api.analyses, enabled: !!bootId });
   const onData = tab.id === 'data';
+  // Typed names (e.g. a team) are shared by every section on a page.
+  const [pageText, setPageText] = useState<Record<string, string>>({});
   const page: PageInfo | undefined = onData ? undefined : pages.data?.find((p) => p.id === tab.id) ?? pages.data?.[0];
   const compareFilters = { ...compare, dataset };
   const counts = useQuery({
@@ -110,7 +112,8 @@ export function App() {
             {page.sections.map((s) => (
               <SectionView key={`${page.id}-${s.analysis}`} section={s} info={analyses.data?.find((a) => a.id === s.analysis)}
                            filters={filters} compare={page.needs_compare ? compareFilters : undefined} bootId={bootId}
-                           enabled={datasetReady} scope={scope} />
+                           enabled={datasetReady} scope={scope}
+                           sharedText={pageText[page.id] ?? ''} onSharedText={(v) => setPageText((p) => ({ ...p, [page.id]: v }))} />
             ))}
             {page.id === 'overview' && (
               <details className="more more--page">

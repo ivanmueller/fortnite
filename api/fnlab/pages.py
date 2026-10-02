@@ -83,11 +83,22 @@ PAGES = [
                 metrics=["Alive at zone 6", "Explained by endgame position", "Explained by the early game", "Explained by skill",
                          "Loot gap closes by"]),
     ]),
+    dict(id="decisions", title="Decisions", question="What is a situation worth in points, and which of two plans is worth more?", sections=[
+        section("expected_points", "Expected points", "Describe two plans; the model trained on the selected matches prices them in FNCS points.",
+                charts=["What each change is worth in the endgame (zones 6–9)", "Chance of a top-15 finish (the points cliff), by teams left"],
+                table="Plan comparison",
+                metrics=["Plan comparison", "Model accuracy", "Hit within 10 s, zones 7–8", "Situations analysed"]),
+    ]),
     dict(id="audit", title="Team audit", question="One team, game by game: where did their points come from, and where could they have done better?", sections=[
         section("audit", "Team audit", "Type the players' names, and select the tournament's matches in the left panel.",
                 charts=["Points per game", "Their path vs the winner's"], table="Game by game",
                 columns=["Game", "Placement", "Elims", "Points", "Drop", "Already inside the next zone", "Rotated behind", "How it ended", "Risks taken"],
                 metrics=["Games found", "Points (computed)", "Average placement"]),
+        section("audit_zones", "Zone positions and surge",
+                "Where they set up each zone, whether a stronger surge base was available given where other teams rotated, and their surge.",
+                charts=["Their base vs stronger surge bases", "Tag opportunities: their base vs the best spot nearby"],
+                table="Where they set up each zone",
+                metrics=["Zones with a stronger base anywhere", "Zones with a stronger base nearby", "Their bases vs the zone", "Surged", "Their tags"]),
     ]),
     dict(id="compare", title="Compare", question="How does group A differ from group B?", needs_compare=True, sections=[
         section("divergence", "A vs B", "Which measures differ between the two groups?",

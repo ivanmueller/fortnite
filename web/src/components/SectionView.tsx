@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { api } from '../api';
 import type { AnalysisInfo, AnalysisResult, Conclusion, Filters, SectionInfo, TableSpec } from '../types';
@@ -8,6 +8,7 @@ import { DataTable } from './DataTable';
 import { EvidenceStrip } from './EvidenceStrip';
 import { GuidePanel } from './GuidePanel';
 import { InfoTip } from './InfoTip';
+import { PlanCompare } from './PlanCompare';
 
 const ALPHA = 0.005;
 
@@ -41,9 +42,11 @@ interface Props {
   bootId?: string;
   enabled: boolean;
   scope: string;
+  sharedText?: string;
+  onSharedText?: (v: string) => void;
 }
 
-export function SectionView({ section, info, filters, compare, bootId, enabled, scope }: Props) {
+export function SectionView({ section, info, filters, compare, bootId, enabled, scope, sharedText, onSharedText }: Props) {
   // A section can offer a match picker (a parameter of kind "match"), e.g. the zone replay map.
   const matchParam = info?.params.find((p) => p.kind === 'match');
   const [match, setMatch] = useState('');
@@ -52,13 +55,19 @@ export function SectionView({ section, info, filters, compare, bootId, enabled, 
   });
   const zoneParam = info?.params.find((p) => p.kind === 'zone');
   const textParam = info?.params.find((p) => p.kind === 'text');
-  const [text, setText] = useState('');
-  const [draft, setDraft] = useState('');
+  const plansParam = info?.params.find((p) => p.kind === 'plans');
+  const [plans, setPlans] = useState('');
+  const [localText, setLocalText] = useState('');
+  const text = onSharedText ? (sharedText ?? '') : localText;
+  const setText = onSharedText ?? setLocalText;
+  const [draft, setDraft] = useState(text);
+  useEffect(() => { setDraft(text); }, [text]);
   const [zone, setZone] = useState<string>('');
   const params: Record<string, unknown> = {
     ...(matchParam && match ? { [matchParam.name]: match } : {}),
     ...(zoneParam && zone ? { [zoneParam.name]: Number(zone) } : {}),
     ...(textParam && text ? { [textParam.name]: text } : {}),
+    ...(plansParam && plans ? { [plansParam.name]: plans } : {}),
   };
   const run = useQuery({
     queryKey: ['run', section.analysis, filters, compare ?? null, params, bootId],
@@ -86,6 +95,7 @@ export function SectionView({ section, info, filters, compare, bootId, enabled, 
       {run.isError && <p className="notice notice--error">{(run.error as Error).message}</p>}
       {run.data?.status === 'empty' && <p className="notice">{run.data.message}</p>}
 
+      {plansParam && <PlanCompare initial={plans || String(plansParam.default)} onCompare={setPlans} />}
       {textParam && (
         <form className="row text-pick" onSubmit={(e) => { e.preventDefault(); setText(draft.trim()); }}>
           <label className="inline">{textParam.label}</label>

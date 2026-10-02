@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook", "decides"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook", "decides", "audit_zones"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -249,3 +249,14 @@ def test_audit_asks_for_names_and_explains_misses(client):
     assert "Find the team" in j["headline"] and j["tables"][0]["title"] == "Teams in the selected matches"
     j = client.post("/api/analyses/audit/run", json={"filters": DEMO, "params": {"team": "zzzz-nobody"}}).json()
     assert "No team found" in j["headline"]
+
+
+def test_expected_points_prices_plans(client):
+    """The model trains on the selection and prices two plans; changing a plan changes the answer."""
+    import json
+    j = client.post("/api/analyses/expected_points/run", json={"filters": DEMO}).json()
+    assert any(m["label"] == "Plan comparison" for m in j["metrics"])
+    plans = {"a": {"name": "A", "teams_alive": 10, "zone": 8}, "b": {"name": "B", "teams_alive": 30, "zone": 5}}
+    k = client.post("/api/analyses/expected_points/run", json={"filters": DEMO, "params": {"plans": json.dumps(plans)}}).json()
+    rows = k["tables"][0]["rows"]
+    assert {r[0] for r in rows} >= {"Teams left", "Zone"}

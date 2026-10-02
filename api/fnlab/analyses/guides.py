@@ -668,6 +668,100 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "audit_zones": Guide(
+        question="Where did the team set up each zone, was a stronger surge base available given where other teams rotated, "
+                 "and how did their surge go?",
+        method=[
+            "Their base for each zone is their median position while the next zone was showing and before it started closing.",
+            "The next zone is scanned on a grid. Each spot gets its tag opportunities (enemy player-seconds within 30–120 m during "
+            "that hold, using where the other teams actually were), its danger (enemy player-seconds within 30 m) and its natural "
+            "ground height.",
+            "Their base is compared with the best spot that had no more danger, and with a typical spot in the zone.",
+            "Surge: for each detected surge episode in their games, whether they were hit and their damage dealt against the "
+            "least damage of a player who stayed safe. Tags: exchanges where they dealt damage and took none back, by height.",
+        ],
+        terms={
+            "Zones with a stronger base anywhere": "Zone holds where some spot in the zone offered at least twice their base's "
+                                                   "tag opportunities with no more danger.",
+            "Zones with a stronger base nearby": "The same, for spots within 150 m of their base: a small move away.",
+            "Their bases vs the zone": "Tag opportunities at their bases compared with a typical spot in the same zone.",
+            "Surged": "Surge episodes in their games where at least one of them took surge damage.",
+            "Their tags": "Exchanges where they dealt damage and took none back.",
+            "Where they set up each zone": "Each zone hold: how long it lasted, where their base was, its tag opportunities and "
+                                           "danger, and the best spot's tag opportunities, distance and height.",
+            "Surge episodes in their games": "Each detected surge: whether they were hit, their damage dealt, and the least damage "
+                                             "of a player who stayed safe.",
+            "Their damage trade by height": "Their exchanges grouped by how far above or below the opponent they were.",
+            "Teams in the selected matches": "Every team with its results, to identify a team at a LAN.",
+        },
+        charts={
+            "Their base vs stronger surge bases": "One zone of one game: grey is other teams during the hold, teal the spots with the "
+                "most tag opportunities, amber their base and navy the best spot with no more danger. Choose the game and zone above.",
+            "Tag opportunities: their base vs the best spot nearby": "By zone, averaged over games: their base, the best spot with no "
+                "more danger, and a typical spot.",
+        },
+        conclude=[
+            "If the best spots keep sitting on the same side of their base (for example, toward where most teams rotate in from), "
+            "that's a habit to change: hold the side where traffic arrives.",
+            "If they were surged with damage near the safe threshold, they need to tag earlier in that zone, ideally from a base "
+            "with more traffic.",
+        ],
+        limits=[
+            "Tag opportunities use where other teams actually went in that game: they show what a base would have offered, not "
+            "what was knowable beforehand. Look for patterns across many zones.",
+            "Danger counts only nearby enemies; it doesn't see sightlines, cover or builds.",
+        ],
+    ),
+
+    "expected_points": Guide(
+        question="What is any moment of a match worth in points, and which of two plans is worth more?",
+        method=[
+            "Every 10 seconds from zone 2 on, every living team's situation is recorded: teams left, the zone and how far through "
+            "it, teammates alive, health and shield, distance outside the next zone and into the storm, distance from the centre, "
+            "height rank, enemy teams within 50 m and 150 m, damage taken in the last 10 seconds, damage dealt this zone (ranked "
+            "against the lobby, which is what surge looks at), and eliminations so far.",
+            "The model learns what each situation turned into: placement points on the FNCS 2026 table (65 for 1st down to 22 for "
+            "15th, 0 below: the cliff) plus 4 for every elimination still to come. It's checked on matches it never saw.",
+            "Getting hit while rotating: the chance that a team you weren't fighting (no hits between you in the last 30 seconds) "
+            "hits you in the next 10 seconds, outside the next zone against inside it, and what that costs in points.",
+            "Plan comparison: two situations priced by the model, and which differences drive the gap.",
+        ],
+        terms={
+            "Plan comparison": "Expected total points from this moment for each plan: eliminations so far plus what's still to come.",
+            "Model accuracy": "How much of the variation in points still to come the model explains on matches it never saw, "
+                              "against a baseline that only knows teams left and the zone. The gap is what the situation adds.",
+            "Hit within 10 s, zones 7–8": "The chance a team you weren't fighting hits you in the next 10 seconds, rotating against holding.",
+            "Situations analysed": "Living teams, every 10 seconds, across the selected matches.",
+            "What each change is worth in the endgame": "The model's average change in expected points for each change, over real "
+                                                         "situations in zones 6–9.",
+            "Getting hit while rotating": "By zone group, rotating against holding: the chance of a hit from a new team within "
+                                          "10 seconds, the damage when it happens, and its average cost in points per 10 seconds.",
+        },
+        charts={
+            "What each change is worth in the endgame (zones 6–9)": "Each bar is a change, in expected points. Longer bars are the "
+                "decisions that matter most in the endgame.",
+            "Chance of a top-15 finish (the points cliff), by teams left": "How often teams in each situation finish top 15, where "
+                "placement points start. The gap between the lines is the price of being outside and damaged.",
+            "Points still to come, by teams left": "Average points still to come for each situation as the lobby shrinks.",
+            "Chance of being hit by a new team within 10 s": "The risk of someone you weren't fighting hitting you, rotating against "
+                                                             "holding, by zone group.",
+            "Chance of being surged, by damage dealt": "When surge triggered: how often players in each quarter of damage dealt were surged.",
+            "Is the model calibrated?": "Predicted against real points still to come. Close to the 'Perfect' line means the "
+                                        "model's numbers can be taken at face value.",
+        },
+        conclude=[
+            "Use the plan comparison for real decisions from a match: describe what the team did and what it could have done.",
+            "The biggest bars in 'What each change is worth' are where a team's decisions earn or lose the most points.",
+            "Train it on matching lobbies: tier-1 duo decisions from tier-1 duo matches.",
+        ],
+        limits=[
+            "Expected points are averages over many situations; a single game still turns on fights and luck.",
+            "With few matches (Globals has 12), check 'Model accuracy' and calibration before trusting small differences.",
+            "The model can't value situations it never saw, such as health above what was recorded.",
+            "The first calculation on a selection takes up to a minute; comparing plans afterwards is instant.",
+        ],
+    ),
+
     "audit": Guide(
         question="For one team: where did their points come from, game by game, and which risks cost them?",
         method=[
