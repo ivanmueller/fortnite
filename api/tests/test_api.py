@@ -246,6 +246,6 @@ def test_playbook_finds_planted_rules(client):
 
 def test_audit_asks_for_names_and_explains_misses(client):
     j = client.post("/api/analyses/audit/run", json={"filters": DEMO}).json()
-    assert "Type the players" in j["headline"]
+    assert "Find the team" in j["headline"] and j["tables"][0]["title"] == "Teams in the selected matches"
     j = client.post("/api/analyses/audit/run", json={"filters": DEMO, "params": {"team": "zzzz-nobody"}}).json()
     assert "No team found" in j["headline"]

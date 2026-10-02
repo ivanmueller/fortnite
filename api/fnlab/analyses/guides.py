@@ -681,6 +681,9 @@ GUIDES: dict[str, Guide] = {
             "fight, whether a third team joined, and whether they were outside the zone.",
         ],
         terms={
+            "Teams in the selected matches": "Every team, followed across the selected games by its accounts, ranked by computed "
+                                             "points: games, which games it won, average placement and usual drop. At a LAN, where "
+                                             "players use event accounts, this is how to find a team: by its results.",
             "Games found": "Matches in the selection where the team was found, and the account names it was found as.",
             "Points (computed)": "Placement points plus 4 per elimination. Compare with the official total to check the data.",
             "Average placement": "The team's average placement, and its wins.",

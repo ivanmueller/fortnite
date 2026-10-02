@@ -35,7 +35,8 @@ def _find_team(con, text: str) -> pd.DataFrame:
         return pd.DataFrame()
     pl = df(con, """SELECT pl.match_id, pl.id, pl.name, pl.team_index, coalesce(pl.team_placement, pl.placement) AS placement,
                            pl.kills, pl.death_t, pl.death_cause FROM players pl JOIN sel USING (match_id) WHERE NOT coalesce(pl.is_bot, FALSE)""")
-    low = pl["name"].fillna("").str.lower()
+    pl = pl.merge(df(con, "SELECT pl.match_id, pl.id, pl.player_id FROM players pl JOIN sel USING (match_id)"), on=["match_id", "id"], how="left")
+    low = (pl["name"].fillna("") + " " + pl["player_id"].fillna("").astype(str)).str.lower()
     hit = pl[[any(t in n for t in tokens) for n in low]].copy()
     if hit.empty:
         return hit
@@ -48,6 +49,37 @@ def _find_team(con, text: str) -> pd.DataFrame:
     return pl.merge(best[["match_id", "team_index"]], on=["match_id", "team_index"])
 
 
+def _team_list(con) -> pd.DataFrame:
+    """Every team in the selected matches, followed across games by its accounts (event accounts stay the same all
+    tournament), with games, wins, computed points, average placement and usual drop: to identify a team by its results."""
+    pl = df(con, """SELECT pl.match_id, pl.id, pl.player_id, pl.name, pl.team_index, coalesce(pl.team_placement, pl.placement) AS placement, pl.kills
+                    FROM players pl JOIN sel USING (match_id) WHERE NOT coalesce(pl.is_bot, FALSE)""")
+    if pl.empty:
+        return pl
+    order = df(con, "SELECT m.match_id, m.replay_timestamp, m.match_date FROM matches m JOIN sel USING (match_id)")
+    order["start"] = pd.to_datetime(order["replay_timestamp"].astype(str), errors="coerce").fillna(pd.to_datetime(order["match_date"].astype(str), errors="coerce"))
+    order = order.sort_values(["start", "match_id"]).reset_index(drop=True)
+    gnum = dict(zip(order["match_id"], order.index + 1))
+    key = pl.groupby(["match_id", "team_index"])["player_id"].apply(lambda s: "|".join(sorted(map(str, s)))).rename("members")
+    t = pl.groupby(["match_id", "team_index"]).agg(placement=("placement", "min"), kills=("kills", "sum")).join(key).reset_index()
+    t["points"] = t["placement"].map(PLACEMENT_POINTS).fillna(0) + KILL_POINTS * t["kills"].fillna(0)
+    t["game"] = t["match_id"].map(gnum)
+    names = pl.groupby("player_id")["name"].agg(lambda s: s.mode().iat[0] if s.notna().any() else "?")
+    drops = pd.Series(dtype=object)
+    if "landings" in {x for (x,) in con.execute("SELECT table_name FROM information_schema.tables").fetchall()}:
+        L = df(con, "SELECT l.match_id, l.id, l.poi FROM landings l JOIN sel USING (match_id)").merge(pl[["match_id", "id", "team_index"]], on=["match_id", "id"])
+        L = L.merge(t[["match_id", "team_index", "members"]], on=["match_id", "team_index"])
+        drops = L.groupby("members")["poi"].agg(lambda s: s.dropna().mode().iat[0] if s.notna().any() else "–")
+    g = t.groupby("members").agg(games=("game", "size"), points=("points", "sum"), avg=("placement", "mean"),
+                                 wins=("game", lambda s: ", ".join(str(int(x)) for x in sorted(s[t.loc[s.index, "placement"] == 1])) or "–"))
+    g["players"] = [", ".join(names.get(p, p) for p in m.split("|")) for m in g.index]
+    g["drop"] = [drops.get(m, "–") for m in g.index]
+    g = g.sort_values("points", ascending=False).reset_index(drop=True)
+    return pd.DataFrame({"Rank": np.arange(1, len(g) + 1), "Players (type these above)": g["players"], "Games": g["games"],
+                         "Won games": g["wins"], "Points (computed)": g["points"].astype(int), "Average placement": g["avg"].round(1),
+                         "Usual drop": g["drop"]})
+
+
 @register("audit", "Team audit",
           "One team, game by game: where their points came from, how every zone went, how each game ended, and where they "
           "could have done better, compared with the tournament's top teams.",
@@ -55,13 +87,14 @@ def _find_team(con, text: str) -> pd.DataFrame:
 def run(ctx: Context) -> Result:
     r, con = Result(), ctx.con
     text = str(ctx.params.get("team") or "").strip()
-    if not text:
-        r.headline = "Type the players' names above (comma-separated, e.g. clix, rapid), and select the tournament's matches in the left panel."
-        conclude(r, ctx, primary=[], alpha=0.005, recommended=1, descriptive=r.headline)
-        return r
-    team = _find_team(con, text)
+    team = _find_team(con, text) if text else pd.DataFrame()
     if team.empty:
-        r.headline = f"No team found for '{text}' in the selected matches. Names match if they contain what you type; check spelling or try one name."
+        tl = _team_list(con)
+        if len(tl):
+            r.table("Teams in the selected matches", tl.head(60))
+        r.headline = ((f"No team found for '{text}'. " if text else "") +
+                      "Find the team in the table below (at a LAN, players use event accounts, so identify them by their results: "
+                      "which games they won, their points and their usual drop), then type their names above.")
         conclude(r, ctx, primary=[], alpha=0.005, recommended=1, descriptive=r.headline)
         return r
     names = sorted(team["name"].dropna().unique())
