@@ -947,6 +947,60 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "surge_study": Guide(
+        question="How does surge actually work in these matches, and what do top players do about it: hold and hunt for damage, "
+                 "sit passively, or rotate?",
+        method=[
+            "Surge is detected as several players inside the zone losing health in the same second with no player hitting them.",
+            "Which damage surge counts is measured, not assumed: for each surge episode, players are ranked by damage dealt over "
+            "several windows (the whole match, since the zone appeared, since the previous surge check, the last 60, 120 and 180 "
+            "seconds). The window whose ranking best separates surged from safe players is the one the game most likely uses, and "
+            "everything else on this page uses it.",
+            "The cut-off for each episode is midway between the most damage of a player who was surged and the least of a player "
+            "who wasn't.",
+            "Before each zone's first surge check, every player alive when the zone appeared is classed by what they did: held and "
+            "hunted (moved under 80 m and dealt 25+ damage), held passively (moved under 80 m, dealt less), or rotated (moved 80 m+).",
+            "The key comparison only includes players who were at or below the cut-off when the zone appeared (what the HUD would "
+            "have shown as 'below'), so everyone compared starts from the same situation.",
+        ],
+        terms={
+            "Damage surge counts": "The damage window that best explains who gets surged.",
+            "Typical cut-off": "The median damage, in that window, that kept players safe.",
+            "Damage per minute, holding and hunting": "How fast players who held position and hunted gathered damage before a check.",
+            "Top-10 finishers holding and hunting": "Share of top-10 finishers who held position and dealt damage before a surge check.",
+            "Surge episodes": "Detected surges across the selected matches.",
+            "Which damage surge counts": "Each candidate window and how well it separates surged from safe players (1.00 = perfectly, "
+                                         "0.50 = no better than chance).",
+            "How surge works, by zone": "For each zone: how often surge hit, how long after the zone appeared, relative to the shrink "
+                                        "starting, players alive and hit, damage per tick and per player hit, and the damage that kept "
+                                        "players safe.",
+            "Below the cut-off when the zone appeared: what happened, by what they did": "Players who started at risk, grouped by what "
+                "they did before the surge check: how often they were surged, eliminated before the next zone, and how they finished.",
+            "Below the cut-off": "Holding and hunting compared with each alternative, within the same zone of the same match.",
+            "p": P_VALUE,
+        },
+        charts={
+            "Below the cut-off: which approach paid off": "For players at risk when the zone appeared, by what they did: the share "
+                "surged, eliminated before the next zone, and how they finished. Hunting avoids surge but carries fight risk; this "
+                "shows which side of that trade wins.",
+            "What players do before a surge check: top-10 finishers vs the rest": "How top-10 finishers split between holding and "
+                "hunting, holding passively and rotating, against everyone else.",
+            "Damage needed to stay safe from surge, by zone": "The median cut-off in each zone.",
+            "When surge checks happen": "How long after each zone appears its surge check usually comes.",
+        },
+        conclude=[
+            "Compare your team's damage at each zone's reveal with that zone's cut-off: below it, the question is whether there's "
+            "time and traffic to hunt before the check.",
+            "If holding and hunting beats rotating for players below the cut-off, sitting in zone hunting tags is the right call, "
+            "not a late rotation.",
+        ],
+        limits=[
+            "Surge detection needs several players hit in the same second; very small surges can be missed.",
+            "Players who hold and hunt may be stronger fighters; compare top-10 finishers' choices as well as the outcomes.",
+            "Needs in-match health and damage data, and matches where surge triggers (often later rounds and finals).",
+        ],
+    ),
+
     "playbook": Guide(
         question="Did players who happened to play the way the system recommends do better than their lobby?",
         method=[

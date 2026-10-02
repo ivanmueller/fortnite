@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook", "decides", "audit_zones", "review", "match_map", "engine_review"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook", "decides", "audit_zones", "review", "match_map", "engine_review", "surge_study"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -336,3 +336,11 @@ def test_map_upload_and_wrong_island_check(client, tmp_path, monkeypatch):
     assert not good["mismatch"] and good["error_m"] < 1
     bad = client.put("/api/map/calibration", json={"image": "custom", "points": pts(False)}).json()
     assert bad["mismatch"]
+
+
+def test_surge_study_window_score():
+    """The window score: 1 when every safe player dealt more than every surged one, 0.5 when no different."""
+    import numpy as np
+    from fnlab.analyses.surge_study import _auc
+    assert _auc(np.array([50.0, 80]), np.array([0.0, 10])) == 1.0
+    assert _auc(np.array([5.0, 5]), np.array([5.0, 5])) == 0.5
