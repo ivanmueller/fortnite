@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from .. import zone_model as zm
+from ..locks import serialized
 from ..conclusion import conclude
 from ..result import Result
 from ..stats import ttest_mean
@@ -35,6 +36,7 @@ READINGS = {
 _CACHE: dict = {}
 
 
+@serialized
 def _load(ctx: Context):
     con = ctx.con
     z = df(con, """SELECT z.match_id, z.phase, z.next_x, z.next_y, z.next_r, o.zone_type, m.season, m.match_date

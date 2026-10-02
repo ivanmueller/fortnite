@@ -130,22 +130,23 @@ MONOTONE = {"hp": 1, "members": 1, "kills": 1, "outside_m": -1, "storm_m": -1, "
             "seen_close": -1, "surge_margin": 1, "enemies_50": -1}
 
 
-def fit(team: pd.DataFrame, folds: int = 6, seed: int = 3):
+def fit(team: pd.DataFrame, folds: int = 6, seed: int = 3, features: list[str] | None = None):
     """Gradient-boosted expected points, plus its out-of-sample check and a situation-blind baseline."""
     from sklearn.ensemble import HistGradientBoostingRegressor
-    X, y = team[FEATURES].to_numpy(float), team["future_pts"].to_numpy(float)
+    feats = list(features or FEATURES)        # every model keeps its own input list (no shared switch)
+    X, y = team[feats].to_numpy(float), team["future_pts"].to_numpy(float)
     matches = team["match_id"].unique()
     fold = dict(zip(np.random.default_rng(seed).permutation(matches), np.arange(len(matches)) % folds))
     f = team["match_id"].map(fold).to_numpy()
 
-    mono = [MONOTONE.get(f_, 0) for f_ in FEATURES]
+    mono = [MONOTONE.get(f_, 0) for f_ in feats]
 
     def model(cols=None):
         cst = [mono[c] for c in cols] if cols is not None else mono
         return HistGradientBoostingRegressor(max_iter=250, learning_rate=0.05, max_leaf_nodes=24, min_samples_leaf=60,
                                              l2_regularization=1.0, random_state=seed, monotonic_cst=cst)
     oos, base = np.zeros(len(y)), np.zeros(len(y))
-    bcols = [FEATURES.index("teams_alive"), FEATURES.index("zone")]
+    bcols = [feats.index("teams_alive"), feats.index("zone")]
     fold_models = {}
     for k in range(folds):
         tr, te = f != k, f == k
@@ -156,6 +157,8 @@ def fit(team: pd.DataFrame, folds: int = 6, seed: int = 3):
         base[te] = model(bcols).fit(X[tr][:, bcols], y[tr]).predict(X[te][:, bcols])
     full = model().fit(X, y)
     full.fold_models_, full.fold_of_ = fold_models, dict(zip(matches, [int(fold[m]) for m in matches]))   # models that never saw each match
+    for m_ in [full, *fold_models.values()]:
+        m_.features_ = feats
     return full, oos, base
 
 

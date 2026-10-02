@@ -303,3 +303,14 @@ def test_query_results_never_carry_pd_na():
     for col in out.columns:
         assert not any(v is pd.NA for v in out[col]), col
     assert out["a"].isna().iloc[1] and out["b"].iloc[1] is None
+
+
+def test_game_review_sections_load_together(client):
+    """The page runs its sections at the same time; the engine's live model must never disturb the others
+    (regression: KeyError for live-only inputs in Game review)."""
+    from concurrent.futures import ThreadPoolExecutor
+    tl = client.post("/api/analyses/review/run", json={"filters": DEMO}).json()["tables"][0]["rows"]
+    body = {"filters": DEMO, "params": {"team": tl[0][1].split(",")[0]}}
+    with ThreadPoolExecutor(3) as ex:
+        res = list(ex.map(lambda a: client.post(f"/api/analyses/{a}/run", json=body), ["review", "engine_review", "match_map"]))
+    assert all(r.status_code == 200 for r in res), [r.json().get("detail") for r in res]

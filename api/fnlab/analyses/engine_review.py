@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from .. import engine as eng
+from ..locks import serialized
 from .. import ep_model as ep
 from ..conclusion import conclude
 from ..result import Result
@@ -22,6 +23,7 @@ from .audit import _find_team, _team_list
 _CACHE: dict = {}
 
 
+@serialized
 def decisions(ctx: Context, perceive_m: float):
     """Engine decisions for every team in the selection (cached per selection and perception radius)."""
     key = (tuple(sorted(df(ctx.con, "SELECT match_id FROM sel")["match_id"])), round(perceive_m))

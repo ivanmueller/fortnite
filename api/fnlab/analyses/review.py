@@ -43,9 +43,9 @@ def _ep_value(epd, mid, team_index, t, **changes):
     s = tm[(tm["match_id"] == mid) & (tm["team_index"] == team_index) & (tm["t"] >= t - 0.5)].sort_values("t").head(1)
     if s.empty:
         return np.nan, np.nan
-    row = s[ep.FEATURES].iloc[0].to_dict()
+    row = s[model.features_].iloc[0].to_dict()
     alt = dict(row, **{k: (v(row) if callable(v) else v) for k, v in changes.items()})
-    a, b = model.predict(pd.DataFrame([row, alt])[ep.FEATURES].to_numpy(float))
+    a, b = model.predict(pd.DataFrame([row, alt])[model.features_].to_numpy(float))
     return float(a), float(b)
 
 

@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from .. import ep_model as ep
+from ..locks import serialized
 from ..conclusion import conclude
 from ..result import Result
 from ..store import df
@@ -24,6 +25,7 @@ DEFAULT_PLANS = {
 }
 
 
+@serialized
 def _load(ctx: Context):
     key = tuple(sorted(df(ctx.con, "SELECT match_id FROM sel")["match_id"]))
     if key in _CACHE:
@@ -45,7 +47,7 @@ def _load(ctx: Context):
 
 
 def _predict(model, rows: list[dict]) -> np.ndarray:
-    return model.predict(pd.DataFrame(rows)[ep.FEATURES].to_numpy(float))
+    return model.predict(pd.DataFrame(rows)[model.features_].to_numpy(float))
 
 
 @register("expected_points", "Expected points",
@@ -77,7 +79,7 @@ def run(ctx: Context) -> Result:
     pa, pb = _predict(model, [a, b])
     tot_a, tot_b = pa + ep.KILL_POINTS * a["kills"], pb + ep.KILL_POINTS * b["kills"]
     drivers = []
-    for f in ep.FEATURES:
+    for f in model.features_:
         if a[f] != b[f]:
             swapped = dict(a, **{f: b[f]})
             drivers.append((ep.LABELS[f], float(_predict(model, [swapped])[0] - pa), a[f], b[f]))
@@ -111,14 +113,14 @@ def run(ctx: Context) -> Result:
     late = team[team["zone"].between(6, 9)]
     if len(late) >= 200:
         sample = late.sample(min(len(late), 3000), random_state=1)
-        rows = sample[ep.FEATURES].copy()
+        rows = sample[model.features_].copy()
         base_p = model.predict(rows.to_numpy(float))
 
         def delta(**changes):
             x = rows.copy()
             for k, v in changes.items():
                 x[k] = v(x) if callable(v) else v
-            return float(np.mean(model.predict(x[ep.FEATURES].to_numpy(float)) - base_p))
+            return float(np.mean(model.predict(x[model.features_].to_numpy(float)) - base_p))
         effects = [
             ("+50 health and shield", delta(hp=lambda x: (x["hp"] + 50).clip(upper=200))),
             ("Inside the next zone instead of outside", delta(outside_m=0.0) - delta(outside_m=lambda x: x["outside_m"].clip(lower=100))),

@@ -103,12 +103,7 @@ def surge_cutoff(con) -> float:
 
 def fit_live(t: pd.DataFrame):
     """The points model on live knowledge only, checked on matches it never saw."""
-    old = ep.FEATURES
-    try:
-        ep.FEATURES = LIVE
-        return ep.fit(t)
-    finally:
-        ep.FEATURES = old
+    return ep.fit(t, features=LIVE)
 
 
 def fight_odds(con) -> pd.Series:
