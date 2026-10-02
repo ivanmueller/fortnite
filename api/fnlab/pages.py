@@ -83,6 +83,12 @@ PAGES = [
                 metrics=["Alive at zone 6", "Explained by endgame position", "Explained by the early game", "Explained by skill",
                          "Loot gap closes by"]),
     ]),
+    dict(id="audit", title="Team audit", question="One team, game by game: where did their points come from, and where could they have done better?", sections=[
+        section("audit", "Team audit", "Type the players' names, and select the tournament's matches in the left panel.",
+                charts=["Points per game", "Their path vs the winner's"], table="Game by game",
+                columns=["Game", "Placement", "Elims", "Points", "Drop", "Already inside the next zone", "Rotated behind", "How it ended", "Risks taken"],
+                metrics=["Games found", "Points (computed)", "Average placement"]),
+    ]),
     dict(id="compare", title="Compare", question="How does group A differ from group B?", needs_compare=True, sections=[
         section("divergence", "A vs B", "Which measures differ between the two groups?",
                 charts=["Largest differences (effect size, A vs B)"], table="All measures side by side",

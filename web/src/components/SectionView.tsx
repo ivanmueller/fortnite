@@ -51,10 +51,14 @@ export function SectionView({ section, info, filters, compare, bootId, enabled, 
     queryKey: ['match-list', filters, bootId], queryFn: () => api.matches(filters, 500), enabled: !!matchParam && enabled,
   });
   const zoneParam = info?.params.find((p) => p.kind === 'zone');
+  const textParam = info?.params.find((p) => p.kind === 'text');
+  const [text, setText] = useState('');
+  const [draft, setDraft] = useState('');
   const [zone, setZone] = useState<string>('');
   const params: Record<string, unknown> = {
     ...(matchParam && match ? { [matchParam.name]: match } : {}),
     ...(zoneParam && zone ? { [zoneParam.name]: Number(zone) } : {}),
+    ...(textParam && text ? { [textParam.name]: text } : {}),
   };
   const run = useQuery({
     queryKey: ['run', section.analysis, filters, compare ?? null, params, bootId],
@@ -82,6 +86,13 @@ export function SectionView({ section, info, filters, compare, bootId, enabled, 
       {run.isError && <p className="notice notice--error">{(run.error as Error).message}</p>}
       {run.data?.status === 'empty' && <p className="notice">{run.data.message}</p>}
 
+      {textParam && (
+        <form className="row text-pick" onSubmit={(e) => { e.preventDefault(); setText(draft.trim()); }}>
+          <label className="inline">{textParam.label}</label>
+          <input className="input input--grow" value={draft} placeholder="e.g. clix, rapid" onChange={(e) => setDraft(e.target.value)} />
+          <button className="btn" type="submit">Show</button>
+        </form>
+      )}
       {matchParam && matchList.data && (
         <label className="inline match-pick">{matchParam.label}
           <select className="input" value={match} onChange={(e) => setMatch(e.target.value)}>

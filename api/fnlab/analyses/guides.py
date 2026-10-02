@@ -668,6 +668,41 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "audit": Guide(
+        question="For one team: where did their points come from, game by game, and which risks cost them?",
+        method=[
+            "Type the players' names (a name matches if it contains what you type; separate players with commas) and select the "
+            "tournament's matches in the left panel, for example with the event window filter.",
+            "Games are numbered by when each replay started. Points use the FNCS 2026 table (65, 56, 52, 48... for 1st to 15th; "
+            "places below 15th are estimated) plus 4 per elimination.",
+            "For every zone: whether the team was already inside the next zone when it appeared, whether they rotated behind "
+            "comparable teams, whether they were at the edge of the zone in zones 5+, storm damage, and height rank in zones 6+.",
+            "How each game ended: the zone, the team that eliminated them and where it finished, health going into that last "
+            "fight, whether a third team joined, and whether they were outside the zone.",
+        ],
+        terms={
+            "Games found": "Matches in the selection where the team was found, and the account names it was found as.",
+            "Points (computed)": "Placement points plus 4 per elimination. Compare with the official total to check the data.",
+            "Average placement": "The team's average placement, and its wins.",
+            "Game by game": "One row per game: placement, eliminations, points, drop, zones where they were already inside the next "
+                            "zone, rotations where they fell behind, how the game ended, and the risks they took.",
+            "Compared with the top teams": "The team's averages against the teams that finished top 5 in each game, and everyone.",
+        },
+        charts={
+            "Points per game": "Placement points and elimination points for every game.",
+            "Their path vs the winner's": "The team's path and the game winner's, over that game's zones. Choose the game above the takeaway.",
+            "Risks taken most often": "How often each kind of risk appears across the tournament.",
+        },
+        conclude=[
+            "Look for risks that appear in the games where they lost the most points: those are the habits worth changing.",
+            "Compare with the top teams: a measure where this team differs most from the top 5 is the likeliest edge to gain.",
+        ],
+        limits=[
+            "Risks aren't mistakes on their own; winners take risks too. The point is which ones cost points over a tournament.",
+            "LAN accounts can have event names; check the names it was found as.",
+        ],
+    ),
+
     "playbook": Guide(
         question="Did players who happened to play the way the system recommends do better than their lobby?",
         method=[

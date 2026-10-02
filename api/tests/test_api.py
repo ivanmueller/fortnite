@@ -242,3 +242,10 @@ def test_playbook_finds_planted_rules(client):
     assert h["significant"] and "finishing better" in h["reading"]
     same = {t["name"]: t for t in j["tests"] if t["group"] == "Same player"}
     assert "finished better" in same["Held mid or high ground (Zones 6+)"]["reading"]
+
+
+def test_audit_asks_for_names_and_explains_misses(client):
+    j = client.post("/api/analyses/audit/run", json={"filters": DEMO}).json()
+    assert "Type the players" in j["headline"]
+    j = client.post("/api/analyses/audit/run", json={"filters": DEMO, "params": {"team": "zzzz-nobody"}}).json()
+    assert "No team found" in j["headline"]
