@@ -668,6 +668,58 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "playbook": Guide(
+        question="Did players who happened to play the way the system recommends do better than their lobby?",
+        method=[
+            "Each rule is judged only on what the system would have advised at that moment, never on what happened next: "
+            "positioned for the next zone (zones 2–4) uses the zone forecast from a model trained without that match.",
+            "The rules: an uncontested drop; in zones 2–4, standing where the forecast gave at least an 80% chance of already "
+            "being inside the next zone, and rotating ahead of players starting a similar distance out; in zones 5+, holding "
+            "the inner half of the zone and rotating ahead (to zone 8); in zones 6+, holding mid or high ground.",
+            "Each player is compared with rivals alive at the same moment in the same match: the share of them they finished "
+            "ahead of. Surviving longer is never credited to a rule.",
+            "'Same player' compares each player with themselves, across matches where they followed a rule and matches where "
+            "they didn't. That removes skill, so it's the strongest evidence.",
+            "Two playbook scores combine the rules: the early game (judged among players alive at zone 5) and the late game "
+            "(among players alive at zone 9).",
+        ],
+        terms={
+            "Early playbook": "Players alive at zone 5 who followed most early rules, against those who followed few: the share "
+                              "of rivals alive then that each group finished ahead of.",
+            "Late playbook": "The same for the late-game rules, among players alive at zone 9.",
+            "Rule checks": "Moments where a rule could be followed, across all players and matches.",
+            "Each rule's value": "For each rule: how often it was followed, how players finished against rivals alive at the same "
+                                 "moment when they followed it and when they didn't, the same-player difference (in points of "
+                                 "finishing rank), and whether the difference is real.",
+            "Players who followed the system most closely": "The player-matches with the highest share of rules followed (at "
+                                                            "least 8 checks), with placement and Power Rankings rank.",
+            "Each rule": "Each rule compared within the same match and moment, one summary per match.",
+            "Same player": "The same players compared with themselves: matches where they followed a rule against matches where "
+                           "they didn't.",
+            "Playbook score": "Whether following more rules goes with finishing better.",
+            "p": P_VALUE,
+        },
+        charts={
+            "Following the playbook vs finishing": "Players grouped by how much of the playbook they followed: how many rivals "
+                "alive then they finished ahead of. A rising line means following more of the system goes with finishing better.",
+            "What each rule is worth": "For each rule, players who followed it against players who didn't. The gap between the "
+                                       "bars is the rule's value. Further right is better; 50% is average.",
+            "A follower and a non-follower in the same match": "The paths of the player who followed the most rules and the one "
+                "who followed the fewest, over that match's zones. Choose another match above the takeaway.",
+        },
+        conclude=[
+            "Rules with strong evidence in both 'Each rule' and 'Same player' are the ones to teach: they help the same player, "
+            "not just players who happen to be better.",
+            "The examples table and map are the cases to show a team: real players doing what the system recommends.",
+        ],
+        limits=[
+            "Associations, not proof: players who follow a rule may differ in ways not measured. The same-player and skill-band "
+            "checks narrow that a lot.",
+            "The zone-positioning rule needs at least 10 matches from the season for its forecast.",
+            "The first calculation on a large selection can take a couple of minutes; it's cached afterwards.",
+        ],
+    ),
+
     "zone_forecast": Guide(
         question="Where will the next zone go, where will the game end, and how far can those forecasts be trusted?",
         method=[

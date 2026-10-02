@@ -70,6 +70,13 @@ PAGES = [
                 charts=["Damage dealt for every 1 taken back, by height and range", "Damage dealt and taken back, by height over the opponent"],
                 metrics=["Trade from 15 m+ above", "Trade from 5–15 m above", "One-sided tags from 15 m+ above"]),
     ]),
+    dict(id="playbook", title="Playbook", question="Did players who played the way the system recommends do better?", sections=[
+        section("playbook", "Did following the system pay off?",
+                "Players who happened to follow the system's rules, against rivals alive at the same moment.",
+                charts=["Following the playbook vs finishing", "What each rule is worth"], table="Each rule's value",
+                columns=["Rule", "When", "Followed by", "Finished ahead of rivals, if followed", "If not", "Same player, when followed", "Verdict"],
+                metrics=["Early playbook", "Late playbook", "Rule checks"]),
+    ]),
     dict(id="compare", title="Compare", question="How does group A differ from group B?", needs_compare=True, sections=[
         section("divergence", "A vs B", "Which measures differ between the two groups?",
                 charts=["Largest differences (effect size, A vs B)"], table="All measures side by side",

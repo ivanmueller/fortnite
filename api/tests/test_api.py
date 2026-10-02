@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -231,3 +231,14 @@ def test_zone_model_is_honest():
     assert none["results"][none["best"]]["hit"].mean() <= 0.35
     cont = zm.ladder(land, season(True), {})
     assert cont["results"]["one_step"]["hit"].mean() >= 0.55
+
+
+def test_playbook_finds_planted_rules(client):
+    """Demo data plants late rotations and low ground among lower finishers: following those rules must pay off,
+    within matches and within the same player."""
+    j = client.post("/api/analyses/playbook/run", json={"filters": DEMO}).json()
+    rules = {t["name"]: t for t in j["tests"] if t["group"] == "Each rule"}
+    h = rules["Held mid or high ground (Zones 6+)"]
+    assert h["significant"] and "finishing better" in h["reading"]
+    same = {t["name"]: t for t in j["tests"] if t["group"] == "Same player"}
+    assert "finished better" in same["Held mid or high ground (Zones 6+)"]["reading"]
