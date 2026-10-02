@@ -35,6 +35,52 @@ def _seg_dist(px, py, ax, ay, bx, by):
     return np.hypot(px - (ax + t * vx), py - (ay + t * vy))
 
 
+def zone1_centre(con, mid: str, z1) -> tuple[float, float, int] | None:
+    """The replay records zone 1's starting radius but not its centre. Estimate the centre from storm damage during
+    zone 1's shrink: the centre whose shrinking circle best separates players taking storm damage (outside) from players
+    who aren't (inside), by balanced accuracy over a coarse-to-fine grid. Returns (x, y, damage events) or None."""
+    if not has_tables(con, "health", "damage") or z1["cur_r"] != z1["cur_r"]:
+        return None
+    t0, t1 = float(z1["start_shrink_t"]), float(z1["finish_shrink_t"])
+    drops = df(con, f"""
+        WITH h AS (SELECT id, t, coalesce(health, 0) + coalesce(shield, 0) AS hp,
+                          lag(coalesce(health, 0) + coalesce(shield, 0)) OVER (PARTITION BY id ORDER BY t) AS prev
+                   FROM health WHERE match_id = '{mid}'),
+             d AS (SELECT id, t FROM h WHERE prev - hp > 0.5 AND t BETWEEN {t0} AND {t1 + 5})
+        SELECT d.* FROM d ANTI JOIN damage x ON x.match_id = '{mid}' AND x.target_id = d.id AND x.target_kind = 'player'
+                                         AND x.t BETWEEN d.t - 1.5 AND d.t + 0.5""")
+    if len(drops) < 20:
+        return None
+    pos = df(con, f"""SELECT p.id, p.t, p.x, p.y FROM positions p JOIN players pl ON pl.match_id = p.match_id AND pl.id = p.id
+                      WHERE p.match_id = '{mid}' AND NOT coalesce(pl.is_bot, FALSE) AND p.t BETWEEN {t0} AND {t1}
+                      AND (pl.death_t IS NULL OR p.t < pl.death_t - 1)""").sort_values("t")
+    lab = pd.merge_asof(pos, drops.sort_values("t").rename(columns={"t": "dt"}), left_on="t", right_on="dt", by="id",
+                        direction="forward", tolerance=2.5)
+    y = lab["dt"].notna().to_numpy()
+    if y.sum() < 20 or (~y).sum() < 20:
+        return None
+    x_, y_, t_ = lab["x"].to_numpy(float), lab["y"].to_numpy(float), lab["t"].to_numpy(float)
+    f = np.clip((t_ - t0) / max(t1 - t0, 1e-6), 0, 1)
+    R = z1["cur_r"] + f * (z1["next_r"] - z1["cur_r"])
+
+    def score(cx, cy):
+        ccx, ccy = cx + f * (z1["next_x"] - cx), cy + f * (z1["next_y"] - cy)
+        out = np.hypot(x_ - ccx, y_ - ccy) > R
+        return 0.5 * (out[y].mean() + (~out[~y]).mean())
+    best, bx, by = -1.0, float(z1["next_x"]), float(z1["next_y"])
+    for span, step in ((90000, 7500), (9000, 1500), (1500, 250)):
+        cx0, cy0 = bx, by
+        for cx in np.arange(cx0 - span, cx0 + span + 1, step):
+            for cy in np.arange(cy0 - span, cy0 + span + 1, step):
+                # the starting circle must contain zone 1
+                if np.hypot(cx - z1["next_x"], cy - z1["next_y"]) + z1["next_r"] > z1["cur_r"]:
+                    continue
+                sc = score(cx, cy)
+                if sc > best:
+                    best, bx, by = sc, float(cx), float(cy)
+    return (bx, by, int(len(drops))) if best > 0.6 else None
+
+
 def _fmt_t(s: float) -> str:
     return "–" if s != s else f"{int(s // 60)}:{int(s % 60):02d}"
 
@@ -84,9 +130,15 @@ def run(ctx: Context) -> Result:
     storm = []
     prev_finish = None
     for _, z in zones.iterrows():
+        cur, estimated = (None, False) if z["cur_x"] != z["cur_x"] else ([z["cur_x"] / 100, z["cur_y"] / 100, z["cur_r"] / 100], False)
+        if cur is None and int(z["phase"]) == 1:
+            est = zone1_centre(con, mid, z)
+            if est is not None:
+                cur, estimated = [est[0] / 100, est[1] / 100, z["cur_r"] / 100], True
+                r.notes.append(f"Zone 1's starting circle: its centre isn't in the replay, so it's estimated from {est[2]} storm-damage hits "
+                               "during zone 1's shrink.")
         storm.append(dict(zone=int(z["phase"]), appear=prev_finish, start=float(z["start_shrink_t"]), finish=float(z["finish_shrink_t"]),
-                          cur=None if z["cur_x"] != z["cur_x"] else [z["cur_x"] / 100, z["cur_y"] / 100, z["cur_r"] / 100],
-                          next=[z["next_x"] / 100, z["next_y"] / 100, z["next_r"] / 100]))
+                          cur=cur, estimated=estimated, next=[z["next_x"] / 100, z["next_y"] / 100, z["next_r"] / 100]))
         prev_finish = float(z["finish_shrink_t"])
     kills = df(con, f"""SELECT k.t, k.x, k.y, pv.team_index AS victim_team, pf.team_index AS killer_team FROM kills k
                         LEFT JOIN players pv ON pv.match_id = k.match_id AND pv.id = k.victim_id

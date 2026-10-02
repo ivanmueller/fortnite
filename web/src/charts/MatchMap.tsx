@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChartSpec } from '../types';
 
 type Track = { id: number; team: number; name: string; bot: boolean; final: number | null; death: number | null; mine: boolean; t: number[]; x: number[]; y: number[] };
-type Storm = { zone: number; appear: number | null; start: number; finish: number; cur: number[] | null; next: number[] };
+type Storm = { zone: number; appear: number | null; start: number; finish: number; cur: number[] | null; next: number[]; estimated?: boolean };
 type Plan = { zone: number; t: number; start: number; finish: number; out_m: number; travel_s: number; leave_by: number | null; left: number | null;
   you: number[]; entry: number[] | null; alt_entry: { x: number; y: number; traffic: number; extra_m: number } | null;
   lanes: number[][]; surge: { x: number; y: number; lanes_in_range: number; height_m: number; distance_m: number } | null; reasons: string[] };
@@ -27,10 +27,11 @@ function stormAt(storm: Storm[], t: number): { circle: number[] | null; next: nu
   for (const z of storm) {
     if (z.appear !== null && t < z.appear) continue;
     if (t >= z.finish) continue;          // at the moment a zone finishes closing, the next one is showing
-    if (t < z.start) return { circle: z.cur, next: z.next, label: `Zone ${z.zone} showing · closes ${fmt(z.start)}–${fmt(z.finish)}` };
+    const est = z.estimated ? ' (starting circle estimated)' : '';
+    if (t < z.start) return { circle: z.cur, next: z.next, label: `Zone ${z.zone} showing · closes ${fmt(z.start)}–${fmt(z.finish)}${est}` };
     const f = (t - z.start) / Math.max(1e-6, z.finish - z.start);
     const c = z.cur ? [z.cur[0] + f * (z.next[0] - z.cur[0]), z.cur[1] + f * (z.next[1] - z.cur[1]), z.cur[2] + f * (z.next[2] - z.cur[2])] : null;
-    return { circle: c, next: z.next, label: `Zone ${z.zone} closing · until ${fmt(z.finish)}` };
+    return { circle: c, next: z.next, label: `Zone ${z.zone} closing · until ${fmt(z.finish)}${est}` };
   }
   const last = storm[storm.length - 1];
   return { circle: last ? last.next : null, next: null, label: 'Final zone closed' };
@@ -335,57 +336,169 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
             upload that version's map (for example from fortnite.gg's map archive or the Fortnite wiki).</p>
         </div>
       </aside>
-      {calibrating && <Calibrator pois={o.pois} image={imgInfo?.custom ? 'custom' : 'pois'}
+      {calibrating && <Calibrator storm={o.storm} existing={calib} image={imgInfo?.custom ? 'custom' : 'pois'}
                                   onDone={(c) => { setCalib(c); setUseImage(!!c && !c.mismatch); setCalibrating(false); }} onCancel={() => setCalibrating(false)} />}
     </div>
   );
 }
 
-/** Click four named places on the map image to line it up with game coordinates; the fourth measures the fit. */
-function Calibrator({ pois, image, onDone, onCancel }: { pois: { name: string; x: number; y: number }[]; image: 'custom' | 'pois';
-                                                          onDone: (c: Calib) => void; onCancel: () => void }) {
-  const picks = useMemo(() => {
-    // four places spread as widely as possible: start from the two farthest apart, then add the farthest from those chosen
-    if (pois.length <= 4) return pois;
-    let a = 0, b = 1, far = -1;
-    for (let i = 0; i < pois.length; i++) for (let j = i + 1; j < pois.length; j++) {
-      const d = Math.hypot(pois[i].x - pois[j].x, pois[i].y - pois[j].y);
-      if (d > far) { far = d; a = i; b = j; }
-    }
-    const chosen = [a, b];
-    while (chosen.length < 4) {
-      let best = -1, bd = -1;
-      for (let i = 0; i < pois.length; i++) {
-        if (chosen.includes(i)) continue;
-        const d = Math.min(...chosen.map((c) => Math.hypot(pois[i].x - pois[c].x, pois[i].y - pois[c].y)));
-        if (d > bd) { bd = d; best = i; }
-      }
-      chosen.push(best);
-    }
-    return chosen.map((i) => pois[i]);
-  }, [pois]);
-  const [clicks, setClicks] = useState<{ px: number; py: number }[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const next = picks[clicks.length];
-  const click = async (e: React.MouseEvent<HTMLImageElement>) => {
-    const img = e.currentTarget, rect = img.getBoundingClientRect();
-    const px = (e.clientX - rect.left) * (img.naturalWidth / rect.width), py = (e.clientY - rect.top) * (img.naturalHeight / rect.height);
-    const all = [...clicks, { px, py }];
-    setClicks(all);
-    if (all.length === picks.length) {
-      const res = await fetch('/api/map/calibration', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: image === 'custom' ? 'custom' : 'plain', points: all.map((c, i) => ({ ...c, x: picks[i].x * 100, y: picks[i].y * 100 })) }) });
-      if (res.ok) onDone(await res.json()); else { setError((await res.json()).detail ?? 'Calibration failed'); setClicks([]); }
-    }
+type Ref = { key: string; name: string; x: number; y: number; kind: string };      // game coordinates in cm
+type Pick = Ref & { px: number; py: number };
+
+/** Least-squares affine fit image px -> game cm from 3+ picks, with each pick's error in metres. */
+function fitAffine(picks: Pick[]): { err: number[]; toImage: (x: number, y: number) => [number, number] } | null {
+  if (picks.length < 3) return null;
+  const S = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], Bx = [0, 0, 0], By = [0, 0, 0];
+  for (const p of picks) {
+    const v = [p.px, p.py, 1];
+    for (let i = 0; i < 3; i++) { for (let j = 0; j < 3; j++) S[i][j] += v[i] * v[j]; Bx[i] += v[i] * p.x; By[i] += v[i] * p.y; }
+  }
+  const det = (M: number[][]) => M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0])
+    + M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+  const D = det(S);
+  if (Math.abs(D) < 1e-6) return null;
+  const solve = (b: number[]) => [0, 1, 2].map((k) => det(S.map((row, i) => row.map((v, j) => (j === k ? b[i] : v)))) / D);
+  const ax = solve(Bx), ay = solve(By);                     // gx = ax0 px + ax1 py + ax2 ; gy = ay0 px + ay1 py + ay2
+  const d2 = ax[0] * ay[1] - ax[1] * ay[0];
+  if (Math.abs(d2) < 1e-12) return null;
+  const err = picks.map((p) => Math.hypot(ax[0] * p.px + ax[1] * p.py + ax[2] - p.x, ay[0] * p.px + ay[1] * p.py + ay[2] - p.y) / 100);
+  const toImage = (x: number, y: number): [number, number] => {
+    const gx = x - ax[2], gy = y - ay[2];
+    return [(ay[1] * gx - ax[1] * gy) / d2, (-ay[0] * gx + ax[0] * gy) / d2];
   };
+  return { err, toImage };
+}
+
+/** Line the map image up with game coordinates: click any named places, landmarks or real zone centres, as many as you like. */
+function Calibrator({ storm, existing, image, onDone, onCancel }: {
+  storm: Storm[]; existing: Calib; image: 'custom' | 'pois'; onDone: (c: Calib) => void; onCancel: () => void;
+}) {
+  const [places, setPlaces] = useState<Ref[]>([]);
+  const [tab, setTab] = useState<'places' | 'zones'>('places');
+  const [q, setQ] = useState('');
+  const [target, setTarget] = useState<Ref | null>(null);
+  const [picks, setPicks] = useState<Pick[]>([]);
+  const [labelled, setLabelled] = useState(image !== 'custom');
+  const [view, setView] = useState({ s: 1, tx: 0, ty: 0 });
+  const [error, setError] = useState<string | null>(null);
+  const [nat, setNat] = useState({ w: 1, h: 1 });
+  const boxRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const drag = useRef<{ x: number; y: number; tx: number; ty: number; moved: boolean } | null>(null);
+  const kind = image === 'custom' ? 'custom' : 'plain';
+
+  useEffect(() => {
+    fetch('/api/map/places').then((r) => r.json()).then((rows: { name: string; x: number; y: number; kind: string }[]) => {
+      // two landmarks can share a name (e.g. two car washes), so the key includes the position
+      const refs = rows.map((r) => ({ key: `${r.kind}:${r.name}:${Math.round(r.x)}:${Math.round(r.y)}`, ...r }));
+      setPlaces(refs);
+      const prev = existing as unknown as { image?: string; points?: { px: number; py: number; x: number; y: number }[] } | null;
+      if (prev && (prev.image ?? 'plain') === kind) {               // keep the saved points for this image, to refine them
+        setPicks((prev.points ?? []).map((p, i) => {
+          const ref = refs.find((r) => Math.hypot(r.x - p.x, r.y - p.y) < 1);
+          return { key: ref?.key ?? `saved:${i}`, name: ref?.name ?? `Saved point ${i + 1}`, kind: ref?.kind ?? 'saved', ...p };
+        }));
+      }
+    }).catch(() => setPlaces([]));
+  }, [existing, kind]);
+
+  const zones: Ref[] = storm.map((z) => ({ key: `zone:${z.zone}`, name: `Zone ${z.zone} centre`, x: z.next[0] * 100, y: z.next[1] * 100, kind: 'zone' }));
+  const fit = useMemo(() => fitAffine(picks), [picks]);
+  const list = (tab === 'places' ? places : zones).filter((r) => r.name.toLowerCase().includes(q.toLowerCase()));
+  const picked = new Set(picks.map((p) => p.key));
+  const src = image === 'custom' ? '/api/map/image?kind=custom' : `/api/map/image?kind=${labelled ? 'pois' : 'plain'}`;
+
+  const onWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const box = boxRef.current!.getBoundingClientRect();
+    const mx = e.clientX - box.left, my = e.clientY - box.top;
+    const k = e.deltaY < 0 ? 1.25 : 0.8;
+    setView((v) => { const s = Math.min(12, Math.max(1, v.s * k)); const f = s / v.s; return { s, tx: mx - (mx - v.tx) * f, ty: my - (my - v.ty) * f }; });
+  };
+  const onDown = (e: React.MouseEvent) => { drag.current = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false }; };
+  const onMove = (e: React.MouseEvent) => {
+    const d = drag.current; if (!d) return;
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) d.moved = true;
+    if (d.moved) setView((v) => ({ ...v, tx: d.tx + e.clientX - d.x, ty: d.ty + e.clientY - d.y }));
+  };
+  const onUp = (e: React.MouseEvent) => {
+    const d = drag.current; drag.current = null;
+    if (!d || d.moved || !target || !imgRef.current) return;
+    const r = imgRef.current.getBoundingClientRect();         // includes the zoom, so this is exact at any zoom level
+    const px = (e.clientX - r.left) * (nat.w / r.width), py = (e.clientY - r.top) * (nat.h / r.height);
+    if (px < 0 || py < 0 || px > nat.w || py > nat.h) return;
+    setPicks((ps) => [...ps.filter((p) => p.key !== target.key), { ...target, px, py }]);
+    setTarget(null);
+  };
+  const save = async () => {
+    setError(null);
+    const res = await fetch('/api/map/calibration', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: kind, points: picks.map((p) => ({ px: p.px, py: p.py, x: p.x, y: p.y })) }) });
+    if (res.ok) onDone(await res.json()); else setError((await res.json()).detail ?? 'Calibration failed');
+  };
+  const onScreen = (px: number, py: number) => [px * (imgRef.current?.clientWidth ?? 1) / nat.w, py * (imgRef.current?.clientHeight ?? 1) / nat.h];
+
   return (
     <div className="matchmap__calib">
-      <div className="matchmap__calibbox">
-        <p><strong>{next ? `Click the centre of ${next.name}` : 'Checking the fit…'}</strong> ({Math.min(clicks.length + 1, picks.length)} of {picks.length})</p>
-        <p className="muted small">Zoom the browser in for precise clicks. The fourth place checks that the image is the same island as your games.</p>
-        {error && <p className="notice notice--error">{error}</p>}
-        <img src={`/api/map/image?kind=${image}&v=${Date.now()}`} alt="Map" onClick={click} />
-        <button className="btn btn--ghost btn--sm" onClick={onCancel}>Cancel</button>
+      <div className="calib">
+        <div className="calib__image" ref={boxRef} onWheel={onWheel} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp}
+             onMouseLeave={() => { drag.current = null; }} style={{ cursor: target ? 'crosshair' : 'grab' }}>
+          <div className="calib__layer" style={{ transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})` }}>
+            <img ref={imgRef} src={src} alt="Fortnite map" draggable={false}
+                 onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} />
+            {fit && [...places, ...zones].map((r) => {
+              const [ix, iy] = onScreen(...fit.toImage(r.x, r.y));
+              return <span key={`f${r.key}`} className={`calib__ghost ${r.kind === 'zone' ? 'is-zone' : ''}`} style={{ left: ix, top: iy }} title={r.name} />;
+            })}
+            {picks.map((p, i) => {
+              const [ix, iy] = onScreen(p.px, p.py);
+              return <span key={p.key} className={`calib__pin ${fit && fit.err[i] > 25 ? 'is-bad' : ''}`} style={{ left: ix, top: iy }} title={p.name}>{i + 1}</span>;
+            })}
+          </div>
+        </div>
+        <div className="calib__side">
+          <h4>Calibrate the map image</h4>
+          <p className="muted small">{target ? <>Now click <strong>{target.name}</strong> on the image. Scroll to zoom in for a precise click; drag to move.</> :
+            'Choose a place, landmark or zone centre, then click exactly where it is on the image. Use at least 3, spread across the map; 6 or more is better.'}</p>
+          <div className="row">
+            <button className={`btn btn--sm ${tab === 'places' ? '' : 'btn--ghost'}`} onClick={() => setTab('places')}>Places and landmarks</button>
+            <button className={`btn btn--sm ${tab === 'zones' ? '' : 'btn--ghost'}`} onClick={() => setTab('zones')}>Zones in this game</button>
+          </div>
+          {tab === 'zones' && <p className="muted small">Open this game in Fortnite's replay viewer, note where a zone's centre is on the in-game map, and click the same spot here.
+            Zones are exact positions, so they make excellent calibration points.</p>}
+          <input className="input" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
+          <ul className="calib__list">
+            {list.map((r) => (
+              <li key={r.key}>
+                <button className={`calib__ref ${target?.key === r.key ? 'is-on' : ''}`} onClick={() => setTarget(r)}>
+                  {picked.has(r.key) ? '✓ ' : ''}{r.name} <span className="muted small">{r.kind === 'landmark' ? 'landmark' : r.kind === 'zone' ? '' : 'place'}</span>
+                </button>
+              </li>
+            ))}
+            {list.length === 0 && <li className="muted small" style={{ padding: '0.4rem 0.6rem' }}>
+              {tab === 'places' ? 'No places yet: run Data → Update map names.' : 'No zones in this game.'}</li>}
+          </ul>
+          <h4>Your points</h4>
+          {picks.length === 0 && <p className="muted small">None yet.</p>}
+          <ol className="calib__picks">
+            {picks.map((p, i) => (
+              <li key={p.key}>
+                {p.name}{fit && <span className={`calib__err ${fit.err[i] > 25 ? 'is-bad' : ''}`}>{fit.err[i].toFixed(0)} m</span>}
+                <button className="link" onClick={() => setTarget(p)}>re-click</button>{' · '}
+                <button className="link" onClick={() => setPicks((ps) => ps.filter((x) => x.key !== p.key))}>remove</button>
+              </li>
+            ))}
+          </ol>
+          {fit && <p className="muted small">Largest error {Math.max(...fit.err).toFixed(0)} m. The white dots show where every place and zone centre lands with
+            this fit; a point in red is probably clicked in the wrong spot (re-click or remove it).</p>}
+          {image !== 'custom' && <label className="check"><input type="checkbox" checked={labelled} onChange={(e) => setLabelled(e.target.checked)} /> Show place names on the image</label>}
+          {error && <p className="notice notice--error">{error}</p>}
+          <div className="row">
+            <button className="btn" disabled={picks.length < 3} onClick={save}>Save calibration</button>
+            <button className="btn btn--ghost" onClick={() => setPicks([])}>Clear</button>
+            <button className="btn btn--ghost" onClick={onCancel}>Cancel</button>
+          </div>
+        </div>
       </div>
     </div>
   );

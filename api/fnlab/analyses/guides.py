@@ -837,8 +837,12 @@ GUIDES: dict[str, Guide] = {
             "Other teams: those within 60 m of the straight route in or near the entry point, a less crowded entry point when one "
             "exists (up to 120 m longer), and the routes teams outside the zone must take (dashed).",
             "Zones 3–4: the surge base facing those routes, as in the Game review.",
-            "The real Fortnite map image can sit underneath after a one-time calibration: click three named places on the "
-            "labelled image (downloaded by Data → Update map names).",
+            "Zone 1's starting circle: the replay records its size but not its centre, so the centre is estimated from the storm "
+            "damage players took during zone 1's shrink (the centre whose shrinking circle best separates damaged players outside "
+            "from undamaged players inside). The status line says so while zone 1 closes.",
+            "The real Fortnite map image can sit underneath after a calibration: choose any named places, landmarks or zone "
+            "centres from a real game, click each on the zoomable image, and the fit updates live with every point's error in "
+            "metres. At least 3 points, spread out; 6 or more is better.",
         ],
         terms={
             "Rotation plan": "Each zone: when it appeared and closed, distance to its safe edge, travel time, leave-by time, when "

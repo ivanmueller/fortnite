@@ -66,6 +66,24 @@ async def upload(request: Request):
     return {"ok": True}
 
 
+@router.get("/places")
+def places():
+    """Every named place and landmark (game coordinates, cm), to click when calibrating the map image."""
+    import csv
+    f = _data() / "pois.csv"
+    if not f.exists():
+        return []
+    with f.open(encoding="utf-8-sig", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    out = []
+    for r_ in rows:
+        try:
+            out.append({"name": r_["name"], "x": float(r_["x"]), "y": float(r_["y"]), "kind": r_.get("kind") or "poi"})
+        except (KeyError, ValueError):
+            continue
+    return sorted(out, key=lambda p: (p["kind"] != "poi", p["name"].lower()))
+
+
 @router.get("/info")
 def info():
     d = _data()
