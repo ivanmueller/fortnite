@@ -314,3 +314,25 @@ def test_game_review_sections_load_together(client):
     with ThreadPoolExecutor(3) as ex:
         res = list(ex.map(lambda a: client.post(f"/api/analyses/{a}/run", json=body), ["review", "engine_review", "match_map"]))
     assert all(r.status_code == 200 for r in res), [r.json().get("detail") for r in res]
+
+
+def test_map_upload_and_wrong_island_check(client, tmp_path, monkeypatch):
+    """An uploaded map image is used; four places that line up pass, and a fourth that doesn't (a different island) is flagged."""
+    from fnlab import config
+    monkeypatch.setitem(config.DATASETS, "real", tmp_path)
+    png = b"\x89PNG\r\n\x1a\n" + b"\0" * 2000
+    assert client.put("/api/map/upload", content=png).status_code == 200
+    assert client.get("/api/map/info").json()["custom"]
+    assert client.put("/api/map/upload", content=b"not an image" * 200).status_code == 400
+
+    def pts(fourth_ok: bool):
+        # image pixels -> game: x = 100 * py, y = 100 * px (a rotation-like mapping)
+        p = [(100, 200), (900, 150), (500, 800), (800, 700)]
+        out = [dict(px=a, py=b, x=100.0 * b * 100, y=100.0 * a * 100) for a, b in p]
+        if not fourth_ok:
+            out[3]["x"] += 50_000          # 500 m off: the places don't line up
+        return out
+    good = client.put("/api/map/calibration", json={"image": "custom", "points": pts(True)}).json()
+    assert not good["mismatch"] and good["error_m"] < 1
+    bad = client.put("/api/map/calibration", json={"image": "custom", "points": pts(False)}).json()
+    assert bad["mismatch"]

@@ -6,7 +6,7 @@ type Storm = { zone: number; appear: number | null; start: number; finish: numbe
 type Plan = { zone: number; t: number; start: number; finish: number; out_m: number; travel_s: number; leave_by: number | null; left: number | null;
   you: number[]; entry: number[] | null; alt_entry: { x: number; y: number; traffic: number; extra_m: number } | null;
   lanes: number[][]; surge: { x: number; y: number; lanes_in_range: number; height_m: number; distance_m: number } | null; reasons: string[] };
-type Calib = { image_to_game: number[][]; game_to_image: number[][]; error_m?: number } | null;
+type Calib = { image_to_game: number[][]; game_to_image: number[][]; error_m?: number; image?: string; mismatch?: boolean } | null;
 
 const C = { mine: '#0F766E', other: '#8A97A6', storm: 'rgba(103, 74, 160, 0.22)', next: '#F4F7FA', zoneLine: '#0F3B5F',
   lane: '#B4535F', surge: '#0F3B5F', entry: '#0F766E', alt: '#D08A12', land: '#DDE4EA', bg: '#EEF2F6', poi: '#1B2A3A' };
@@ -50,9 +50,10 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(4);
   const [follow, setFollow] = useState(true);
-  const [useImage, setUseImage] = useState(!!o.calibration);
+  const [useImage, setUseImage] = useState(!!o.calibration && !o.calibration.mismatch);
   const [calib, setCalib] = useState<Calib>(o.calibration);
-  const [imgInfo, setImgInfo] = useState<{ plain: boolean; labelled: boolean } | null>(null);
+  const [imgInfo, setImgInfo] = useState<{ plain: boolean; labelled: boolean; custom: boolean } | null>(null);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const [calibrating, setCalibrating] = useState(false);
   const [view, setView] = useState<{ cx: number; cy: number; s: number } | null>(null);
   const [hover, setHover] = useState<string | null>(null);
@@ -75,7 +76,8 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
   useEffect(() => { fetch('/api/map/info').then((r) => r.json()).then(setImgInfo).catch(() => setImgInfo(null)); }, []);
   useEffect(() => {
     if (!useImage || !calib) return;
-    const img = new Image(); img.src = '/api/map/image?kind=plain'; img.onload = () => { imgRef.current = img; draw(); };
+    const img = new Image(); img.src = `/api/map/image?kind=${calib.image === 'custom' ? 'custom' : 'plain'}&v=${Date.now()}`;
+    img.onload = () => { imgRef.current = img; draw(); };
   }, [useImage, calib]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // playback
@@ -109,8 +111,9 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
     return fit(bounds.x1 - bounds.x0, bounds.y1 - bounds.y0, (bounds.x0 + bounds.x1) / 2, (bounds.y0 + bounds.y1) / 2);
   }, [view, follow, mineTracks, t, st, bounds, width]);
 
+  // Drawn as the in-game map shows it: north (+Y) up and +X to the left (Fortnite's world is left-handed).
   const toScreen = useCallback((x: number, y: number): [number, number] =>
-    [(x - currentView.cx) * currentView.s + width / 2, -(y - currentView.cy) * currentView.s + H / 2], [currentView, width]);
+    [-(x - currentView.cx) * currentView.s + width / 2, -(y - currentView.cy) * currentView.s + H / 2], [currentView, width]);
 
   const draw = useCallback(() => {
     const cv = canvasRef.current; if (!cv) return;
@@ -124,17 +127,17 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
     if (useImage && calib && imgRef.current) {
       const m = calib.image_to_game;   // [[a, b, c], [d, e, f]] px -> game cm
       const a = m[0][0] / 100, b = m[0][1] / 100, c = m[0][2] / 100, d = m[1][0] / 100, e = m[1][1] / 100, f = m[1][2] / 100;
-      // screen = V(game): sx = (gx - cx)s + W/2, sy = -(gy - cy)s + H/2
+      // screen = V(game): sx = -(gx - cx)s + W/2, sy = -(gy - cy)s + H/2
       ctx.save();
-      ctx.setTransform(dpr * a * s, dpr * -d * s, dpr * b * s, dpr * -e * s,
-        dpr * ((c - currentView.cx) * s + width / 2), dpr * (-(f - currentView.cy) * s + H / 2));
+      ctx.setTransform(dpr * -a * s, dpr * -d * s, dpr * -b * s, dpr * -e * s,
+        dpr * (-(c - currentView.cx) * s + width / 2), dpr * (-(f - currentView.cy) * s + H / 2));
       ctx.drawImage(imgRef.current, 0, 0);
       ctx.restore();
     } else if (!Array.isArray(o.land)) {
       ctx.fillStyle = C.land;
       const w = o.land.cell * s + 0.6;
       for (let i = 0; i < o.land.x.length; i++) {
-        const [sx, sy] = toScreen(o.land.x[i], o.land.y[i] + o.land.cell);
+        const [sx, sy] = toScreen(o.land.x[i] + o.land.cell, o.land.y[i] + o.land.cell);   // top-left corner on screen
         ctx.fillRect(sx, sy, w, w);
       }
     }
@@ -212,16 +215,16 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
     e.preventDefault();
     const v = currentView, k = e.deltaY < 0 ? 1.2 : 1 / 1.2;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
-    const gx = (e.clientX - rect.left - width / 2) / v.s + v.cx, gy = -(e.clientY - rect.top - H / 2) / v.s + v.cy;
+    const gx = -(e.clientX - rect.left - width / 2) / v.s + v.cx, gy = -(e.clientY - rect.top - H / 2) / v.s + v.cy;
     const s = v.s * k;
     setFollow(false);
-    setView({ s, cx: gx - (e.clientX - rect.left - width / 2) / s, cy: gy + (e.clientY - rect.top - H / 2) / s });
+    setView({ s, cx: gx + (e.clientX - rect.left - width / 2) / s, cy: gy + (e.clientY - rect.top - H / 2) / s });
   };
   const onDown = (e: React.MouseEvent) => { drag.current = { x: e.clientX, y: e.clientY, v: currentView }; setFollow(false); };
   const onMove = (e: React.MouseEvent) => {
     if (drag.current) {
       const d = drag.current;
-      setView({ s: d.v.s, cx: d.v.cx - (e.clientX - d.x) / d.v.s, cy: d.v.cy + (e.clientY - d.y) / d.v.s });
+      setView({ s: d.v.s, cx: d.v.cx + (e.clientX - d.x) / d.v.s, cy: d.v.cy + (e.clientY - d.y) / d.v.s });
       return;
     }
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
@@ -296,26 +299,58 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
           </div>
         ) : <p className="muted small">Press Play, or click a zone number on the timeline.</p>}
         <div className="matchmap__map">
-          {calib && <label className="check"><input type="checkbox" checked={useImage} onChange={(e) => setUseImage(e.target.checked)} /> Real map image</label>}
-          {imgInfo?.labelled && <button className="link" onClick={() => setCalibrating(true)}>{calib ? 'Recalibrate the map image' : 'Use the real map image (one-time setup)'}</button>}
-          {!imgInfo?.labelled && <p className="muted small">For the real map image, run Data → Update map names once.</p>}
+          {calib && !calib.mismatch && <label className="check"><input type="checkbox" checked={useImage} onChange={(e) => setUseImage(e.target.checked)} /> Real map image
+            <span className="muted small"> (lines up within {Math.max(1, Math.round(calib.error_m ?? 0))} m)</span></label>}
+          {calib?.mismatch && (
+            <p className="notice notice--warn small">The places on this image are off by about {Math.round(calib.error_m ?? 0)} m: it's probably a
+              different island from these games. Upload the map for the version these games were played on.</p>
+          )}
+          {(imgInfo?.labelled || imgInfo?.custom) && (
+            <button className="link" onClick={() => setCalibrating(true)}>{calib ? 'Recalibrate the map image' : 'Use the real map image (one-time setup)'}</button>
+          )}
+          <label className="link upload">Upload the right map image
+            <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={async (e) => {
+              const f = e.target.files?.[0]; if (!f) return;
+              setUploadMsg('Uploading…');
+              const res = await fetch('/api/map/upload', { method: 'PUT', body: f });
+              if (!res.ok) { setUploadMsg((await res.json()).detail ?? 'Upload failed'); return; }
+              setUploadMsg(null); setImgInfo((i) => ({ plain: !!i?.plain, labelled: !!i?.labelled, custom: true })); setCalib(null); setUseImage(false);
+              setCalibrating(true);
+            }} />
+          </label>
+          {uploadMsg && <p className="muted small">{uploadMsg}</p>}
+          <p className="muted small">The downloaded image is fortnite-api's current map, which can be a different island from your games. If so,
+            upload that version's map (for example from fortnite.gg's map archive or the Fortnite wiki).</p>
         </div>
       </aside>
-      {calibrating && <Calibrator pois={o.pois} onDone={(c) => { setCalib(c); setUseImage(!!c); setCalibrating(false); }} onCancel={() => setCalibrating(false)} />}
+      {calibrating && <Calibrator pois={o.pois} image={imgInfo?.custom ? 'custom' : 'pois'}
+                                  onDone={(c) => { setCalib(c); setUseImage(!!c && !c.mismatch); setCalibrating(false); }} onCancel={() => setCalibrating(false)} />}
     </div>
   );
 }
 
-/** Click three named places on the labelled map image to line it up with game coordinates. */
-function Calibrator({ pois, onDone, onCancel }: { pois: { name: string; x: number; y: number }[]; onDone: (c: Calib) => void; onCancel: () => void }) {
+/** Click four named places on the map image to line it up with game coordinates; the fourth measures the fit. */
+function Calibrator({ pois, image, onDone, onCancel }: { pois: { name: string; x: number; y: number }[]; image: 'custom' | 'pois';
+                                                          onDone: (c: Calib) => void; onCancel: () => void }) {
   const picks = useMemo(() => {
-    // three places spread as widely as possible (largest triangle)
-    let best: number[] = [0, 1, 2], area = -1;
-    for (let i = 0; i < pois.length; i++) for (let j = i + 1; j < pois.length; j++) for (let k = j + 1; k < pois.length; k++) {
-      const a = Math.abs((pois[j].x - pois[i].x) * (pois[k].y - pois[i].y) - (pois[k].x - pois[i].x) * (pois[j].y - pois[i].y));
-      if (a > area) { area = a; best = [i, j, k]; }
+    // four places spread as widely as possible: start from the two farthest apart, then add the farthest from those chosen
+    if (pois.length <= 4) return pois;
+    let a = 0, b = 1, far = -1;
+    for (let i = 0; i < pois.length; i++) for (let j = i + 1; j < pois.length; j++) {
+      const d = Math.hypot(pois[i].x - pois[j].x, pois[i].y - pois[j].y);
+      if (d > far) { far = d; a = i; b = j; }
     }
-    return best.map((i) => pois[i]);
+    const chosen = [a, b];
+    while (chosen.length < 4) {
+      let best = -1, bd = -1;
+      for (let i = 0; i < pois.length; i++) {
+        if (chosen.includes(i)) continue;
+        const d = Math.min(...chosen.map((c) => Math.hypot(pois[i].x - pois[c].x, pois[i].y - pois[c].y)));
+        if (d > bd) { bd = d; best = i; }
+      }
+      chosen.push(best);
+    }
+    return chosen.map((i) => pois[i]);
   }, [pois]);
   const [clicks, setClicks] = useState<{ px: number; py: number }[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -327,16 +362,17 @@ function Calibrator({ pois, onDone, onCancel }: { pois: { name: string; x: numbe
     setClicks(all);
     if (all.length === picks.length) {
       const res = await fetch('/api/map/calibration', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ points: all.map((c, i) => ({ ...c, x: picks[i].x * 100, y: picks[i].y * 100 })) }) });
+        body: JSON.stringify({ image: image === 'custom' ? 'custom' : 'plain', points: all.map((c, i) => ({ ...c, x: picks[i].x * 100, y: picks[i].y * 100 })) }) });
       if (res.ok) onDone(await res.json()); else { setError((await res.json()).detail ?? 'Calibration failed'); setClicks([]); }
     }
   };
   return (
     <div className="matchmap__calib">
       <div className="matchmap__calibbox">
-        <p><strong>{next ? `Click the centre of ${next.name}` : 'Saving…'}</strong> ({clicks.length + 1 > picks.length ? picks.length : clicks.length + 1} of {picks.length})</p>
+        <p><strong>{next ? `Click the centre of ${next.name}` : 'Checking the fit…'}</strong> ({Math.min(clicks.length + 1, picks.length)} of {picks.length})</p>
+        <p className="muted small">Zoom the browser in for precise clicks. The fourth place checks that the image is the same island as your games.</p>
         {error && <p className="notice notice--error">{error}</p>}
-        <img src="/api/map/image?kind=pois" alt="Map with place names" onClick={click} />
+        <img src={`/api/map/image?kind=${image}&v=${Date.now()}`} alt="Map" onClick={click} />
         <button className="btn btn--ghost btn--sm" onClick={onCancel}>Cancel</button>
       </div>
     </div>

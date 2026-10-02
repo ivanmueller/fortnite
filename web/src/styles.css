@@ -489,3 +489,4 @@ tbody tr:hover { background: #fff; }
 .matchmap__engine.is-ok { border-left-color: var(--accent); }
 .matchmap__engine h4 { margin: 0 0 0.3rem; font-size: var(--t-base); }
 .matchmap__engine p { margin: 0.2rem 0; }
+.matchmap__map .upload { cursor: pointer; }

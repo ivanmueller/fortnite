@@ -36,18 +36,41 @@ def calibration() -> dict | None:
         return None
 
 
+IMAGES = {"plain": "map.png", "pois": "map_pois.png", "custom": "map_custom.img"}
+MISMATCH_M = 60        # places off by more than this after calibration: probably a different island
+
+
 @router.get("/image")
 def image(kind: str = "plain"):
-    f = _data() / ("map_pois.png" if kind == "pois" else "map.png")
+    f = _data() / IMAGES.get(kind, "map.png")
     if not f.exists():
-        raise HTTPException(404, "No map image yet: run Data → Update map names.")
-    return FileResponse(f, media_type="image/png")
+        raise HTTPException(404, "No map image yet: run Data → Update map names, or upload one.")
+    head = f.read_bytes()[:4]
+    media = "image/jpeg" if head[:3] == b"\xff\xd8\xff" else "image/webp" if head == b"RIFF" else "image/png"
+    return FileResponse(f, media_type=media)
+
+
+@router.put("/upload")
+async def upload(request: Request):
+    """Your own map image (PNG, JPEG or WebP), for when the downloaded one is a different island."""
+    local_only(request)
+    body = await request.body()
+    if len(body) < 1000 or not (body[:8] == b"\x89PNG\r\n\x1a\n" or body[:3] == b"\xff\xd8\xff" or body[:4] == b"RIFF"):
+        raise HTTPException(400, "That isn't a PNG, JPEG or WebP image.")
+    if len(body) > 40_000_000:
+        raise HTTPException(400, "That image is over 40 MB.")
+    (_data() / IMAGES["custom"]).write_bytes(body)
+    p = _data() / "map_calibration.json"
+    if p.exists() and json.loads(p.read_text()).get("image") != "custom":
+        p.unlink()                      # a calibration for another image no longer applies
+    return {"ok": True}
 
 
 @router.get("/info")
 def info():
     d = _data()
-    return {"plain": (d / "map.png").exists(), "labelled": (d / "map_pois.png").exists(), "calibration": calibration()}
+    return {"plain": (d / "map.png").exists(), "labelled": (d / "map_pois.png").exists(), "custom": (d / IMAGES["custom"]).exists(),
+            "calibration": calibration()}
 
 
 class Point(BaseModel):
@@ -59,6 +82,7 @@ class Point(BaseModel):
 
 class Calibration(BaseModel):
     points: list[Point]
+    image: str = "plain"        # which image was clicked and will be drawn: plain (downloaded) or custom (uploaded)
 
 
 @router.put("/calibration")
@@ -74,8 +98,9 @@ def save_calibration(c: Calibration, request: Request):
     resid = np.hypot(*(P @ img_to_game - G).T) / 100
     if len(c.points) >= 3 and abs(np.linalg.det(img_to_game[:2])) < 1e-9:
         raise HTTPException(400, "Those places are in a line; pick three spread across the map.")
-    out = {"image_to_game": img_to_game.T.tolist(), "game_to_image": game_to_img.T.tolist(),
-           "points": [p.model_dump() for p in c.points], "error_m": float(resid.max())}
+    error = float(resid.max())
+    out = {"image_to_game": img_to_game.T.tolist(), "game_to_image": game_to_img.T.tolist(), "image": c.image,
+           "points": [p.model_dump() for p in c.points], "error_m": error, "mismatch": len(c.points) >= 4 and error > MISMATCH_M}
     (_data() / "map_calibration.json").write_text(json.dumps(out, indent=1))
     return out
 
