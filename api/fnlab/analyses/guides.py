@@ -669,16 +669,22 @@ GUIDES: dict[str, Guide] = {
     ),
 
     "audit_zones": Guide(
-        question="Where did the team set up each zone, was a stronger surge base available given where other teams rotated, "
-                 "and how did their surge go?",
+        question="Where did the team set up each early zone, was a stronger surge base available given where other teams were "
+                 "rotating, and how did their surge go?",
         method=[
-            "Their base for each zone is their median position while the next zone was showing and before it started closing.",
-            "The next zone is scanned on a grid. Each spot gets its tag opportunities (enemy player-seconds within 30–120 m during "
-            "that hold, using where the other teams actually were), its danger (enemy player-seconds within 30 m) and its natural "
-            "ground height.",
-            "Their base is compared with the best spot that had no more danger, and with a typical spot in the zone.",
-            "Surge: for each detected surge episode in their games, whether they were hit and their damage dealt against the "
-            "least damage of a player who stayed safe. Tags: exchanges where they dealt damage and took none back, by height.",
+            "Surge bases are scored in zones 2–5, where traditional surge bases are built. Their base for each zone is their median "
+            "position while the next zone was showing and before it started closing.",
+            "Every spot in the next zone is scored on tag opportunities: enemies who are rotating (running, and outside the next "
+            "zone or heading into it), within tagging range, on the outward side of the spot (looking toward the storm with the "
+            "zone at your back), counted double when the spot's natural ground is 15 m or more above them. Players holding still "
+            "don't count: they're other bases, not tags.",
+            "Tagging range is learned from the data: the middle 60% of the distances at which one-sided tags actually happened in "
+            "zones 2–5 (never closer than 20 m).",
+            "Danger is enemy player-seconds within 30 m. Their base is compared with the best spot that had no more danger.",
+            "Validation: for every team's base in every hold, how well the score predicts the damage that team actually dealt, "
+            "compared with a simpler score (just being near enemies).",
+            "Surge: each detected surge episode, whether they were hit, and their damage dealt against the least damage of a player "
+            "who stayed safe. Loadouts: the weapons each of them held up to each zone.",
         ],
         terms={
             "Zones with a stronger base anywhere": "Zone holds where some spot in the zone offered at least twice their base's "
@@ -689,27 +695,31 @@ GUIDES: dict[str, Guide] = {
             "Their tags": "Exchanges where they dealt damage and took none back.",
             "Where they set up each zone": "Each zone hold: how long it lasted, where their base was, its tag opportunities and "
                                            "danger, and the best spot's tag opportunities, distance and height.",
+            "Which scoring predicts real damage": "Within each zone hold, how well each scoring ranks teams' bases by the damage "
+                                                  "they actually dealt (+1 perfect, 0 no link). The higher one is the better way to "
+                                                  "judge a surge base.",
+            "Loadouts during each hold": "The latest weapons each player held up to each zone, with rarity.",
             "Surge episodes in their games": "Each detected surge: whether they were hit, their damage dealt, and the least damage "
                                              "of a player who stayed safe.",
             "Their damage trade by height": "Their exchanges grouped by how far above or below the opponent they were.",
             "Teams in the selected matches": "Every team with its results, to identify a team at a LAN.",
         },
         charts={
-            "Their base vs stronger surge bases": "One zone of one game: grey is other teams during the hold, teal the spots with the "
-                "most tag opportunities, amber their base and navy the best spot with no more danger. Choose the game and zone above.",
+            "Their base vs stronger surge bases": "One early zone of one game: red is other players rotating, grey players holding, "
+                "teal the spots with the most tag opportunities, amber their base and navy the best spot with no more danger. "
+                "Choose the game and zone above.",
             "Tag opportunities: their base vs the best spot nearby": "By zone, averaged over games: their base, the best spot with no "
                 "more danger, and a typical spot.",
         },
         conclude=[
-            "If the best spots keep sitting on the same side of their base (for example, toward where most teams rotate in from), "
-            "that's a habit to change: hold the side where traffic arrives.",
-            "If they were surged with damage near the safe threshold, they need to tag earlier in that zone, ideally from a base "
-            "with more traffic.",
+            "If the best spots keep sitting on the side where rotations arrive (often the side facing the previous zone or the bulk "
+            "of the lobby), that's a rule they can use every game: build the surge base facing incoming rotations.",
+            "If they were surged with damage close to the safe threshold, they need to tag earlier in that zone.",
         ],
         limits=[
-            "Tag opportunities use where other teams actually went in that game: they show what a base would have offered, not "
-            "what was knowable beforehand. Look for patterns across many zones.",
-            "Danger counts only nearby enemies; it doesn't see sightlines, cover or builds.",
+            "Tag opportunities use where other teams actually went in that game: they show what a base would have offered, not what "
+            "was knowable beforehand. Look for patterns across many zones.",
+            "Line of sight, cover and builds aren't in the score; natural height is.",
         ],
     ),
 
