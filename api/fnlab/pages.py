@@ -76,6 +76,12 @@ PAGES = [
                 charts=["Following the playbook vs finishing", "What each rule is worth"], table="Each rule's value",
                 columns=["Rule", "When", "Followed by", "Finished ahead of rivals, if followed", "If not", "Same player, when followed", "Verdict"],
                 metrics=["Early playbook", "Late playbook", "Rule checks"]),
+        section("decides", "What decides tier-1 games?",
+                "With so many players alive late and loot refreshing, which parts of the game actually decide the finish?",
+                charts=["What decides the finish, among players alive at zone 6", "Players still alive when each zone appears"],
+                table="Each factor among players alive at zone 6",
+                metrics=["Alive at zone 6", "Explained by endgame position", "Explained by the early game", "Explained by skill",
+                         "Loot gap closes by"]),
     ]),
     dict(id="compare", title="Compare", question="How does group A differ from group B?", needs_compare=True, sections=[
         section("divergence", "A vs B", "Which measures differ between the two groups?",

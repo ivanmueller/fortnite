@@ -62,7 +62,7 @@ ALPHA_PARAM = Param("alpha", "Significance threshold", "select", 0.005,
                     [{"value": v, "label": f"p < {v}"} for v in (0.05, 0.01, 0.005, 0.001)],
                     "Many tests run at once, so a strict threshold avoids chasing noise.")
 
-from . import overview, zone_randomness, zone_geometry, compare_periods, positioning, eliminations, height, rotation, drops, divergence, loot, fights, surge, endgame_height, height_damage, zone_check, zone_forecast, playbook  # noqa: E402,F401
+from . import overview, zone_randomness, zone_geometry, compare_periods, positioning, eliminations, height, rotation, drops, divergence, loot, fights, surge, endgame_height, height_damage, zone_check, zone_forecast, playbook, decides  # noqa: E402,F401
 from .guides import GUIDES  # noqa: E402
 
 for _id, _guide in GUIDES.items():

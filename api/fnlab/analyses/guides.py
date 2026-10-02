@@ -720,6 +720,56 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "decides": Guide(
+        question="In tier-1 lobbies, with so many players alive late and loot refreshing, which parts of the game actually decide "
+                 "the finish?",
+        method=[
+            "Matches are split into the strongest third by lobby strength and the rest, so tier-1 lobbies can be compared with the others.",
+            "How crowded: players still alive when each zone appears.",
+            "Loot convergence: within each match, the players who looted best and worst in their first 3 minutes, compared on the best "
+            "weapon rarity they hold in the 90 seconds before each later zone appears.",
+            "What decides: among players alive when zone 6 appears, how much of their finish (against the others alive then) each group "
+            "of factors explains: skill (Power Rankings), the early game (contested drop, chests, early weapon rarity), the mid game "
+            "(falling behind on rotations, storm damage) and endgame position when zone 6 appears (distance outside it, distance "
+            "from the centre, height rank, health and shield). Measured on matches the model never saw.",
+        ],
+        terms={
+            "Alive at zone 6": "Median players still alive when zone 6 appears, for each group of lobbies.",
+            "Explained by endgame position": "Share of the finish, among players alive at zone 6, explained by position when zone 6 "
+                                             "appears, on matches the model never saw.",
+            "Explained by the early game": "The same for the drop and early loot.",
+            "Explained by skill": "The same for Power Rankings.",
+            "Loot gap closes by": "The zone by which players who looted worst early hold about the same weapon quality as those "
+                                  "who looted best.",
+            "Each factor among players alive at zone 6": "Each factor's effect on the finish: points of finishing rank for one "
+                                                         "standard step more of it, with the other factors held equal.",
+            "Skill": "Power Rankings.",
+            "Early game": "Drop and early loot.",
+            "Mid game": "Rotations and storm damage in zones 2–5.",
+            "Endgame position": "Where a player is, and in what state, when zone 6 appears.",
+            "p": P_VALUE,
+        },
+        charts={
+            "What decides the finish, among players alive at zone 6": "How much of the finish each part of the game explains, for the "
+                "strongest lobbies and the rest. Longer bars matter more. Placement is noisy in any battle royale, so compare the "
+                "bars with each other rather than with 100%.",
+            "Players still alive when each zone appears": "How crowded each zone is: how many players are still in the game.",
+            "Does early loot even out?": "Players who looted best and worst early, by the weapon quality they hold at each zone. "
+                                         "Where the lines meet, early loot no longer makes a difference.",
+        },
+        conclude=[
+            "If endgame position explains far more than the early game, plan and practise zones 4–6 above early looting.",
+            "If the loot lines meet by zone 3 or 4, a fast, safe drop with average loot is enough; spend the time on rotation.",
+            "If skill explains much more than any decision, the edge from the system is smaller in that lobby group, but every "
+            "point it adds still counts over a tournament.",
+        ],
+        limits=[
+            "Materials aren't in replays, so they can't be included in the endgame state.",
+            "Associations, not proof: strong players may both choose good positions and win the endgame.",
+            "Needs at least 10 matches with players alive at zone 6; loot convergence needs in-match data.",
+        ],
+    ),
+
     "zone_forecast": Guide(
         question="Where will the next zone go, where will the game end, and how far can those forecasts be trusted?",
         method=[
