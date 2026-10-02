@@ -88,8 +88,10 @@ def matches(q: MatchQuery):
 
 
 from .datamgr import router as data_router  # noqa: E402
+from .mapapi import router as map_router  # noqa: E402
 
 app.include_router(data_router)
+app.include_router(map_router)
 
 
 @app.get("/api/pages")

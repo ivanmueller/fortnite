@@ -4,6 +4,7 @@ import { Component, lazy, Suspense, type ReactNode } from 'react';
 import type { ChartKind, ChartSpec } from '../types';
 // Plotly is large, so it loads on first use instead of with the page.
 const PlotlyChart = lazy(() => import('./plotlyRenderer').then((m) => ({ default: m.PlotlyChart })));
+const MatchMap = lazy(() => import('./MatchMap').then((m) => ({ default: m.MatchMap })));
 
 type Renderer = (props: { spec: ChartSpec }) => ReactNode;
 
@@ -15,6 +16,7 @@ const RENDERERS: Record<ChartKind, Renderer> = {
   polar_histogram: PlotlyChart,
   box: PlotlyChart,
   map_points: PlotlyChart,
+  match_replay: MatchMap,
 };
 
 class ChartBoundary extends Component<{ children: ReactNode }, { error: string | null }> {

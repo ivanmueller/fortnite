@@ -66,7 +66,7 @@ export interface Conclusion {
   next_steps: string[];
 }
 
-export type ChartKind = 'bar' | 'stacked_bar' | 'line' | 'histogram' | 'polar_histogram' | 'box' | 'map_points';
+export type ChartKind = 'bar' | 'stacked_bar' | 'line' | 'histogram' | 'polar_histogram' | 'box' | 'map_points' | 'match_replay';
 
 export interface Series {
   name: string;

@@ -24,6 +24,8 @@ PAGES = [
         section("review", "Game review", "Type the team's names, choose a game, and select matching lobbies in the left panel for the evidence.",
                 charts=["Early game map", "Mid game map"], table="Review", rows=40, wrap=True,
                 metrics=["Result", "Biggest single decision"]),
+        section("match_map", "Match map", "Replay the game with the team highlighted; at every zone, the rotation plan and its reasoning.",
+                charts=["Match map"], table="Rotation plan", rows=20, wrap=True, metrics=["Rotations left late"]),
     ]),
     dict(id="storm", title="Storm", question="How do zones behave, and where will the next one go?", sections=[
         section("zone_geometry", "Zone rules", "What kind of zone is each one, and how does it move?",

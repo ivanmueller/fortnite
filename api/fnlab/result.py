@@ -3,7 +3,7 @@ The result format every analysis returns.
 
 Charts are a neutral spec (kind + series), not Plotly JSON, so the dashboard can
 render them with Plotly today and another library later without touching analyses.
-Chart kinds: bar, stacked_bar, line, histogram, polar_histogram, box, map_points.
+Chart kinds: bar, stacked_bar, line, histogram, polar_histogram, box, map_points, match_replay (interactive match map).
 """
 from __future__ import annotations
 

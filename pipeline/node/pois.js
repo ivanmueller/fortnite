@@ -16,7 +16,22 @@ if (!res.ok) {
   console.error(`fortnite-api.com answered ${res.status}. Try again later.`);
   process.exit(1);
 }
-const pois = (await res.json())?.data?.pois || [];
+const body = await res.json();
+const pois = body?.data?.pois || [];
+// The map images (plain, and with place names) for the dashboard's interactive map.
+for (const [kind, url] of Object.entries(body?.data?.images || {})) {
+  if (!url) continue;
+  try {
+    const img = await fetch(url);
+    if (img.ok) {
+      fs.mkdirSync(DATA, { recursive: true });
+      fs.writeFileSync(path.join(DATA, kind === 'pois' ? 'map_pois.png' : 'map.png'), Buffer.from(await img.arrayBuffer()));
+      console.log(`saved the ${kind === 'pois' ? 'labelled' : 'plain'} map image`);
+    }
+  } catch (e) {
+    console.log(`couldn't download the ${kind} map image: ${e.message}`);
+  }
+}
 if (!pois.length) {
   console.error('No places in the response.');
   process.exit(1);

@@ -772,6 +772,43 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "match_map": Guide(
+        question="How did the game unfold for the team, and what was the reasoning behind each rotation?",
+        method=[
+            "Every player's path every 2 seconds, the storm as it moved, eliminations and the team's health, replayed on the map "
+            "with the analysed team highlighted.",
+            "At every zone: the time budget (when it appeared, when it closes, distance to its safe edge), travel time at the speed "
+            "players actually move in that match, when players who arrived ahead of comparable players set off (same zone, "
+            "similar distance, selected matches), a leave-by time, and when the team actually left.",
+            "Other teams: those within 60 m of the straight route in or near the entry point, a less crowded entry point when one "
+            "exists (up to 120 m longer), and the routes teams outside the zone must take (dashed).",
+            "Zones 3–4: the surge base facing those routes, as in the Game review.",
+            "The real Fortnite map image can sit underneath after a one-time calibration: click three named places on the "
+            "labelled image (downloaded by Data → Update map names).",
+        ],
+        terms={
+            "Rotation plan": "Each zone: when it appeared and closed, distance to its safe edge, travel time, leave-by time, when "
+                             "they left, teams on their route, a better entry point, and the surge base.",
+            "Rotations left late": "Zones where they left more than 10 seconds after the leave-by time.",
+            "Teams in the selected matches": "Every team with its results, to identify a team at a LAN.",
+        },
+        charts={
+            "Match map": "Play the game, drag the timeline, or click a zone number. Scroll to zoom, drag to pan, and hover a dot for "
+                         "the player. The panel shows the rotation plan for the current zone; on the map, dashed red lines are the "
+                         "routes teams outside the zone must take, the dot is your entry point, the ring a less crowded entry, and the "
+                         "diamond the surge base.",
+        },
+        conclude=[
+            "Zones where they left well after the leave-by time, with teams on their route, are the rotations to review on video.",
+            "If a less crowded entry keeps appearing on the same side, plan rotations around that side.",
+        ],
+        limits=[
+            "Travel time uses running speed; mobility items, vehicles and launch pads make real rotations faster.",
+            "Routes in are straight lines; real routes bend around terrain, builds and fights.",
+            "The map image is only as accurate as the three clicks: zoom the browser in for precise clicks.",
+        ],
+    ),
+
     "review": Guide(
         question="For one team in one game: what did they do in each stage, what would the system have recommended knowing only "
                  "what they knew then, why, and what was it worth?",

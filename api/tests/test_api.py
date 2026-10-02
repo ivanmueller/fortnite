@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook", "decides", "audit_zones", "review"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook", "decides", "audit_zones", "review", "match_map"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -270,3 +270,14 @@ def test_game_review_has_three_stages(client):
     review = next(t for t in j["tables"] if t["title"] == "Review")
     assert {"Early game", "Mid game", "Endgame"} <= {row[0] for row in review["rows"]}
     assert any(row[1] in ("How it ended", "Won the game") for row in review["rows"])
+
+
+def test_match_map_replay_and_plans(client):
+    """The match map carries every player's path, the storm and a reasoned plan per zone."""
+    tl = client.post("/api/analyses/match_map/run", json={"filters": DEMO}).json()["tables"][0]["rows"]
+    name = tl[0][1].split(",")[0]
+    j = client.post("/api/analyses/match_map/run", json={"filters": DEMO, "params": {"team": name}}).json()
+    ch = next(c for c in j["charts"] if c["kind"] == "match_replay")
+    o = ch["options"]
+    assert len(o["tracks"]) > 10 and len(o["storm"]) >= 5 and any(t["mine"] for t in o["tracks"])
+    assert all(p["reasons"] for p in o["plans"])
