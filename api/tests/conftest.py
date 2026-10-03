@@ -19,5 +19,7 @@ def client(tmp_path_factory):
     os.environ["FN_DEMO_DIR"] = str(data)
     sys.path.insert(0, str(REPO / "api"))
     from fastapi.testclient import TestClient
+    from fnlab import config
     from fnlab.main import app
+    config.DATASETS["demo"] = data    # in case fnlab was imported before FN_DEMO_DIR was set (test order)
     return TestClient(app)

@@ -14,8 +14,10 @@ const FIELDS: { key: string; label: string; step?: number; min?: number; max?: n
   { key: 'enemies_50', label: 'Enemy teams within 50 m', min: 0 },
   { key: 'enemies_150', label: 'Enemy teams within 150 m', min: 0 },
   { key: 'hit_10s', label: 'Damage taken in the last 10 s', step: 10, min: 0 },
-  { key: 'dealt_rank', label: 'Damage dealt this zone, rank (0 least – 1 most)', step: 0.1, min: 0, max: 1 },
+  { key: 'surge_rank', label: 'Net damage this zone (dealt − taken), rank (0 least – 1 most)', step: 0.1, min: 0, max: 1 },
   { key: 'kills', label: 'Eliminations so far', min: 0 },
+  { key: 'team_pr_rank', label: "Team's Power Rankings rank (unranked = 100000)", step: 100, min: 1, max: 100000 },
+  { key: 'lobby_pr_rank', label: "Lobby's median Power Rankings rank", step: 100, min: 1, max: 100000 },
 ];
 
 /** Two plans side by side; "Compare" sends them to the model. */

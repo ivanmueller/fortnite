@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from .. import engine as eng
+from .. import scoring
 from ..locks import serialized
 from .. import ep_model as ep
 from ..conclusion import conclude
@@ -26,7 +27,8 @@ _CACHE: dict = {}
 @serialized
 def decisions(ctx: Context, perceive_m: float):
     """Engine decisions for every team in the selection (cached per selection and perception radius)."""
-    key = (tuple(sorted(df(ctx.con, "SELECT match_id FROM sel")["match_id"])), round(perceive_m))
+    scheme = scoring.active()
+    key = (tuple(sorted(df(ctx.con, "SELECT match_id FROM sel")["match_id"])), round(perceive_m), scheme.key)
     if key in _CACHE:
         return _CACHE[key]
     from .expected_points import _load as ep_load
@@ -48,9 +50,9 @@ def decisions(ctx: Context, perceive_m: float):
     parts = []
     for mid, g in live.groupby("match_id"):
         m = model.fold_models_.get(model.fold_of_.get(mid)) or model
-        parts.append(eng.evaluate(g, m, run_ms, eng.hit_risk(epd["expo"]), odds))
+        parts.append(eng.evaluate(g, m, run_ms, eng.hit_risk(epd["expo"]), odds, scheme=scheme))
     d = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
-    out = dict(d=d, r2_live=r2_live, r2_full=epd["r2"], run_ms=run_ms, cutoff=eng.surge_cutoff(ctx.con))
+    out = dict(d=d, r2_live=r2_live, r2_full=epd["r2"], run_ms=run_ms, cutoff=eng.surge_cutoff(ctx.con), scheme=scheme)
     if len(_CACHE) > 3:
         _CACHE.clear()
     _CACHE[key] = out
@@ -86,7 +88,7 @@ def run(ctx: Context) -> Result:
     kf = d[d["key"]].groupby(["match_id", "team_index"]).agg(follow=("followed", "mean"), n_key=("followed", "size")).reset_index()
     tg = tg.merge(kf, on=["match_id", "team_index"], how="inner")
     tg = tg[tg["n_key"] >= 2]
-    tg["points"] = tg["placement"].map(ep.PLACEMENT_POINTS).fillna(0) + ep.KILL_POINTS * tg["kills"].fillna(0)
+    tg["points"] = data["scheme"].total(tg["placement"], tg["kills"]).to_numpy(float)
     tg["ahead"] = 1 - tg.groupby("match_id")["placement"].rank(pct=True)
     if len(tg) >= 30:
         bands = pd.cut(tg["follow"], [0, 0.6, 0.75, 0.9, 1.01], labels=["Under 60%", "60–75%", "75–90%", "90%+"], right=False)
@@ -114,12 +116,16 @@ def run(ctx: Context) -> Result:
                                                  include_groups=False).dropna()
             tw = ttest_mean(within, 0.0)
             if tw["n"] >= 5:
+                r.metric("Same team: following vs finishing", f"mean rho {tw['mean']:+.2f} over {int(tw['n'])} teams",
+                         "The same team across games: positive means it finished better in the games where it followed the engine "
+                         "more. This is the result to trust: it can't be explained by stronger teams simply following more.")
                 r.test("Same team", "The same team finished better in games where it followed the engine more", int(tw["n"]),
                        f"mean rho {tw['mean']:+.2f}", tw["p"], 0.005,
                        ("The same teams finished better when they followed the engine more", "The same teams finished worse when they followed the engine more"),
                        direction=tw["mean"])
         hi, lo = b["points"].iloc[-1], b["points"].iloc[0]
-        r.metric("Followed 90%+ vs under 60%", f"{hi:.1f} vs {lo:.1f} pts" if hi == hi and lo == lo else "–", "Average points per game")
+        r.metric("Followed 90%+ vs under 60%", f"{hi:.1f} vs {lo:.1f} pts" if hi == hi and lo == lo else "–",
+                 "Average points per game, across teams. Stronger teams may simply follow more; see the same-team result.")
 
     # ---- one team's game, decision by decision
     text = str(ctx.params.get("team") or "").strip()
@@ -182,8 +188,9 @@ def run(ctx: Context) -> Result:
 def _notes(r: Result, data: dict, perceive: float) -> None:
     r.notes += [
         f"Live knowledge only: own position, health, eliminations, teammates, the zones and timers, teams left, damage just taken, "
-        f"surge above or below the cut-off (bottom {data['cutoff']:.0%} of damage dealt), enemies within {perceive:.0f} m, and the "
-        "natural ground under you. Never far enemies' positions or anyone else's health.",
+        f"surge above or below the cut-off (bottom {data['cutoff']:.0%} of team net damage this zone), enemies within {perceive:.0f} m, "
+        "the natural ground under you, and both teams' Power Rankings. Never far enemies' positions or anyone else's health.",
+        f"Scoring: {data['scheme'].describe()}",
         f"Every {eng.DECISION_S} s the engine compares hold, rotate (direct or by the less crowded entry), heal and engage, "
         f"{eng.HORIZON_S} s ahead, and prices each with a points model trained on live knowledge only (each game by a model that "
         f"never saw it). Rotation speed: {data['run_ms']:.1f} m/s.",

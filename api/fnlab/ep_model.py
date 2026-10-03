@@ -5,11 +5,17 @@ Snapshots: every STEP seconds from zone 2 appearing until a team is out, one row
   teams_alive, zone, progress (through the current zone), members (alive), hp (health + shield per alive
   member), outside_m (outside the next zone), storm_m (outside the storm edge now; 0 = safe), off_centre
   (distance from the current zone's centre in zone widths), height_rank (among living teams), enemies_50 /
-  enemies_150 (other teams within 50 / 150 m), hit_10s (damage taken in the last 10 s), dealt_rank (damage
-  dealt this zone, ranked against living teams: what surge looks at), kills (eliminations so far).
-Target: points still to come = placement points (FNCS 2026 table: 65, 56, 52 ... 22 for 15th, 0 below) +
-  4 per future elimination. Expected total points = banked eliminations x 4 + the model's prediction.
-Model: gradient-boosted trees, checked on matches it never saw (folds grouped by match).
+  enemies_150 (other teams within 50 / 150 m), hit_10s (damage taken in the last 10 s), surge_rank (the team's
+  net damage this zone, dealt minus taken between players, ranked against living teams: what tournament surge
+  counts since October 2025), kills (eliminations so far), team_pr_rank (the team's Power Rankings rank,
+  geometric mean of its players, unranked = UNRANKED) and lobby_pr_rank (median Power Rankings rank of the lobby).
+  Skill is an input so the model doesn't credit whatever strong teams happen to do: a situation is valued
+  against teams of the same strength in lobbies of the same strength.
+Target: points still to come = placement points + elimination points for future eliminations, on the active
+  scoring scheme (scoring.json; FNCS 2026 Duos finals by default: 65 for a win down to 2 for 25th, 0 below,
+  4 per elimination). Expected total points = banked eliminations x elimination points + the model's prediction.
+Model: gradient-boosted trees, checked on matches it never saw (folds grouped by match). The baseline it must
+  beat knows the clock (teams left, zone) and both teams' skill, so the gap is what the situation adds.
 Exposure: the chance of being hit within 10 s by a team you weren't already fighting, rotating vs holding.
 """
 from __future__ import annotations
@@ -17,22 +23,52 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from . import scoring
 from .store import df
 
 STEP = 10
-PLACEMENT_POINTS = {1: 65, 2: 56, 3: 52, 4: 48, 5: 44, 6: 40, 7: 38, 8: 36, 9: 34, 10: 32, 11: 30, 12: 28, 13: 26, 14: 24, 15: 22}
-KILL_POINTS = 4
+UNRANKED = 100_000          # Power Rankings cover the top 10,000; unranked players count as this rank
+SKILL = ["team_pr_rank", "lobby_pr_rank"]
 FEATURES = ["teams_alive", "zone", "progress", "members", "hp", "outside_m", "storm_m", "off_centre", "height_rank",
-            "enemies_50", "enemies_150", "hit_10s", "dealt_rank", "kills"]
+            "enemies_50", "enemies_150", "hit_10s", "surge_rank", "kills", *SKILL]
 LABELS = {"teams_alive": "Teams left", "zone": "Zone", "progress": "Progress through the zone", "members": "Teammates alive",
           "hp": "Health + shield (per player)", "outside_m": "Distance outside the next zone (m)", "storm_m": "Distance into the storm (m)",
           "off_centre": "Distance from the zone's centre (zone widths)", "height_rank": "Height rank (0 low – 1 high)",
           "enemies_50": "Enemy teams within 50 m", "enemies_150": "Enemy teams within 150 m", "hit_10s": "Damage taken in the last 10 s",
-          "dealt_rank": "Damage dealt this zone, rank (0 least – 1 most)", "kills": "Eliminations so far"}
+          "surge_rank": "Net damage this zone (dealt − taken), rank (0 least – 1 most)", "kills": "Eliminations so far",
+          "team_pr_rank": "Team's Power Rankings rank", "lobby_pr_rank": "Lobby's median Power Rankings rank"}
 
 
-def snapshots(con) -> pd.DataFrame:
-    """One row per living team every STEP seconds, from zone 2 appearing to the team going out."""
+def skill(con) -> pd.DataFrame:
+    """Per team in the selected matches: team_pr_rank (geometric mean of its players' Power Rankings ranks) and
+    lobby_pr_rank (median over the lobby's players). Unranked players, and data without Power Rankings, count as UNRANKED."""
+    cols = set(con.execute("SELECT * FROM players LIMIT 0").df().columns)
+    pr = "p.pr_rank" if "pr_rank" in cols else "NULL"
+    pl = df(con, f"""SELECT p.match_id, p.team_index, {pr} AS pr_rank FROM players p JOIN sel USING (match_id)
+                     WHERE NOT coalesce(p.is_bot, FALSE)""")
+    if pl.empty:
+        return pd.DataFrame(columns=["match_id", "team_index", *SKILL])
+    rank = pd.to_numeric(pl["pr_rank"], errors="coerce").fillna(UNRANKED).clip(lower=1, upper=UNRANKED)
+    pl = pl.assign(log_rank=np.log(rank.to_numpy(float)))
+    team = pl.groupby(["match_id", "team_index"])["log_rank"].mean().apply(np.exp).rename("team_pr_rank").reset_index()
+    lobby = pl.assign(rank=rank).groupby("match_id")["rank"].median().rename("lobby_pr_rank")
+    return team.merge(lobby, left_on="match_id", right_index=True)
+
+
+def skill_coverage(con) -> float:
+    """Share of the selection's players with a Power Rankings rank: how much the skill inputs actually know."""
+    cols = set(con.execute("SELECT * FROM players LIMIT 0").df().columns)
+    if "pr_rank" not in cols:
+        return 0.0
+    v = con.execute("""SELECT avg(CASE WHEN p.pr_rank IS NOT NULL THEN 1.0 ELSE 0.0 END) FROM players p JOIN sel USING (match_id)
+                       WHERE NOT coalesce(p.is_bot, FALSE)""").fetchone()[0]
+    return float(v or 0.0)
+
+
+def snapshots(con, scheme: scoring.Scheme | None = None) -> pd.DataFrame:
+    """One row per living team every STEP seconds, from zone 2 appearing to the team going out.
+    future_pts uses `scheme` (the active scoring scheme by default)."""
+    scheme = scheme or scoring.active()
     have = {t for (t,) in con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
     events = {"health", "damage"} <= have and all(
         con.execute(f"SELECT count(*) FROM {t} JOIN sel USING (match_id)").fetchone()[0] > 0 for t in ("health", "damage"))
@@ -81,8 +117,8 @@ def snapshots(con) -> pd.DataFrame:
         np.fill_diagonal(d, np.inf)
         e50[idx], e150[idx] = (d <= 50).sum(1), (d <= 150).sum(1)
     team["enemies_50"], team["enemies_150"] = e50, e150
-    # damage taken in the last 10 s, damage dealt this zone (rank), eliminations so far and still to come
-    team["hit_10s"], team["dealt_rank"], team["kills"] = 0.0, 0.5, 0
+    # damage taken in the last 10 s, net damage this zone (rank), eliminations so far and still to come
+    team["hit_10s"], team["surge_rank"], team["kills"] = 0.0, 0.5, 0
     kills = df(con, """SELECT k.match_id, k.t, pf.team_index AS team FROM kills k JOIN sel USING (match_id)
                        JOIN players pf ON pf.match_id = k.match_id AND pf.id = k.finisher_id
                        JOIN players pv ON pv.match_id = k.match_id AND pv.id = k.victim_id
@@ -114,24 +150,36 @@ def snapshots(con) -> pd.DataFrame:
             agg = df(con, """
                 SELECT s.match_id, s.t, s.team_index,
                        coalesce(sum(h.amount) FILTER (WHERE h.tgt = s.team_index AND h.t > s.t - 10 AND h.t <= s.t), 0) AS hit_10s,
-                       coalesce(sum(h.amount) FILTER (WHERE h.att = s.team_index AND h.t > s.prev_finish AND h.t <= s.t), 0) AS dealt
+                       coalesce(sum(h.amount) FILTER (WHERE h.att = s.team_index AND h.t > s.prev_finish AND h.t <= s.t), 0) AS dealt,
+                       coalesce(sum(h.amount) FILTER (WHERE h.tgt = s.team_index AND h.t > s.prev_finish AND h.t <= s.t), 0) AS taken
                 FROM ep_team s LEFT JOIN ep_hits h ON h.match_id = s.match_id AND h.t > s.prev_finish - 10 AND h.t <= s.t
                 GROUP BY 1, 2, 3""")
             team = team.drop(columns=["hit_10s"]).merge(agg, on=["match_id", "t", "team_index"], how="left")
             team["hit_10s"] = team["hit_10s"].fillna(0)
-            team["dealt_rank"] = team.groupby(["match_id", "t"])["dealt"].rank(pct=True)
-    team["future_pts"] = team["placement"].map(PLACEMENT_POINTS).fillna(0) + KILL_POINTS * (team["kills_total"] - team["kills"]).clip(lower=0)
+            # tournament surge since October 2025: team net damage (dealt minus taken, between players only)
+            team["net"] = team["dealt"].fillna(0) - team["taken"].fillna(0)
+            team["surge_rank"] = team.groupby(["match_id", "t"])["net"].rank(pct=True)
+    team["future_pts"] = (scheme.placement_points(team["placement"]).to_numpy(float)
+                          + scheme.elimination * (team["kills_total"] - team["kills"]).clip(lower=0).to_numpy(float))
     team["hp"] = team["hp"].fillna(team["hp"].median() if team["hp"].notna().any() else 100)
+    sk = skill(con).dropna(subset=["team_index"])
+    sk["team_index"] = sk["team_index"].astype(team["team_index"].dtype)
+    team = team.drop(columns=[c for c in SKILL if c in team]).merge(sk, on=["match_id", "team_index"], how="left")
+    for c in SKILL:
+        team[c] = team[c].fillna(UNRANKED)
     return team.reset_index(drop=True)
 
 
 # Directions known from the game, enforced so "what if" comparisons stay sane (+1: more is never worse; -1: never better).
 MONOTONE = {"hp": 1, "members": 1, "kills": 1, "outside_m": -1, "storm_m": -1, "hit_10s": -1, "teams_alive": -1,
-            "seen_close": -1, "surge_margin": 1, "enemies_50": -1}
+            "seen_close": -1, "surge_margin": 1, "enemies_50": -1,
+            "team_pr_rank": -1}     # a stronger team (lower rank number) is never worth fewer points
 
 
 def fit(team: pd.DataFrame, folds: int = 6, seed: int = 3, features: list[str] | None = None):
-    """Gradient-boosted expected points, plus its out-of-sample check and a situation-blind baseline."""
+    """Gradient-boosted expected points, plus its out-of-sample check and a situation-blind baseline.
+    The baseline knows the clock (teams left, zone) and, when they're inputs, both teams' skill: the model has to beat
+    "who they are and how late it is" to show that the situation itself matters."""
     from sklearn.ensemble import HistGradientBoostingRegressor
     feats = list(features or FEATURES)        # every model keeps its own input list (no shared switch)
     X, y = team[feats].to_numpy(float), team["future_pts"].to_numpy(float)
@@ -146,7 +194,7 @@ def fit(team: pd.DataFrame, folds: int = 6, seed: int = 3, features: list[str] |
         return HistGradientBoostingRegressor(max_iter=250, learning_rate=0.05, max_leaf_nodes=24, min_samples_leaf=60,
                                              l2_regularization=1.0, random_state=seed, monotonic_cst=cst)
     oos, base = np.zeros(len(y)), np.zeros(len(y))
-    bcols = [feats.index("teams_alive"), feats.index("zone")]
+    bcols = [feats.index(c) for c in ("teams_alive", "zone", *SKILL) if c in feats]
     fold_models = {}
     for k in range(folds):
         tr, te = f != k, f == k

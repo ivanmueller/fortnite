@@ -21,7 +21,8 @@ from ..result import Result
 from ..store import df
 from . import Context, Param, register
 from ._events_common import has_tables
-from .audit import PLACEMENT_POINTS, KILL_POINTS, _find_team, _team_list
+from .. import scoring
+from .audit import _find_team, _team_list
 
 TAG_BAND = (20, 80)        # metres: tagging range for predicted lanes
 _EVID: dict = {}
@@ -173,7 +174,8 @@ def run(ctx: Context) -> Result:
     names = " & ".join(sorted(me["name"].dropna().unique()))
     placement = int(me["placement"].min())
     kills = int(me["kills"].fillna(0).sum())
-    pts = PLACEMENT_POINTS.get(placement, 0) + KILL_POINTS * kills
+    scheme = scoring.active()
+    pts = f"{scheme.points(placement) + scheme.elimination * kills:g}"
 
     zones = df(con, f"SELECT * FROM zones WHERE match_id = '{mid}' ORDER BY phase")
     reveal = {int(p) + 1: float(t) for p, t in zip(zones["phase"], zones["finish_shrink_t"])}       # zone k appears

@@ -213,27 +213,42 @@ def run(ctx: Context) -> Result:
 
     # ---- surge: each detected episode in their games
     surge_rows = []
+    surge_rule_label = None
     if has_tables(con, "health", "damage"):
-        from .surge import surge_episodes
-        ep_s, per = surge_episodes(ctx)
+        # Score each surge by the rule the Surge study measured (team net damage since October 2025), not raw damage dealt.
+        from .surge_study import measured
+        msr = measured(ctx)
+        if msr is not None and len(msr["per"]):
+            ep_s, per = msr["ep"], msr["per"].assign(score=msr["per"]["score_w"])
+            surge_rule_label = msr["label"]
+        else:
+            from .surge import surge_episodes
+            ep_s, per = surge_episodes(ctx)
+            per = per.assign(score=per["dealt"]) if len(per) else per
+            surge_rule_label = "player damage dealt, whole match so far"
         if len(per):
-            per = per[per["match_id"].isin(games)].merge(pl[["match_id", "id", "team_index"]], on=["match_id", "id"])
+            per = per[per["match_id"].isin(games)]
+            if "team_index" not in per:
+                per = per.merge(pl[["match_id", "id", "team_index"]], on=["match_id", "id"])
             for epi, g in per.groupby("episode"):
                 mid = g["match_id"].iat[0]
                 me = g[g["team_index"] == tid[mid]]
                 if me.empty:
                     continue
                 e = ep_s[ep_s["episode"] == epi].iloc[0]
-                safe_min = g.loc[~g["surged"], "dealt"].min() if (~g["surged"]).any() else np.nan
+                safe_min = g.loc[~g["surged"], "score"].min() if (~g["surged"]).any() else np.nan
                 surge_rows.append({"Game": gnum[mid], "Zone": int(e["phase"]), "Players alive": int(e.get("alive", len(g))),
                                    "Surged": "Yes" if me["surged"].any() else "No",
-                                   "Their damage dealt (max of the two)": round(float(me["dealt"].max())),
-                                   "Least damage of a safe player": round(float(safe_min)) if safe_min == safe_min else None,
-                                   "Their rank (0 least – 1 most)": round(float(g["dealt"].rank(pct=True)[me.index].max()), 2)})
+                                   "Their surge score": round(float(me["score"].max())),
+                                   "Lowest score of a safe player": round(float(safe_min)) if safe_min == safe_min else None,
+                                   "Margin": round(float(me["score"].max() - safe_min)) if safe_min == safe_min else None,
+                                   "Their rank (0 lowest – 1 highest)": round(float(g["score"].rank(pct=True)[me.index].max()), 2)})
     if surge_rows:
         sr = pd.DataFrame(surge_rows).sort_values(["Game", "Zone"])
         r.table("Surge episodes in their games", sr)
         r.metric("Surged", f"{(sr['Surged'] == 'Yes').sum()} of {len(sr)} surge episodes", "Episodes where at least one of them took surge damage")
+        r.notes.append(f"Surge score in the surge table: {surge_rule_label}. Margin is their score minus the lowest score that "
+                       "stayed safe in that surge: negative means they were inside the surged group.")
     else:
         r.notes.append("No surge episodes were detected in these games, so the surge table is empty; tag opportunities still show where "
                        "damage could have been gathered.")

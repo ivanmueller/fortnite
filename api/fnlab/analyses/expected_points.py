@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from .. import ep_model as ep
+from .. import scoring
 from ..locks import serialized
 from ..conclusion import conclude
 from ..result import Result
@@ -19,18 +20,21 @@ from . import Context, Param, register
 _CACHE: dict = {}
 DEFAULT_PLANS = {
     "a": {"name": "Rotate now", "teams_alive": 20, "zone": 7, "progress": 0.3, "members": 2, "hp": 120, "outside_m": 0, "storm_m": 0,
-          "off_centre": 0.6, "height_rank": 0.5, "enemies_50": 0, "enemies_150": 2, "hit_10s": 0, "dealt_rank": 0.5, "kills": 2},
+          "off_centre": 0.6, "height_rank": 0.5, "enemies_50": 0, "enemies_150": 2, "hit_10s": 0, "surge_rank": 0.5, "kills": 2,
+          "team_pr_rank": 500, "lobby_pr_rank": 2000},
     "b": {"name": "Heal first, rotate late", "teams_alive": 20, "zone": 7, "progress": 0.7, "members": 2, "hp": 200, "outside_m": 60,
-          "storm_m": 0, "off_centre": 0.9, "height_rank": 0.5, "enemies_50": 0, "enemies_150": 2, "hit_10s": 0, "dealt_rank": 0.5, "kills": 2},
+          "storm_m": 0, "off_centre": 0.9, "height_rank": 0.5, "enemies_50": 0, "enemies_150": 2, "hit_10s": 0, "surge_rank": 0.5, "kills": 2,
+          "team_pr_rank": 500, "lobby_pr_rank": 2000},
 }
 
 
 @serialized
 def _load(ctx: Context):
-    key = tuple(sorted(df(ctx.con, "SELECT match_id FROM sel")["match_id"]))
+    scheme = scoring.active()
+    key = (tuple(sorted(df(ctx.con, "SELECT match_id FROM sel")["match_id"])), scheme.key)
     if key in _CACHE:
         return _CACHE[key]
-    team = ep.snapshots(ctx.con)
+    team = ep.snapshots(ctx.con, scheme)
     if team.empty or team["match_id"].nunique() < 6:
         return None
     model, oos, base = ep.fit(team)
@@ -40,7 +44,8 @@ def _load(ctx: Context):
     y = team["future_pts"]
     r2 = 1 - ((y - team["pred"]) ** 2).sum() / ((y - y.mean()) ** 2).sum()
     r2b = 1 - ((y - team["base"]) ** 2).sum() / ((y - y.mean()) ** 2).sum()
-    out = dict(team=team, model=model, expo=expo, reliable=bool(r2 - r2b >= 0.05 and r2 >= 0.15), r2=r2, r2b=r2b)
+    out = dict(team=team, model=model, expo=expo, reliable=bool(r2 - r2b >= 0.05 and r2 >= 0.15), r2=r2, r2b=r2b, scheme=scheme,
+               skill_known=ep.skill_coverage(ctx.con))
     _CACHE.clear()
     _CACHE[key] = out
     return out
@@ -51,7 +56,7 @@ def _predict(model, rows: list[dict]) -> np.ndarray:
 
 
 @register("expected_points", "Expected points",
-          "What any moment of a match is worth in points (FNCS scoring, including the cliff at 15th), what each change is "
+          "What any moment of a match is worth in points (on the active scoring scheme, FNCS 2026 Duos by default), what each change is "
           "worth, the risk of being hit while rotating and of surge, and a comparison of two plans.",
           params=[Param("plans", "Compare two plans", "plans", json.dumps(DEFAULT_PLANS))])
 def run(ctx: Context) -> Result:
@@ -61,14 +66,23 @@ def run(ctx: Context) -> Result:
         r.headline = "Needs at least 6 matches with zones and player positions in the selection."
         conclude(r, ctx, primary=[], alpha=0.005, recommended=50, descriptive=r.headline)
         return r
-    team, model, expo = data["team"], data["model"], data["expo"]
+    team, model, expo, scheme = data["team"], data["model"], data["expo"], data["scheme"]
     y, pred, base = team["future_pts"], team["pred"], team["base"]
     ok = pred.notna() & (team["pred"] != 0)
     r2 = 1 - ((y - pred) ** 2).sum() / ((y - y.mean()) ** 2).sum()
     r2b = 1 - ((y - base) ** 2).sum() / ((y - y.mean()) ** 2).sum()
     r.metric("Situations analysed", f"{len(team):,}", f"Every living team every {ep.STEP} s, from zone 2 on, in {team['match_id'].nunique()} matches")
     r.metric("Model accuracy", f"{r2:.0%} vs {r2b:.0%}", "Share of the variation in points still to come that the model explains on matches it never "
-             "saw, against a baseline that only knows teams left and the zone. The gap is what the situation adds.")
+             "saw, against a baseline that only knows teams left, the zone and both teams' skill. The gap is what the situation adds "
+             "beyond who the teams are.")
+    sk = data.get("skill_known", 0.0)
+    r.metric("Skill input", f"Power Rankings for {sk:.0%} of players",
+             "The model values each situation against teams of the same strength. With few ranked players it can't tell strong "
+             "teams from good situations: download Power Rankings (data option P) and re-process (option 7).")
+    if sk < 0.3:
+        r.warnings.append(f"Only {sk:.0%} of players have a Power Rankings rank, so the model can't separate team strength from "
+                          "situation. Download Power Rankings (data option P), then re-process (option 7).")
+    r.metric("Scoring", scheme.label, scheme.describe() + " " + scheme.source)
 
     # ---- the plan comparison
     try:
@@ -77,7 +91,7 @@ def run(ctx: Context) -> Result:
         plans = DEFAULT_PLANS
     a, b = ({**DEFAULT_PLANS[k], **{kk: v for kk, v in plans.get(k, {}).items() if v is not None}} for k in ("a", "b"))
     pa, pb = _predict(model, [a, b])
-    tot_a, tot_b = pa + ep.KILL_POINTS * a["kills"], pb + ep.KILL_POINTS * b["kills"]
+    tot_a, tot_b = pa + scheme.elimination * a["kills"], pb + scheme.elimination * b["kills"]
     drivers = []
     for f in model.features_:
         if a[f] != b[f]:
@@ -91,7 +105,7 @@ def run(ctx: Context) -> Result:
         [{"What's different": lab, a["name"]: va, b["name"]: vb, f"Points, switching {a['name']} to {b['name']}": f"{dv:+.1f}"}
          for lab, dv, va, vb in drivers] or [{"What's different": "Nothing: the plans are identical"}]))
 
-    # ---- the cliff: points still to come and chance of a top-15 finish, by teams left
+    # ---- the cliff: points still to come and chance of finishing in the points, by teams left
     bins = [0, 5, 10, 15, 20, 25, 30, 40, 1000]
     labels = ["1–5", "6–10", "11–15", "16–20", "21–25", "26–30", "31–40", "41+"]
     team["left_bin"] = pd.cut(team["teams_alive"], bins, labels=labels)
@@ -100,14 +114,15 @@ def run(ctx: Context) -> Result:
     good = (team["outside_m"] == 0) & (team["hp"] >= hi)
     bad = (team["outside_m"] > 0) & (team["hp"] < lo)
     series, top15 = [], []
+    paid = scheme.paid_places
     for name, mask in ((f"Inside the next zone, {hi}+ health", good), (f"Outside it, under {lo} health", bad), ("Everyone", pd.Series(True, index=team.index))):
         g = team[mask].groupby("left_bin", observed=False)
         n = g.size()
         series.append(dict(name=name, x=labels[::-1], y=g["future_pts"].mean().where(n >= 30).reindex(labels[::-1]).round(1).tolist()))
-        top15.append(dict(name=name, x=labels[::-1], y=(g["placement"].apply(lambda s: (s <= 15).mean()) * 100).where(n >= 30).reindex(labels[::-1]).round(0).tolist()))
+        top15.append(dict(name=name, x=labels[::-1], y=(g["placement"].apply(lambda s: (s <= paid).mean()) * 100).where(n >= 30).reindex(labels[::-1]).round(0).tolist()))
     r.chart("line", "Points still to come, by teams left", series, x_label="Teams left", y_label="Average points still to come")
-    r.chart("line", "Chance of a top-15 finish (the points cliff), by teams left", top15, x_label="Teams left",
-            y_label="Finished top 15 (%)", reference_lines=[dict(axis="y", value=50, label="")])
+    r.chart("line", "Chance of finishing in the points, by teams left", top15, x_label="Teams left",
+            y_label=f"Finished top {paid}, where placement points stop (%)", reference_lines=[dict(axis="y", value=50, label="")])
 
     # ---- what each change is worth, in the endgame (zones 6-9), from the model
     late = team[team["zone"].between(6, 9)]
@@ -127,11 +142,13 @@ def run(ctx: Context) -> Result:
             ("Out of the storm", delta(storm_m=0.0) - delta(storm_m=lambda x: x["storm_m"].clip(lower=50))),
             ("One more enemy team within 50 m", delta(enemies_50=lambda x: x["enemies_50"] + 1)),
             ("Teammate alive (vs not)", delta(members=2) - delta(members=1)) if team["members"].max() >= 2 else ("Teammate alive (vs not)", np.nan),
-            ("Top of the lobby in damage dealt this zone (vs bottom) – surge", delta(dealt_rank=1.0) - delta(dealt_rank=0.0)),
+            ("Top of the lobby in net damage this zone (vs bottom) – surge", delta(surge_rank=1.0) - delta(surge_rank=0.0)),
             ("High ground (vs low)", delta(height_rank=0.9) - delta(height_rank=0.1)),
             ("Centre of the zone (vs edge)", delta(off_centre=0.2) - delta(off_centre=0.95)),
             ("Just took 50 damage (vs none)", delta(hit_10s=50.0) - delta(hit_10s=0.0)),
         ]
+        if data.get("skill_known", 0) >= 0.3:
+            effects.append(("Stronger team: Power Rankings 200 (vs 5,000)", delta(team_pr_rank=200.0) - delta(team_pr_rank=5000.0)))
         effects = [(n, v) for n, v in effects if v == v]
         r.chart("bar", "What each change is worth in the endgame (zones 6–9)",
                 [dict(name="Expected points", x=[n for n, _ in effects], y=[round(v, 1) for _, v in effects])],
@@ -165,18 +182,17 @@ def run(ctx: Context) -> Result:
                      " vs ".join(f"{v:.0f}% {k.split(' (')[0].lower()}" for k, v in rot7.items()),
                      "The chance a team you weren't fighting hits you in the next 10 seconds")
 
-    # ---- surge
-    from .surge import surge_episodes
-    from ._events_common import has_tables
-    ep_s, per = surge_episodes(ctx) if has_tables(ctx.con, "health", "damage") else (pd.DataFrame(), pd.DataFrame())
-    if len(per):
-        per["rank"] = per.groupby("episode")["dealt"].rank(pct=True)
-        q = per.groupby(pd.cut(per["rank"], [0, 0.25, 0.5, 0.75, 1.0001], labels=["Bottom quarter", "Second", "Third", "Top quarter"]),
+    # ---- surge, scored by the rule the Surge study measured (team net damage since October 2025)
+    from .surge_study import measured
+    m = measured(ctx)
+    if m is not None and len(m["per"]):
+        per = m["per"]
+        q = per.groupby(pd.cut(per["rank_w"], [-0.001, 0.25, 0.5, 0.75, 1.0001], labels=["Bottom quarter", "Second", "Third", "Top quarter"]),
                         observed=False)["surged"].mean() * 100
-        r.chart("bar", "Chance of being surged, by damage dealt", [dict(name="Surged", x=[str(i) for i in q.index], y=q.round(0).tolist())],
-                x_label="Damage dealt before the surge, rank in the lobby", y_label="% surged")
+        r.chart("bar", "Chance of being surged, by surge score", [dict(name="Surged", x=[str(i) for i in q.index], y=q.round(0).tolist())],
+                x_label=f"Surge score ({m['label']}), rank among players alive at that surge", y_label="% surged")
     else:
-        r.notes.append("No surge was detected in these matches, so surge risk comes only from the damage-dealt rank in the model.")
+        r.notes.append("No surge was detected in these matches, so surge risk comes only from the net-damage rank in the model.")
 
     # ---- calibration
     cal = team[ok].assign(bin=pd.qcut(team.loc[ok, "pred"].rank(method="first"), 10, labels=False))
@@ -190,7 +206,9 @@ def run(ctx: Context) -> Result:
     conclude(r, ctx, primary=[], alpha=0.005, recommended=50,
              descriptive=f"{better} is worth {abs(tot_a - tot_b):.1f} points more in expectation. " + r.headline)
     r.notes += [
-        "Points still to come: placement points (FNCS 2026: 65 for 1st down to 22 for 15th, 0 below) plus 4 per future elimination.",
+        f"Points still to come: {scheme.describe()} Change the scheme or the table in api/fnlab/scoring.json.",
+        "Skill: each team's Power Rankings rank (geometric mean of its players) and the lobby's median rank are inputs, and the "
+        "baseline knows them too, so a situation is valued against teams of the same strength.",
         f"The model learns from every living team every {ep.STEP} s and is checked on matches it never saw. Its expected points are "
         "averages: any single game still turns on fights and luck.",
         "Getting hit: a hit from a team that hadn't hit you in the last 30 s, within the next 10 s; rotating means being outside the next zone.",

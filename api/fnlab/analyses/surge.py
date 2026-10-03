@@ -5,8 +5,10 @@ Replays don't record surge directly. It shows up in the data as several players 
 the same second while inside the safe zone, with no player hitting them. Detection:
   tick     MIN_PLAYERS+ players inside the zone lose health in the same second with no player hit nearby
   episode  ticks no more than EPISODE_GAP_S apart
-Surge targets the players who have dealt the least damage, so for each episode we compare damage
-dealt (to players, before the episode) by surged and safe players: the gap estimates the threshold.
+Surge targets the lowest scorers on its rule (since October 2025 in tournaments: team net damage, dealt minus
+taken). The Surge study measures which rule the matches follow (surge_rule.py); this page uses it to compare
+surged and safe players: the gap estimates the threshold. With no events to measure, it falls back to each
+player's damage dealt over the whole match.
 """
 from __future__ import annotations
 
@@ -39,7 +41,7 @@ def surge_episodes(ctx: Context) -> tuple[pd.DataFrame, pd.DataFrame]:
     ep = tick.groupby("episode").agg(match_id=("match_id", "first"), t0=("sec", "min"), t1=("sec", "max"),
                                      ticks=("sec", "size"), phase=("phase", "max"), per_tick=("lost", "median")).reset_index()
 
-    players = df(ctx.con, "SELECT p.match_id, p.id, p.death_t, coalesce(p.team_placement, p.placement) AS final, "
+    players = df(ctx.con, "SELECT p.match_id, p.id, p.team_index, p.death_t, coalesce(p.team_placement, p.placement) AS final, "
                           + ("p.pr_rank" if "pr_rank" in set(ctx.con.execute("SELECT * FROM players LIMIT 0").df().columns) else "NULL AS pr_rank")
                           + " FROM players p JOIN sel USING (match_id) WHERE NOT coalesce(p.is_bot, FALSE)")
     hits = player_hits(ctx.con)
@@ -49,8 +51,8 @@ def surge_episodes(ctx: Context) -> tuple[pd.DataFrame, pd.DataFrame]:
         hit_ids = set(inside[(inside["match_id"] == e["match_id"]) & inside["sec"].between(e["t0"], e["t1"])]["id"])
         dealt = hits[(hits["match_id"] == e["match_id"]) & (hits["t"] < e["t0"])].groupby("attacker_id")["amount"].sum()
         for _, p in alive.iterrows():
-            rows.append(dict(episode=e["episode"], match_id=e["match_id"], id=p["id"], surged=p["id"] in hit_ids,
-                             dealt=float(dealt.get(p["id"], 0.0)), final=p["final"], pr_rank=p["pr_rank"]))
+            rows.append(dict(episode=e["episode"], match_id=e["match_id"], id=p["id"], team_index=p["team_index"],
+                             surged=p["id"] in hit_ids, dealt=float(dealt.get(p["id"], 0.0)), final=p["final"], pr_rank=p["pr_rank"]))
     per = pd.DataFrame(rows)
     if not per.empty:
         g = per.groupby("episode")
@@ -62,8 +64,8 @@ def surge_episodes(ctx: Context) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 @register("surge", "Surge",
-          "When competitive storm surge triggers, how many players are alive, who it hits, and how much damage "
-          "a player needed to have dealt to stay safe.",
+          "When competitive storm surge triggers, how many players are alive, who it hits, and what surge score "
+          "(net damage, by the measured rule) kept a team safe.",
           params=[ALPHA_PARAM])
 def run(ctx: Context) -> Result:
     alpha = float(ctx.params.get("alpha", 0.005))
@@ -90,21 +92,22 @@ def run(ctx: Context) -> Result:
                               "in some competitive rounds; collect later rounds and finals to study it.")
         return r
 
-    # Use the damage window surge actually counts (measured on the Surge study) everywhere on this page, not whole-match damage.
-    from .surge_study import WINDOWS, measured
+    # Use the rule surge actually follows (measured on the Surge study) everywhere on this page. "dealt" below holds that
+    # rule's score: net or dealt damage, per player or per team, in the measured window.
+    from .surge_study import measured
     m = measured(ctx)
-    window = "whole match so far"
+    rule = "player damage dealt, whole match so far"
     if m is not None and len(m["per"]):
-        per = m["per"].assign(dealt=m["per"]["dealt_w"])
-        window = WINDOWS[m["best"]].lower()
+        per = m["per"].assign(dealt=m["per"]["score_w"])
+        rule = m["label"]
         ep = ep.drop(columns=[c for c in ("max_dealt_surged", "min_dealt_safe") if c in ep])
         ep = ep.merge(per[per["surged"]].groupby("episode")["dealt"].max().rename("max_dealt_surged"), left_on="episode", right_index=True, how="left")
         ep = ep.merge(per[~per["surged"]].groupby("episode")["dealt"].min().rename("min_dealt_safe"), left_on="episode", right_index=True, how="left")
     per_m = ep.groupby("match_id").size()
-    r.headline = (f"Surge detected in {len(per_m):,} of {n_matches:,} matches ({len(ep):,} episodes). Counting damage {window}, "
-                  f"surged players had dealt a median {per.loc[per['surged'], 'dealt'].median():.0f}, against "
+    r.headline = (f"Surge detected in {len(per_m):,} of {n_matches:,} matches ({len(ep):,} episodes). Counting {rule}, "
+                  f"surged players had a median score of {per.loc[per['surged'], 'dealt'].median():.0f}, against "
                   f"{per.loc[~per['surged'], 'dealt'].median():.0f} for players it skipped.")
-    r.notes.append(f"Damage on this page is counted {window}: the window the Surge study found best explains who gets surged.")
+    r.notes.append(f"Surge score on this page: {rule}, the rule the Surge study found best explains who gets surged.")
     r.metric("Surge episodes", f"{len(ep):,}")
     r.metric("Matches with surge", f"{len(per_m):,}")
     r.metric("Players alive at surge", f"{ep['alive'].median():.0f}", "Median at the first tick of an episode")
@@ -118,10 +121,10 @@ def run(ctx: Context) -> Result:
             ps.append(sps.mannwhitneyu(g.loc[g["surged"], "dealt"], g.loc[~g["surged"], "dealt"], alternative="less").pvalue)
     if ps:
         comb = sps.combine_pvalues(ps, method="stouffer").pvalue
-        r.test("Per episode", "Surge hits players who dealt less damage", len(ps),
+        r.test("Per episode", "Surge hits players with a lower surge score", len(ps),
                f"surged median {per.loc[per['surged'], 'dealt'].median():.0f} vs safe {per.loc[~per['surged'], 'dealt'].median():.0f}",
-               float(comb), alpha, ("Surge targets the lowest damage-dealers, so dealing damage before it is protection",
-                                   "Surged players had not dealt less damage than safe players"),
+               float(comb), alpha, (f"Surge targets the lowest scorers on {rule}, so building that score before it is protection",
+                                   "Surged players didn't have a lower surge score than safe players"),
                direction=per.loc[~per["surged"], "dealt"].median() - per.loc[per["surged"], "dealt"].median())
     gap = per.groupby("match_id").apply(
         lambda g: g.loc[g["surged"], "final"].mean() - g.loc[~g["surged"], "final"].mean()
@@ -136,36 +139,34 @@ def run(ctx: Context) -> Result:
                                  per_tick=("per_tick", "median"), max_surged=("max_dealt_surged", "median"),
                                  min_safe=("min_dealt_safe", "median")).reset_index()
     by = by.rename(columns={"phase": "Zone", "episodes": "Episodes", "alive": "Players alive", "hit": "Players hit",
-                            "per_tick": "Damage per tick", "max_surged": "Most damage dealt by a surged player",
-                            "min_safe": "Least damage dealt by a safe player"})
+                            "per_tick": "Damage per tick", "max_surged": "Highest surge score of a surged player",
+                            "min_safe": "Lowest surge score of a safe player"})
     r.table("Surge by zone", by.round(0))
-    r.notes.insert(0, "Reading the phase table: a player who had dealt more than 'Most damage dealt by a surged player' "
+    r.notes.insert(0, "Reading the phase table: a player whose surge score was above 'Highest surge score of a surged player' "
                       "was never surged in that phase. That number is a practical safe target.")
     r.chart("bar", "Surge episodes by zone", [dict(name="Episodes", x=[f"Zone {int(p)}" for p in by["Zone"]], y=by["Episodes"].tolist())],
             y_label="Episodes")
     # Compare players facing the same surge: rank each player's damage within the episode, using the damage window surge
     # actually counts (measured on the Surge study). Absolute whole-match damage mixes early and late surges: players with a
     # lot of whole-match damage are mostly the ones still alive late, when surge hits a bigger share of a smaller lobby.
-    from .surge_study import WINDOWS, measured
-    m = measured(ctx)
     if m is not None and len(m["per"]):
         pr = m["per"]
         q = pd.cut(pr["rank_w"], [-0.001, 0.25, 0.5, 0.75, 1.0001], labels=["Bottom quarter", "Second quarter", "Third quarter", "Top quarter"])
         g = pr.groupby(q, observed=False)["surged"].mean()
         r.chart("bar", "Chance of being surged, by damage rank within the same surge",
                 [dict(name="Surged", x=[str(i) for i in g.index], y=(g * 100).round(1).tolist())],
-                x_label=f"Damage dealt ({WINDOWS[m['best']].lower()}), ranked against the other players alive at that surge",
+                x_label=f"Surge score ({rule}), ranked against the other players alive at that surge",
                 y_label="% surged")
 
     conclude(r, ctx, strategy=True, primary=["Per episode", "Per match"], alpha=alpha, recommended=20, single_season=True,
              takeaway_found="Surge behaves predictably: " + "; ".join(t["reading"].lower() for t in r.tests if t["significant"]) + ".",
              takeaway_none="Surge was detected, but no consistent pattern in who it hits yet.",
-             next_found=["Use the phase table's safe target as the damage goal before each surge phase.",
+             next_found=["Use the phase table's safe target as the surge-score goal before each surge phase.",
                          "Collect more later-round matches (data menu option T): surge is round-specific."],
              next_none=["Collect more later-round matches (data menu option T): surge is round-specific."])
     r.notes += [
         f"Surge is detected, not recorded: {MIN_PLAYERS}+ players inside the zone losing health in the same second with no "
         "player hitting them. Fall damage is individual and the storm is excluded, so false alarms should be rare.",
-        "Damage dealt counts damage to players on other teams before the episode starts.",
+        "Surge score counts damage between players on different teams only (no storm, fall or self damage), before the episode starts.",
     ]
     return r

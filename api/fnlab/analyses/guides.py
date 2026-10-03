@@ -545,18 +545,18 @@ GUIDES: dict[str, Guide] = {
     ),
 
     "surge": Guide(
-        question="When does competitive storm surge trigger, who does it hit, and how much damage keeps a player safe?",
+        question="When does competitive storm surge trigger, who does it hit, and what surge score keeps a team safe?",
         method=[
             "Replays don't record surge directly. It appears as 3 or more players inside the safe zone losing health in "
             "the same second with no player hitting them; ticks within 10 s form one episode.",
-            "For each episode: players alive, players hit, damage per tick, and the damage each alive player had dealt to "
-            "other players before it started.",
-            "Surge targets the lowest damage-dealers, so comparing surged and safe players' damage estimates the "
-            "threshold to stay safe.",
+            "For each episode: players alive, players hit, damage per tick, and each alive player's surge score before it started.",
+            "Surge score is the rule the Surge study measured. Since October 2025, tournaments surge the teams with the lowest net "
+            "damage (damage dealt minus damage taken, between players only); older matches used damage dealt. Comparing surged and "
+            "safe players' scores estimates the threshold to stay safe.",
         ],
         terms={
-            "Surge hits players who dealt less damage": "Per episode, a rank test of damage dealt by surged vs safe "
-                                                        "players, combined across episodes.",
+            "Surge hits players with a lower surge score": "Per episode, a rank test of surge scores of surged vs safe "
+                                                           "players, combined across episodes.",
             "Surged players finish worse": "Per match, surged players' average placement minus safe players'.",
             "Matches with in-match data": "Matches that include health and damage.",
             "Surge episodes": "Surge episodes detected.",
@@ -564,8 +564,8 @@ GUIDES: dict[str, Guide] = {
             "Players alive at surge": "Median players alive when an episode starts.",
             "Players hit per episode": "Median players surged per episode.",
             "Damage per tick": "Median health or shield lost per surge tick.",
-            "Surge by zone": "Per phase: episodes, players alive and hit, damage per tick, and the damage dealt by the "
-                              "highest-damage surged player and the lowest-damage safe player.",
+            "Surge by zone": "Per phase: episodes, players alive and hit, damage per tick, and the highest surge score of a "
+                              "surged player and the lowest of a safe player.",
             "Per episode": "One test per surge episode, combined.",
             "Per match": "One summary per match.",
             "p": P_VALUE,
@@ -573,18 +573,18 @@ GUIDES: dict[str, Guide] = {
         charts={
             "Surge episodes by zone": "Which phases trigger surge.",
             "Chance of being surged, by damage rank within the same surge": "Players ranked against the others alive at the same "
-                "surge, by damage in the window surge actually counts (see the Surge study). The share surged should fall from the "
+                "surge, by the surge score the Surge study measured. The share surged should fall from the "
                 "bottom quarter to the top. Ranking within each surge avoids mixing early surges with late ones, when a smaller "
                 "lobby means a bigger share is hit.",
         },
         conclude=[
-            "The 'Most damage dealt by a surged player' column is a practical target: above it, nobody was surged in "
-            "that phase.",
+            "The 'Highest surge score of a surged player' column is a practical target: above it, nobody was surged in "
+            "that phase. Under net damage, damage you take lowers it, so avoiding chip damage counts as much as tagging.",
             "Surge is round-specific: early qualifier rounds may never trigger it. Collect later rounds with option T.",
         ],
         limits=[
             "Detection is inferred from damage patterns; very small surges (fewer than 3 players) aren't caught.",
-            "Damage dealt counts damage to players only.",
+            "Surge score counts damage between players on different teams only (no storm, fall or self damage).",
         ],
     ),
 
@@ -686,8 +686,9 @@ GUIDES: dict[str, Guide] = {
             "Danger is enemy player-seconds within 30 m. Their base is compared with the best spot that had no more danger.",
             "Validation: for every team's base in every hold, how well the score predicts the damage that team actually dealt, "
             "compared with a simpler score (just being near enemies).",
-            "Surge: each detected surge episode, whether they were hit, and their damage dealt against the least damage of a player "
-            "who stayed safe. Loadouts: the weapons each of them held up to each zone.",
+            "Surge: each detected surge episode, whether they were hit, and their surge score (the rule the Surge study measured: "
+            "team net damage since October 2025) against the lowest score that stayed safe. Loadouts: the weapons each of them held "
+            "up to each zone.",
         ],
         terms={
             "Zones with a stronger base anywhere": "Zone holds where some spot in the zone offered at least twice their base's "
@@ -702,8 +703,8 @@ GUIDES: dict[str, Guide] = {
                                                   "they actually dealt (+1 perfect, 0 no link). The higher one is the better way to "
                                                   "judge a surge base.",
             "Loadouts during each hold": "The latest weapons each player held up to each zone, with rarity.",
-            "Surge episodes in their games": "Each detected surge: whether they were hit, their damage dealt, and the least damage "
-                                             "of a player who stayed safe.",
+            "Surge episodes in their games": "Each detected surge: whether they were hit, their surge score, the lowest score that "
+                                             "stayed safe, and the margin between them (negative = inside the surged group).",
             "Their damage trade by height": "Their exchanges grouped by how far above or below the opponent they were.",
             "Teams in the selected matches": "Every team with its results, to identify a team at a LAN.",
         },
@@ -717,7 +718,8 @@ GUIDES: dict[str, Guide] = {
         conclude=[
             "If the best spots keep sitting on the side where rotations arrive (often the side facing the previous zone or the bulk "
             "of the lobby), that's a rule they can use every game: build the surge base facing incoming rotations.",
-            "If they were surged with damage close to the safe threshold, they need to tag earlier in that zone.",
+            "If they were surged close to the safe threshold, they need to tag earlier in that zone, or take less chip damage: "
+            "under net damage, damage taken counts against them.",
         ],
         limits=[
             "Tag opportunities use where other teams actually went in that game: they show what a base would have offered, not what "
@@ -731,10 +733,14 @@ GUIDES: dict[str, Guide] = {
         method=[
             "Every 10 seconds from zone 2 on, every living team's situation is recorded: teams left, the zone and how far through "
             "it, teammates alive, health and shield, distance outside the next zone and into the storm, distance from the centre, "
-            "height rank, enemy teams within 50 m and 150 m, damage taken in the last 10 seconds, damage dealt this zone (ranked "
-            "against the lobby, which is what surge looks at), and eliminations so far.",
-            "The model learns what each situation turned into: placement points on the FNCS 2026 table (65 for 1st down to 22 for "
-            "15th, 0 below: the cliff) plus 4 for every elimination still to come. It's checked on matches it never saw.",
+            "height rank, enemy teams within 50 m and 150 m, damage taken in the last 10 seconds, net damage this zone (dealt minus "
+            "taken, ranked against the lobby: what tournament surge counts), eliminations so far, and both teams' skill (the team's "
+            "Power Rankings rank and the lobby's median).",
+            "The model learns what each situation turned into: placement points on the active scoring scheme (api/fnlab/scoring.json; "
+            "FNCS 2026 Duos finals by default: 65 for 1st down to 2 for 25th, 0 below) plus elimination points for every elimination "
+            "still to come. It's checked on matches it never saw.",
+            "Skill is an input, and the baseline knows it too, so the model can't credit whatever strong teams happen to do: the gap "
+            "between the model and the baseline is what the situation adds beyond who the teams are.",
             "Getting hit while rotating: the chance that a team you weren't fighting (no hits between you in the last 30 seconds) "
             "hits you in the next 10 seconds, outside the next zone against inside it, and what that costs in points.",
             "Plan comparison: two situations priced by the model, and which differences drive the gap.",
@@ -742,7 +748,11 @@ GUIDES: dict[str, Guide] = {
         terms={
             "Plan comparison": "Expected total points from this moment for each plan: eliminations so far plus what's still to come.",
             "Model accuracy": "How much of the variation in points still to come the model explains on matches it never saw, "
-                              "against a baseline that only knows teams left and the zone. The gap is what the situation adds.",
+                              "against a baseline that only knows teams left, the zone and both teams' skill. The gap is what the "
+                              "situation adds beyond who the teams are.",
+            "Skill input": "The share of players with a Power Rankings rank. Low coverage means the model can't separate strong teams "
+                           "from good situations.",
+            "Scoring": "The scoring scheme every number on this page uses, from api/fnlab/scoring.json.",
             "Hit within 10 s, zones 7–8": "The chance a team you weren't fighting hits you in the next 10 seconds, rotating against holding.",
             "Situations analysed": "Living teams, every 10 seconds, across the selected matches.",
             "What each change is worth in the endgame": "The model's average change in expected points for each change, over real "
@@ -753,12 +763,14 @@ GUIDES: dict[str, Guide] = {
         charts={
             "What each change is worth in the endgame (zones 6–9)": "Each bar is a change, in expected points. Longer bars are the "
                 "decisions that matter most in the endgame.",
-            "Chance of a top-15 finish (the points cliff), by teams left": "How often teams in each situation finish top 15, where "
-                "placement points start. The gap between the lines is the price of being outside and damaged.",
+            "Chance of finishing in the points, by teams left": "How often teams in each situation finish inside the paid places "
+                "(top 25 in FNCS 2026 Duos), where placement points start. The gap between the lines is the price of being outside "
+                "and damaged.",
             "Points still to come, by teams left": "Average points still to come for each situation as the lobby shrinks.",
             "Chance of being hit by a new team within 10 s": "The risk of someone you weren't fighting hitting you, rotating against "
                                                              "holding, by zone group.",
-            "Chance of being surged, by damage dealt": "When surge triggered: how often players in each quarter of damage dealt were surged.",
+            "Chance of being surged, by surge score": "When surge triggered: how often players in each quarter of the measured surge "
+                                                      "score were surged.",
             "Is the model calibrated?": "Predicted against real points still to come. Close to the 'Perfect' line means the "
                                         "model's numbers can be taken at face value.",
         },
@@ -781,14 +793,16 @@ GUIDES: dict[str, Guide] = {
         method=[
             "What the engine knows (live only): its own position, health and shield, teammates alive, eliminations, the current "
             "and next zone and their timers, distance outside the next zone and into the storm, teams left, damage just taken, "
-            "surge as the HUD shows it (damage above or below the cut-off), enemy teams within the perception radius (how many, "
-            "how close, how far above), and the natural ground under it. Never far enemies' positions or anyone else's health.",
-            "A points model trained on those live inputs only (FNCS scoring, the top-15 cliff) prices every situation. It's told "
+            "surge as the HUD shows it (team net damage above or below the cut-off), enemy teams within the perception radius (how "
+            "many, how close, how far above), the natural ground under it, and both teams' Power Rankings. Never far enemies' "
+            "positions or anyone else's health.",
+            "A points model trained on those live inputs only (the active scoring scheme, paying down to 25th in FNCS 2026 Duos) prices "
+            "every situation. It's told "
             "the directions the game fixes (more health never hurts, more storm never helps, fewer teams left never hurts a team "
             "that's alive) and learns how much each matters. Each game is priced by a model that never saw it.",
             "Every 20 seconds the engine compares five options 20 seconds ahead: hold, rotate by the direct route, rotate by a less "
             "crowded entry (perceived enemies only), heal (when there's health to gain), and engage a visible enemy (the measured "
-            "win rate for its health; a loss means being placed now, on the cliff).",
+            "win rate for its health; a loss means being placed now, at the points for the teams left).",
             "What the team actually did over the same 20 seconds is read from the data (held, rotated by which route, healed, "
             "engaged) and priced the same way: the difference is the points at stake.",
             "The real test: across every team in the selected matches, teams that happened to follow the engine at most key "
@@ -798,7 +812,9 @@ GUIDES: dict[str, Guide] = {
             "Engine knowledge": "How much of the points still to come the live-only model explains on matches it never saw, "
                                 "against the full-information model. The gap is the price of the fog of war.",
             "Followed 90%+ vs under 60%": "Average points per game of teams that followed the engine at 90%+ of key decisions, "
-                                          "against teams under 60%.",
+                                          "against teams under 60%. Across teams, so stronger teams following more can explain it.",
+            "Same team: following vs finishing": "The same team across games: positive means it finished better in the games it "
+                                                 "followed the engine more. The result to trust, because team strength can't explain it.",
             "Decisions followed": "Key decisions (an option beat holding by half a point, or the team did something else) where the "
                                   "team did what the engine recommends, within half a point.",
             "Disagreements worth 1+ point": "Decisions where the engine's call was worth at least one expected point more.",
@@ -917,8 +933,8 @@ GUIDES: dict[str, Guide] = {
         method=[
             "Type the players' names (a name matches if it contains what you type; separate players with commas) and select the "
             "tournament's matches in the left panel, for example with the event window filter.",
-            "Games are numbered by when each replay started. Points use the FNCS 2026 table (65, 56, 52, 48... for 1st to 15th; "
-            "places below 15th are estimated) plus 4 per elimination.",
+            "Games are numbered by when each replay started. Points use the active scoring scheme in api/fnlab/scoring.json (FNCS "
+            "2026 Duos finals by default: 65, 56, 52, 48... down to 2 for 25th) plus elimination points.",
             "For every zone: whether the team was already inside the next zone when it appeared, whether they rotated behind "
             "comparable teams, whether they were at the edge of the zone in zones 5+, storm damage, and height rank in zones 6+.",
             "How each game ended: the zone, the team that eliminated them and where it finished, health going into that last "
@@ -929,7 +945,8 @@ GUIDES: dict[str, Guide] = {
                                              "points: games, which games it won, average placement and usual drop. At a LAN, where "
                                              "players use event accounts, this is how to find a team: by its results.",
             "Games found": "Matches in the selection where the team was found, and the account names it was found as.",
-            "Points (computed)": "Placement points plus 4 per elimination. Compare with the official total to check the data.",
+            "Points (computed)": "Placement points plus elimination points on the active scoring scheme. Compare with the official "
+                                 "total to check the data.",
             "Average placement": "The team's average placement, and its wins.",
             "Game by game": "One row per game: placement, eliminations, points, drop, zones where they were already inside the next "
                             "zone, rotations where they fell behind, how the game ended, and the risks they took.",
@@ -955,9 +972,11 @@ GUIDES: dict[str, Guide] = {
                  "passively, rotating early and building a surge base, or rotating late, and at what base height?",
         method=[
             "Surge is detected as several players inside the zone losing health in the same second with no player hitting them.",
-            "Which damage surge counts is measured: for each surge, players are ranked by damage dealt over several windows (whole "
-            "match, since the zone appeared, since the previous surge check, the last 60, 120 and 180 seconds); the window that "
-            "best separates surged from safe players is used everywhere, including the Surge page.",
+            "Which damage surge counts is measured: for each surge, players are ranked by every candidate rule, damage dealt or net "
+            "damage (dealt minus taken), per player or per team, over several windows (whole match, since the zone appeared, since "
+            "the previous surge check, the last 60, 120 and 180 seconds). The rule that best separates surged from safe players is "
+            "used everywhere: the Surge page, the team audit and the points model. Epic's announced rule since October 2025 (team "
+            "net damage) wins near-ties, so a small sample can't override it.",
             "Every player alive when a surge zone appeared is followed to its first surge check and classed by what they did: held "
             "and hunted (moved under 80 m, dealt 25+ damage), held passively (moved under 80 m, dealt less), rotated early then held "
             "(inside the new zone at least 20 s before the check), or rotated late (still moving at the check).",
@@ -970,11 +989,13 @@ GUIDES: dict[str, Guide] = {
         terms={
             "Best approach (safe and alive)": "The approach and base height with the highest share of players safe from surge and "
                                               "still alive at the next zone (at least 10 players).",
-            "Damage surge counts": "The damage window that best explains who gets surged.",
-            "Typical cut-off": "The median damage, in that window, that kept players safe.",
+            "Damage surge counts": "The rule (measure, team or player, and window) that best explains who gets surged.",
+            "Teammates surged together": "Of the teams with two or more players alive at a surge, the share where all of them were "
+                                         "surged or none were. Near 100% confirms surge picks teams, not players.",
+            "Typical cut-off": "The median surge score, on that rule, that kept players safe.",
             "Surge episodes": "Detected surges across the selected matches.",
-            "Which damage surge counts": "Each candidate window and how well it separates surged from safe players (1.00 = perfectly, "
-                                         "0.50 = no better than chance).",
+            "Which damage surge counts": "Every candidate rule (measure, team or player, window), best first, and how well it separates "
+                                         "surged from safe players (1.00 = perfectly, 0.50 = no better than chance).",
             "How surge works, by zone": "For each zone: how often surge hit, how long after the zone appeared, relative to the shrink "
                                         "starting, players alive and hit, damage per tick and per player hit, and the cut-off.",
             "Approach and base height: what worked": "Every approach at every base height: players, safe from surge, eliminated "
@@ -995,7 +1016,7 @@ GUIDES: dict[str, Guide] = {
                                                                                   "approaches, against everyone else.",
             "Everyone at the surge check": "Every player at the moment of one zone's first surge check: red were surged, grey stayed "
                                            "safe, teal stayed safe with the most damage. Choose the game and zone above.",
-            "Damage needed to stay safe from surge, by zone": "The median cut-off in each zone.",
+            "Damage needed to stay safe from surge, by zone": "The median cut-off in each zone, on the measured rule.",
         },
         conclude=[
             "If rotating early and building a tall base beats sitting and hunting on 'safe and alive', the default surge plan is to "

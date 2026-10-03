@@ -4,19 +4,22 @@ engine.py - a decision engine that only knows what a player knows live.
 Live knowledge (per team, every DECISION_S seconds):
   fully    own position, health + shield, teammates alive, eliminations, the current and next zone and their timers,
            distance outside the next zone and into the storm, teams left, damage taken in the last 10 s
-  surge    damage dealt this zone above or below the cut-off, as the HUD shows it (the cut-off rank is the share of
-           players surged in detected surge episodes, else 25%)
+  surge    team net damage this zone (dealt minus taken, between players) above or below the cut-off, as the HUD
+           shows it (the cut-off rank is the share of players surged in detected surge episodes, else 25%)
+  skill    the team's and the lobby's Power Rankings (known before the game), so values compare like with like
   partly   enemy teams within the perception radius (adjustable): how many, how close, and how far above or below
   terrain  natural ground height under you (from the playable map), as a rank within the zone
   never    far enemies' positions, any enemy's health or loadout, height rank in the lobby
-A points model trained on these live inputs only prices every situation (FNCS scoring, the top-15 cliff).
+A points model trained on these live inputs only prices every situation, on the active scoring scheme
+(scoring.json: FNCS 2026 Duos finals by default, paying down to 25th).
 
 Options, looked at HORIZON_S seconds ahead:
   hold       stay; storm damage and the chance of a random hit where you stand
   rotate     run toward the next zone's edge by the direct route
   rotate_alt the less crowded entry (perceived enemies only), up to 45 degrees around
   heal       +50 health and shield, staying put
-  engage     a visible enemy: win with the measured win rate for your health (else placed now, on the cliff)
+  engage     a visible enemy: win with the measured win rate for your health (else placed now: the placement
+             points for the teams left)
 The engine picks the option with the most expected points; the team's actual action over the same 20 s is read
 from the data and priced the same way.
 """
@@ -26,13 +29,14 @@ import numpy as np
 import pandas as pd
 
 from . import ep_model as ep
+from . import scoring
 from .store import df
 
 DECISION_S = 20
 HORIZON_S = 20
 HEAL = 50
 LIVE = ["teams_alive", "zone", "progress", "members", "hp", "outside_m", "storm_m", "off_centre", "kills", "hit_10s",
-        "surge_margin", "seen", "seen_close", "seen_above", "ground_rank"]
+        "surge_margin", "seen", "seen_close", "seen_above", "ground_rank", *ep.SKILL]
 ACTIONS = {"hold": "Hold", "rotate": "Rotate now (direct)", "rotate_alt": "Rotate by the less crowded entry", "heal": "Heal first",
            "engage": "Engage the visible team"}
 STORM_DPS = {2: 1, 3: 1, 4: 2, 5: 5, 6: 8}          # per second; 10 from zone 7
@@ -66,8 +70,8 @@ def live_states(con, team: pd.DataFrame, perceive_m: float, land) -> pd.DataFram
         zsum = (m * p["z"].to_numpy(float)[None, :]).sum(1)
         above[idx] = np.where(cnt > 0, (zsum / np.maximum(cnt, 1) - rows["z"].to_numpy(float)) / 100, 0.0)
     t["seen"], t["seen_close"], t["seen_above"] = seen, close, above
-    # surge as the HUD shows it: dealt rank above or below the cut-off
-    t["surge_margin"] = t["dealt_rank"] - surge_cutoff(con)
+    # surge as the HUD shows it: team net damage rank above or below the cut-off
+    t["surge_margin"] = t["surge_rank"] - surge_cutoff(con)
     # natural ground height rank under you, within the zone
     if land is not None:
         _, h = land.lookup(t["x"].to_numpy(), t["y"].to_numpy())
@@ -128,8 +132,11 @@ def _storm_circle(row, s):
             row["cur_r"] + f * (row["next_r"] - row["cur_r"]))
 
 
-def evaluate(t: pd.DataFrame, model, run_ms: float, p_hit: dict, odds: pd.Series, decision_s: int = DECISION_S) -> pd.DataFrame:
-    """Price each option, and what the team actually did, at every decision point (all at once)."""
+def evaluate(t: pd.DataFrame, model, run_ms: float, p_hit: dict, odds: pd.Series, decision_s: int = DECISION_S,
+             scheme: scoring.Scheme | None = None) -> pd.DataFrame:
+    """Price each option, and what the team actually did, at every decision point (all at once).
+    Losing a fight places the team now, at the scheme's points for the teams left; winning adds its elimination points."""
+    scheme = scheme or scoring.active()
     t = t.sort_values(["match_id", "team_index", "t"]).reset_index(drop=True)
     nxt = t.groupby(["match_id", "team_index"]).shift(-int(HORIZON_S / ep.STEP))
     keep = ((t["t"] % decision_s) < ep.STEP) & nxt["t"].notna() & (nxt["t"] - t["t"] <= HORIZON_S + ep.STEP)
@@ -181,13 +188,13 @@ def evaluate(t: pd.DataFrame, model, run_ms: float, p_hit: dict, odds: pd.Series
     P = {k: model.predict(v[LIVE].to_numpy(float)) for k, v in S.items()}
     hb = pd.cut(hp, [-1, 75, 125, 175, 1e9], labels=["low", "mid", "high", "full"]).astype(str)
     p_win = np.array([float(odds.get(b, 0.45)) for b in hb])
-    lose = np.array([ep.PLACEMENT_POINTS.get(int(v), 0) for v in d["teams_alive"]], float)
+    lose = scheme.placement_points(d["teams_alive"].astype(int)).to_numpy(float)
     NEG = -1e9
     d["ev_hold"] = P["hold"]
     d["ev_rotate"] = np.where(to_edge > 0, P["rotate"], NEG)
     d["ev_rotate_alt"] = np.where((to_edge > 0) & (crowd > 0), P["rotate_alt"], NEG)
     d["ev_heal"] = np.where(hp <= full_hp - 25, P["heal"], NEG)                # only worth considering when there's health to gain
-    d["ev_engage"] = np.where(d["seen"].to_numpy(float) > 0, p_win * (P["win"] + ep.KILL_POINTS) + (1 - p_win) * lose, NEG)
+    d["ev_engage"] = np.where(d["seen"].to_numpy(float) > 0, p_win * (P["win"] + scheme.elimination) + (1 - p_win) * lose, NEG)
     # what they actually did over the same 20 s
     moved_in = d["outside_m"].to_numpy(float) - n["outside_m"].to_numpy(float)
     same_zone = n["zone"].to_numpy() == zone

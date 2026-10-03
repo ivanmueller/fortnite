@@ -3,7 +3,7 @@ Team audit: one team, game by game. Where did their points come from, and where 
 
 Find the team by typing names (a name matches if it contains what's typed; separate players with commas).
 For every selected match the team played:
-  points        placement points (FNCS 2026 table; unknown places below 15th are estimated) + 4 per elimination
+  points        placement + elimination points on the active scoring scheme (scoring.json; FNCS 2026 Duos finals by default)
   drop          landing spot and whether it was contested; eliminated off spawn
   each zone     already inside the next zone when it appeared; distance from the current zone's centre (50/50,
                 shifted and moving zones); rotation timing vs comparable players; storm damage; endgame height
@@ -16,16 +16,14 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .. import scoring
 from ..conclusion import conclude
 from ..result import Result
 from ..store import df
 from . import Context, Param, register
 from ._events_common import has_tables, unexplained_drops
 
-# FNCS 2026 placement points (1st-15th published); 16th-25th estimated (2-point steps); 26th+ 0.
-PLACEMENT_POINTS = {1: 65, 2: 56, 3: 52, 4: 48, 5: 44, 6: 40, 7: 38, 8: 36, 9: 34, 10: 32, 11: 30, 12: 28, 13: 26, 14: 24, 15: 22,
-                    16: 20, 17: 18, 18: 16, 19: 14, 20: 12, 21: 10, 22: 8, 23: 6, 24: 4, 25: 2}
-KILL_POINTS = 4
+# Points come from scoring.py (tables in scoring.json); no table lives here.
 TOP_TEAMS = 5
 
 
@@ -62,7 +60,7 @@ def _team_list(con) -> pd.DataFrame:
     gnum = dict(zip(order["match_id"], order.index + 1))
     key = pl.groupby(["match_id", "team_index"])["player_id"].apply(lambda s: "|".join(sorted(map(str, s)))).rename("members")
     t = pl.groupby(["match_id", "team_index"]).agg(placement=("placement", "min"), kills=("kills", "sum")).join(key).reset_index()
-    t["points"] = t["placement"].map(PLACEMENT_POINTS).fillna(0) + KILL_POINTS * t["kills"].fillna(0)
+    t["points"] = scoring.active().total(t["placement"], t["kills"]).to_numpy(float)
     t["game"] = t["match_id"].map(gnum)
     names = pl.groupby("player_id")["name"].agg(lambda s: s.mode().iat[0] if s.notna().any() else "?")
     drops = pd.Series(dtype=object)
@@ -86,6 +84,7 @@ def _team_list(con) -> pd.DataFrame:
           params=[Param("team", "Players (comma-separated)", "text", ""), Param("match", "Game to draw", "match", "")])
 def run(ctx: Context) -> Result:
     r, con = Result(), ctx.con
+    scheme = scoring.active()
     text = str(ctx.params.get("team") or "").strip()
     team = _find_team(con, text) if text else pd.DataFrame()
     if team.empty:
@@ -110,7 +109,7 @@ def run(ctx: Context) -> Result:
     allp = allp[allp["match_id"].isin(games["match_id"])]
     teams = allp.groupby(["match_id", "team_index"]).agg(placement=("placement", "min"), kills=("kills", "sum"),
                                                           out_t=("death_t", lambda s: np.nan if s.isna().any() else s.max())).reset_index()
-    teams["points"] = teams["placement"].map(PLACEMENT_POINTS).fillna(0) + KILL_POINTS * teams["kills"].fillna(0)
+    teams["points"] = scheme.total(teams["placement"], teams["kills"]).to_numpy(float)
     totals = teams.groupby("team_index").size()  # not used across matches; team indices differ per match
     tid = {(m, t) for m, t in zip(team["match_id"], team["team_index"])}
     mine = teams[[(m, t) in tid for m, t in zip(teams["match_id"], teams["team_index"])]].copy()
@@ -263,8 +262,8 @@ def run(ctx: Context) -> Result:
 
     # ---- points chart and flags summary
     r.chart("stacked_bar", "Points per game", [dict(name="Placement points", x=[f"Game {g}" for g in tbl["Game"]],
-                                             y=[p - KILL_POINTS * e for p, e in zip(tbl["Points"], tbl["Elims"])]),
-                                        dict(name="Elimination points", x=[f"Game {g}" for g in tbl["Game"]], y=(KILL_POINTS * tbl["Elims"]).tolist())],
+                                             y=[p - scheme.elimination * e for p, e in zip(tbl["Points"], tbl["Elims"])]),
+                                        dict(name="Elimination points", x=[f"Game {g}" for g in tbl["Game"]], y=(scheme.elimination * tbl["Elims"]).tolist())],
             y_label="Points")
     allflags = pd.Series([f.split(" (")[0].split(" when")[0] for fl in tbl["Risks taken"] if fl != "–" for f in fl.split("; ")])
     if len(allflags):
@@ -298,8 +297,7 @@ def run(ctx: Context) -> Result:
     total = int(tbl["Points"].sum())
     wins = int((tbl["Placement"] == 1).sum())
     r.metric("Games found", f"{len(tbl)}", f"Found as: {', '.join(names)}")
-    r.metric("Points (computed)", f"{total}", "Placement points (FNCS 2026 table; places below 15th estimated) + 4 per elimination. "
-             "Compare with the official total to check the data.")
+    r.metric("Points (computed)", f"{total}", f"{scheme.describe()} Compare with the official total to check the data.")
     r.metric("Average placement", f"{tbl['Placement'].mean():.1f}", f"Wins: {wins}")
     top_flag = allflags.value_counts().index[0] if len(allflags) else None
     r.headline = (f"{' & '.join(names[:2])}: {len(tbl)} games, {total} points, average placement {tbl['Placement'].mean():.1f}, {wins} win{'s' if wins != 1 else ''}."
@@ -312,6 +310,6 @@ def run(ctx: Context) -> Result:
         "'Already inside the next zone' is zone luck plus positioning; in zones 5+ the direction is close to random, so being at the "
         "edge is the controllable part.",
         f"'Top {TOP_TEAMS} each game' are the teams that finished in the top {TOP_TEAMS} of each game, as a benchmark.",
-        "Points use the published FNCS 2026 table for 1st–15th; places below 15th are estimated, so check the total against the official one.",
+        f"Scoring: {scheme.describe()} Change the scheme or the table in api/fnlab/scoring.json. Check the total against the official one.",
     ]
     return r

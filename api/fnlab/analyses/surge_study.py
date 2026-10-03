@@ -1,10 +1,11 @@
 """
 Surge study: how competitive surge actually works in the selected matches, and how top players handle it.
 
-1. The rule: which window of damage dealt surge counts. For every surge episode, players are ranked by damage dealt
-   over several candidate windows (whole match, since the zone appeared, since the previous surge check, last 60 /
-   120 / 180 s); the window that best separates surged from safe players (mean AUC) is the one the game uses, most
-   likely. Everything below uses it.
+1. The rule: which damage surge counts. Every candidate in surge_rule.py is tried on every surge episode: damage
+   dealt or net damage (dealt minus taken), per player or per team, over several windows (whole match, since the
+   zone appeared, since the previous surge check, last 60 / 120 / 180 s). The candidate that best separates surged
+   from safe players (mean AUC) is the rule the game most likely uses; Epic's announced rule (team net damage)
+   wins near-ties. Everything below, and the Surge page, the team audit and the points model, uses it.
 2. When and how much: in which zones surge hits, how long after the zone appears, players alive, how many are hit,
    damage per tick and in total, and the damage that kept players safe (the cut-off) per zone.
 3. What players do before a surge check, for everyone alive when the zone appeared:
@@ -24,6 +25,7 @@ from ..conclusion import conclude
 from ..result import Result
 from ..stats import ttest_mean
 from ..store import df
+from .. import surge_rule as sr
 from . import ALPHA_PARAM, Context, Param, register
 from ._events_common import NEEDS_EVENTS, conclude_without_data, has_tables, player_hits
 
@@ -46,9 +48,10 @@ _MEASURED: dict = {}
 
 
 def measured(ctx: Context) -> dict | None:
-    """Surge episodes with the damage window surge most likely counts, measured from the selected matches.
-    Returns ep (episodes with zone, appear time, cut-off), per (players per episode with dealt_w and rank_w within the
-    episode), best (window key), mean_auc, auc. Cached per selection."""
+    """Surge episodes with the rule surge most likely uses, measured from the selected matches.
+    Returns ep (episodes with zone, appear time, cut-off), per (players per episode with score_w, the rule's score, and
+    rank_w within the episode), best ((window, measure, level)), label (the rule in words), mean_auc and auc (per
+    candidate), hits, team_agree (share of teams whose members were surged together). Cached per selection."""
     key = tuple(sorted(df(ctx.con, "SELECT match_id FROM sel")["match_id"]))
     if key in _MEASURED:
         return _MEASURED[key]
@@ -65,35 +68,46 @@ def measured(ctx: Context) -> dict | None:
     ep["appear"] = [reveal.get((m, z), np.nan) for m, z in zip(ep["match_id"], ep["zone"])]
     ep["prev_t1"] = ep.groupby("match_id")["t1"].shift(1)
     hits = player_hits(ctx.con)
-    auc = {k: [] for k in WINDOWS}
-    dealt: dict = {k: {} for k in WINDOWS}
+    by_match = {m: g for m, g in hits.groupby("match_id")}
+    cands = [(w, m_, lv) for w in WINDOWS for m_ in sr.MEASURES for lv in sr.LEVELS]
+    auc = {c: [] for c in cands}
+    score: dict = {c: {} for c in cands}
     for _, e in ep.iterrows():
         g = per[per["episode"] == e["episode"]]
-        h = hits[(hits["match_id"] == e["match_id"]) & (hits["t"] < e["t0"])]
+        hm = by_match.get(e["match_id"], hits.iloc[0:0])
+        hm = hm[hm["t"] < e["t0"]]
         starts = {"match": -1e9, "zone": e["appear"] if e["appear"] == e["appear"] else -1e9,
                   "prev": e["prev_t1"] if e["prev_t1"] == e["prev_t1"] else -1e9, "60": e["t0"] - 60, "120": e["t0"] - 120, "180": e["t0"] - 180}
-        for k, t_start in starts.items():
-            v = g["id"].map(h[h["t"] >= t_start].groupby("attacker_id")["amount"].sum()).fillna(0).to_numpy(float)
-            dealt[k][e["episode"]] = dict(zip(g["id"], v))
-            if g["surged"].sum() >= 2 and (~g["surged"]).sum() >= 2:
-                auc[k].append(_auc(v[~g["surged"].to_numpy()], v[g["surged"].to_numpy()]))
-    mean_auc = {k: float(np.nanmean(v)) if v else np.nan for k, v in auc.items()}
-    if not any(v == v for v in mean_auc.values()):
-        best = "zone"
-    else:
-        best = max(mean_auc, key=lambda k: mean_auc[k] if mean_auc[k] == mean_auc[k] else -1)
+        surged = g["surged"].to_numpy(bool)
+        scorable = surged.sum() >= 2 and (~surged).sum() >= 2
+        for w, t_start in starts.items():
+            for (m_, lv), v in sr.scores(hm[hm["t"] >= t_start], g["id"], g["team_index"]).items():
+                score[(w, m_, lv)][e["episode"]] = dict(zip(g["id"], v))
+                if scorable:
+                    auc[(w, m_, lv)].append(_auc(v[~surged], v[surged]))
+    mean_auc = {c: float(np.nanmean(v)) if v else np.nan for c, v in auc.items()}
+    best = sr.choose(mean_auc)
     per = per.copy()
-    per["dealt_w"] = [dealt[best].get(e_, {}).get(i, np.nan) for e_, i in zip(per["episode"], per["id"])]
-    per = per.dropna(subset=["dealt_w"])
-    # 0 least – 1 most, within the same surge; tied players take the lowest rank of their group (dealing nothing is the bottom)
-    per["rank_w"] = per.groupby("episode")["dealt_w"].rank(pct=True, method="min")
-    cut = per.groupby("episode").apply(lambda g: (g.loc[g["surged"], "dealt_w"].max() + g.loc[~g["surged"], "dealt_w"].min()) / 2
+    per["score_w"] = [score[best].get(e_, {}).get(i, np.nan) for e_, i in zip(per["episode"], per["id"])]
+    per = per.dropna(subset=["score_w"])
+    # 0 lowest – 1 highest, within the same surge; tied players take the lowest rank of their group (scoring nothing is the bottom)
+    per["rank_w"] = per.groupby("episode")["score_w"].rank(pct=True, method="min")
+    cut = per.groupby("episode").apply(lambda g: (g.loc[g["surged"], "score_w"].max() + g.loc[~g["surged"], "score_w"].min()) / 2
                                        if g["surged"].any() and (~g["surged"]).any() else np.nan, include_groups=False).rename("cutoff")
     ep = ep.merge(cut, left_on="episode", right_index=True, how="left")
-    out = dict(ep=ep, per=per, best=best, mean_auc=mean_auc, auc=auc, hits=hits)
+    out = dict(ep=ep, per=per, best=best, label=sr.label(WINDOWS[best[0]], best[1], best[2]), mean_auc=mean_auc, auc=auc,
+               hits=hits, team_agree=sr.teammates_agree(per))
     _MEASURED.clear()
     _MEASURED[key] = out
     return out
+
+
+def rule_score_at(hits_by_match: dict, empty: pd.DataFrame, match_id, ids, teams, t_from: float, t_to: float,
+                  best: tuple[str, str, str]) -> np.ndarray:
+    """The rule's score for these players from hits in [t_from, t_to] of one match."""
+    hm = hits_by_match.get(match_id, empty)
+    hm = hm[hm["t"].between(t_from, t_to)]
+    return sr.scores(hm, ids, teams)[(best[1], best[2])]
 
 
 APPROACHES = ["Held and hunted", "Held passively", "Rotated early, then held", "Rotated late"]
@@ -138,14 +152,27 @@ def run(ctx: Context) -> Result:
         conclude_without_data(r, ctx)
         return r
     ep, per, best, mean_auc, auc, hits = m["ep"], m["per"], m["best"], m["mean_auc"], m["auc"], m["hits"]
+    rule = m["label"]
+    hits_by_match = {mm: g for mm, g in hits.groupby("match_id")}
 
     # ---- 1. the rule
+    order = sorted(mean_auc, key=lambda c: -(mean_auc[c] if mean_auc[c] == mean_auc[c] else -1))
     r.table("Which damage surge counts", pd.DataFrame({
-        "Damage window": [WINDOWS[k] for k in WINDOWS],
-        "How well it separates surged from safe players": [f"{mean_auc[k]:.2f}" if mean_auc[k] == mean_auc[k] else "–" for k in WINDOWS],
-        "Episodes": [int(np.sum(~np.isnan(auc[k]))) for k in WINDOWS], "": ["Best fit" if k == best else "" for k in WINDOWS]}))
-    r.metric("Damage surge counts", WINDOWS[best], f"The window that best separates surged from safe players (score "
-             f"{mean_auc[best]:.2f}; 1.00 = perfectly, 0.50 = no better than chance)" if mean_auc[best] == mean_auc[best] else "")
+        "Measure": [sr.MEASURES[c[1]].capitalize() for c in order],
+        "Counted per": [sr.LEVELS[c[2]] for c in order],
+        "Damage window": [WINDOWS[c[0]] for c in order],
+        "How well it separates surged from safe players": [f"{mean_auc[c]:.2f}" if mean_auc[c] == mean_auc[c] else "–" for c in order],
+        "Episodes": [int(np.sum(~np.isnan(auc[c]))) for c in order],
+        "Epic's announced rule": ["Yes" if c[1:] == sr.OFFICIAL else "" for c in order],
+        "": ["Used" if c == best else "" for c in order]}))
+    r.metric("Damage surge counts", rule[0].upper() + rule[1:],
+             f"The rule that best separates surged from safe players (score {mean_auc[best]:.2f}; 1.00 = perfectly, 0.50 = no better "
+             f"than chance). Epic's announced rule, team net damage, is used unless another rule separates them by more than "
+             f"{sr.TIE_MARGIN:.2f}." if mean_auc[best] == mean_auc[best] else "")
+    ta = m.get("team_agree", np.nan)
+    if ta == ta:
+        r.metric("Teammates surged together", f"{ta:.0%}", "Of the teams with two or more players alive at a surge, the share where "
+                 "all of them were surged or none were. Near 100% means surge picks teams, not players.")
 
     # ---- 2. when and how much
     zones = df(con, "SELECT z.match_id, z.phase, z.start_shrink_t, z.finish_shrink_t, z.next_x, z.next_y, z.next_r, z.cur_x, z.cur_y, z.cur_r "
@@ -167,9 +194,9 @@ def run(ctx: Context) -> Result:
         "Damage that kept players safe": bz["cutoff"].round(0).values}))
     r.chart("bar", "Damage needed to stay safe from surge, by zone",
             [dict(name="Cut-off (median)", x=[f"Zone {z}" for z in bz.index], y=bz["cutoff"].round(0).tolist())],
-            y_label=f"Damage dealt ({WINDOWS[best].lower()})")
+            y_label=f"Surge score ({rule})")
     r.metric("Surge episodes", f"{len(ep):,}", f"In {ep['match_id'].nunique()} matches")
-    r.metric("Typical cut-off", f"{ep['cutoff'].median():.0f} damage", f"Median damage ({WINDOWS[best].lower()}) that kept players safe")
+    r.metric("Typical cut-off", f"{ep['cutoff'].median():.0f}", f"Median {rule} that kept players safe")
 
     # ---- 3. every player alive when a surge zone appeared, at its first check
     first = ep.dropna(subset=["appear"]).groupby(["match_id", "zone"]).agg(t_check=("t0", "min"), appear=("appear", "first"),
@@ -267,14 +294,14 @@ def run(ctx: Context) -> Result:
 
         # tests, within the same zone of the same match, among players at risk when the zone appeared
         e_ = ep.set_index("episode")
-        start_dealt = []
-        for _, q in rows.iterrows():
-            ee = e_.loc[q["episode"]]
-            w0 = {"match": -1e9, "zone": q["appear"], "prev": ee["prev_t1"] if ee["prev_t1"] == ee["prev_t1"] else -1e9,
-                  "60": q["appear"] - 60, "120": q["appear"] - 120, "180": q["appear"] - 180}[best]
-            hh = hits[(hits["match_id"] == q["match_id"]) & (hits["attacker_id"] == q["id"])]
-            start_dealt.append(float(hh[hh["t"].between(w0, q["appear"])]["amount"].sum()))
-        rows["at_risk"] = np.array(start_dealt) <= rows["cutoff"].fillna(np.inf)
+        start_score = pd.Series(np.nan, index=rows.index)
+        for (mm, _z), q in rows.groupby(["match_id", "zone"]):
+            ee = e_.loc[q["episode"].iat[0]]
+            ap = float(q["appear"].iat[0])
+            w0 = {"match": -1e9, "zone": ap, "prev": ee["prev_t1"] if ee["prev_t1"] == ee["prev_t1"] else -1e9,
+                  "60": ap - 60, "120": ap - 120, "180": ap - 180}[best[0]]
+            start_score.loc[q.index] = rule_score_at(hits_by_match, hits.iloc[0:0], mm, q["id"], q["team_index"], w0, ap, best)
+        rows["at_risk"] = start_score.to_numpy(float) <= rows["cutoff"].fillna(np.inf).to_numpy(float)
         risk = rows[rows["at_risk"]]
 
         def compare(mask_a, mask_b, label, readings):
@@ -324,8 +351,8 @@ def run(ctx: Context) -> Result:
             "surge and still alive at the next zone (cells with at least 10 players)")
 
     sig = [x for x in r.tests if x["significant"]]
-    r.headline = (f"Surge counts damage dealt {WINDOWS[best].lower()}. It hit in {ep['match_id'].nunique()} matches, a median "
-                  f"{ep['after_reveal_s'].median():.0f} s after a zone appeared; the typical cut-off was {ep['cutoff'].median():.0f} damage.")
+    r.headline = (f"Surge counts {rule}. It hit in {ep['match_id'].nunique()} matches, a median "
+                  f"{ep['after_reveal_s'].median():.0f} s after a zone appeared; the typical cut-off was {ep['cutoff'].median():.0f}.")
     conclude(r, ctx, strategy=True, primary=["At risk when the zone appeared"], alpha=alpha, recommended=50,
              takeaway_found="; ".join(x["reading"] for x in sig) + ".",
              takeaway_none=r.headline + " No approach is clearly better yet for players at risk of surge.",
@@ -333,9 +360,10 @@ def run(ctx: Context) -> Result:
                          "Check the map for a few games: where the top damage-gatherers stood when the surge check came."],
              next_none=["Add later-round and final matches, where surge hits more often."])
     r.notes += [
-        "Which damage counts: for each episode, players are ranked by each window's damage; the window whose ranking best separates "
-        "surged from safe players is used everywhere. The cut-off is midway between the most damage of a surged player and the least "
-        "of a safe one.",
+        "Which damage counts: for each episode, players are ranked by every candidate rule (damage dealt or net damage, per player or "
+        "per team, over each window); the rule whose ranking best separates surged from safe players is used everywhere. Epic's "
+        "announced rule (team net damage) wins near-ties. The cut-off is midway between the highest score of a surged player and the "
+        "lowest of a safe one.",
         f"Approaches, from the zone appearing to its first surge check: held = moved under {MOVED_M} m (hunted if they dealt "
         f"{HUNT_DMG}+ damage); rotated early = moved and were inside the new zone at least {EARLY_S} s before the check; rotated late = "
         "moved but weren't.",
