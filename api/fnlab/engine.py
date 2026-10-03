@@ -195,6 +195,10 @@ def evaluate(t: pd.DataFrame, model, run_ms: float, p_hit: dict, odds: pd.Series
     d["ev_rotate_alt"] = np.where((to_edge > 0) & (crowd > 0), P["rotate_alt"], NEG)
     d["ev_heal"] = np.where(hp <= full_hp - 25, P["heal"], NEG)                # only worth considering when there's health to gain
     d["ev_engage"] = np.where(d["seen"].to_numpy(float) > 0, p_win * (P["win"] + scheme.elimination) + (1 - p_win) * lose, NEG)
+    # the fight's parts, so a review can show the trade (e.g. forcing a refresh): chance to win, points if won, points if lost
+    d["p_win"] = np.where(d["seen"].to_numpy(float) > 0, p_win, np.nan)
+    d["ev_win"] = P["win"] + scheme.elimination
+    d["ev_lose"] = lose
     # what they actually did over the same 20 s
     moved_in = d["outside_m"].to_numpy(float) - n["outside_m"].to_numpy(float)
     same_zone = n["zone"].to_numpy() == zone

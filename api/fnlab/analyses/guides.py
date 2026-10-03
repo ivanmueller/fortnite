@@ -967,6 +967,38 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "match_room": Guide(
+        question="In this game, what did the team have at each moment, what did they decide, and what was each option worth?",
+        method=[
+            "Type the team's names and pick a game. The replay plays in the centre: every player's path, the storm and the next zone, "
+            "eliminations, with the team highlighted. Press play, drag the timeline, or click a zone number or a red decision marker.",
+            "Beside the map, each player at the current moment: shield and health, knocked or eliminated, the weapons seen in their "
+            "hand (rarity colours; the one in hand is outlined), and what they've picked up. For the team: net damage since the zone "
+            "appeared (dealt minus taken, between players) against the line that kept teams safe in that zone across the selected "
+            "matches, surge checks as they happen, and build pieces placed.",
+            "Below the map, the decision at this moment: what the team did, the best option by expected points, every option's value, "
+            "and for a fight its parts: the chance to win at their health, the points if they win (with the elimination) and if they "
+            "lose (placed now, at the points for the teams left). That's the trade behind forcing a refresh: a coin flip for four "
+            "points against the placement points of rotating safely.",
+            "Decisions come from the engine on the Game review page: it knows only what a player knows live, and each game is priced by "
+            "a points model that never saw it.",
+        ],
+        terms={
+            "Decisions worth 1+ point": "Decision points where the best option beat what the team did by at least one expected point.",
+            "Match room": "The replay with the team's HUD and decisions.",
+        },
+        conclude=[
+            "Start with 'Biggest calls this game': each jumps the replay to the moment, so you can watch what happened before and after.",
+            "A fight's chance to win comes from fights in the selected matches at that health; select matching lobbies for it to mean much.",
+        ],
+        limits=[
+            "Material and item counts aren't in the replay data the pipeline reads, so the HUD can't show a player's materials; the "
+            "engine can't yet weigh them in a refresh. The extractor's season survey shows whether the replays carry the inventory.",
+            "Weapons are the ones seen in hand, not the full inventory; build pieces are per team, not per player.",
+            "The engine looks 20 seconds ahead and judges fights by health only, not numbers, height or a third team arriving.",
+        ],
+    ),
+
     "gameplan": Guide(
         question="Before an event, what should this team do: where to land, when to rotate, what surge score to hold, which habits to "
                  "fix, and what the scoring rewards?",

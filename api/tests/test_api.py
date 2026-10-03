@@ -23,7 +23,7 @@ def test_filters_narrow_matches(client):
     assert dated["total"] == 8 and all(r[1] >= "2026-07-01" for r in dated["rows"])
 
 
-ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook", "decides", "audit_zones", "review", "match_map", "engine_review", "surge_study", "gameplan"]
+ANALYSES = ["overview", "zone_randomness", "zone_geometry", "positioning", "eliminations", "height", "rotation", "drops", "loot", "fights", "surge", "endgame_height", "height_damage", "zone_check", "zone_forecast", "playbook", "decides", "audit_zones", "review", "match_map", "engine_review", "surge_study", "gameplan", "match_room"]
 
 
 @pytest.mark.parametrize("aid", ANALYSES)
@@ -148,7 +148,7 @@ def test_pages_point_at_real_analyses(client):
     """Every dashboard section must name a registered analysis, and featured charts must exist on demo data."""
     ids = {a["id"] for a in client.get("/api/analyses").json()}
     pages = client.get("/api/pages").json()
-    assert [p["id"] for p in pages][:4] == ["overview", "gameplan", "review", "storm"]
+    assert [p["id"] for p in pages][:5] == ["overview", "match_room", "gameplan", "review", "storm"]
     for p in pages:
         for s in p["sections"]:
             assert s["analysis"] in ids, s["analysis"]

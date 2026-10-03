@@ -110,3 +110,31 @@ def add_recurring_team(tables: Path, names=("clix", "rapid", "third"), spot=(20_
     landings["poi"] = [f"Spot {int(np.floor(x / cell))},{int(np.floor(y / cell))}" for x, y in zip(landings["land_x"], landings["land_y"])]
     players.to_parquet(tables / "players.parquet", index=False)
     landings.to_parquet(tables / "landings.parquet", index=False)
+
+
+WEAPONS = [("WID_Shotgun_Standard_Athena_UC_Ore_T03", "uncommon"), ("WID_Assault_AutoHigh_Athena_SR_Ore_T03", "legendary"),
+           ("WID_Pistol_SMG_Athena_R_Ore_T03", "rare"), ("WID_Sniper_Heavy_Athena_VR_Ore_T03", "epic")]
+
+
+def add_loadouts(tables: Path, names=("clix", "rapid", "third"), seed=0) -> None:
+    """Weapons in hand, pickups (materials and heals) and build pieces for the recurring team (add_recurring_team first)."""
+    rng = np.random.default_rng(seed)
+    players = pd.read_parquet(tables / "players.parquet")
+    me = players[players["name"].isin(names)]
+    held, picks, builds = [], [], []
+    for _, p in me.iterrows():
+        end = p["death_t"] if p["death_t"] == p["death_t"] else 1200.0
+        for t in np.arange(60.0, end, 25.0):
+            w, rar = WEAPONS[int(rng.integers(0, len(WEAPONS)))]
+            held.append(dict(match_id=p["match_id"], t=float(t + rng.uniform(0, 5)), id=int(p["id"]), weapon=w, category="weapon", rarity=rar))
+        for t in np.arange(70.0, end, 90.0):
+            picks.append(dict(match_id=p["match_id"], spawn_t=float(t - 5), item="WoodItemData", category="materials", rarity=None, count=30,
+                              x=np.nan, y=np.nan, z=np.nan, tossed=False, picked_t=float(t), picked_by=int(p["id"]), gone_t=float(t), taker_inferred=False))
+            picks.append(dict(match_id=p["match_id"], spawn_t=float(t - 5), item="Athena_Shields", category="heal/shield", rarity="uncommon", count=1,
+                              x=np.nan, y=np.nan, z=np.nan, tossed=False, picked_t=float(t + 3), picked_by=int(p["id"]), gone_t=float(t + 3), taker_inferred=False))
+        for t in np.arange(300.0, end, 15.0):
+            builds.append(dict(match_id=p["match_id"], t=float(t), kind="wall", material=str(rng.choice(["wood", "stone", "metal"], p=[0.6, 0.3, 0.1])),
+                               team_index=int(p["team_index"]), player_placed=True, max_health=150, x=np.nan, y=np.nan, z=np.nan, destroyed_t=np.nan))
+    pd.DataFrame(held).to_parquet(tables / "weapons_held.parquet", index=False)
+    pd.DataFrame(picks).to_parquet(tables / "pickups.parquet", index=False)
+    pd.DataFrame(builds).to_parquet(tables / "builds.parquet", index=False)

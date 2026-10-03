@@ -20,6 +20,11 @@ PAGES = [
                 charts=["Matches per week", "Lobby strength"],
                 metrics=["Matches", "Days covered", "Server replays", "Median lobby strength"]),
     ]),
+    dict(id="match_room", title="Match room", question="One game played back: both players' health, shields and weapons, the team's "
+         "surge score, and at every decision what they did against the best option by expected points.", sections=[
+        section("match_room", "Match room", "Type the team's names, then pick a game.", charts=["Match room"],
+                metrics=["Decisions worth 1+ point"]),
+    ]),
     dict(id="gameplan", title="Game plan", question="One team's plan for an event, built only from matches before it: where to land, when to "
          "rotate, the surge line, the habits to fix and what the points reward.", sections=[
         section("gameplan", "Game plan", "Type the team's names, set the event's first day, and select the matches to learn from in the left panel.",

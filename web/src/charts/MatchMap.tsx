@@ -37,7 +37,9 @@ function stormAt(storm: Storm[], t: number): { circle: number[] | null; next: nu
   return { circle: last ? last.next : null, next: null, label: 'Final zone closed' };
 }
 
-export function MatchMap({ spec }: { spec: ChartSpec }) {
+/** The replay. A parent can follow its clock (onTime), move it (time: a new value jumps there and pauses) and hide the
+ *  side panel (bare) to show its own HUD instead. */
+export function MatchMap({ spec, time, onTime, bare = false }: { spec: ChartSpec; time?: number; onTime?: (t: number) => void; bare?: boolean }) {
   const o = spec.options as unknown as {
     tracks: Track[]; storm: Storm[]; plans: Plan[]; hp: { id: number; t: number[]; hp: number[] }[]; land: { cell: number; x: number[]; y: number[] } | [];
     pois: { name: string; x: number; y: number }[]; kills: { t: number; x: number; y: number; victim: number; killer: number }[];
@@ -71,9 +73,12 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
 
   useEffect(() => {
     const el = wrapRef.current; if (!el) return;
-    const ro = new ResizeObserver(() => setWidth(Math.max(400, el.clientWidth - 330)));
+    const ro = new ResizeObserver(() => setWidth(Math.max(320, el.clientWidth - (bare ? 0 : 330))));
     ro.observe(el); return () => ro.disconnect();
-  }, []);
+  }, [bare]);
+  // a parent moving the clock (e.g. jumping to a decision), and following it
+  useEffect(() => { if (time !== undefined) { setT(time); setPlaying(false); } }, [time]);
+  useEffect(() => { onTime?.(t); }, [t, onTime]);
   useEffect(() => { fetch('/api/map/info').then((r) => r.json()).then(setImgInfo).catch(() => setImgInfo(null)); }, []);
   useEffect(() => {
     if (!useImage || !calib) return;
@@ -285,7 +290,7 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
           <button className="btn btn--ghost btn--sm" onClick={() => { setFollow(false); setView(null); }}>Whole map</button>
         </div>
       </div>
-      <aside className="matchmap__panel">
+      {!bare && <aside className="matchmap__panel">
         <div className="matchmap__legend">
           <span><i style={{ background: C.mine }} /> {o.team_name}</span><span><i style={{ background: C.other }} /> Other players</span>
           <span><i style={{ background: C.lane }} /> Routes in</span><span><i style={{ background: C.surge }} /> Surge base</span>
@@ -335,7 +340,7 @@ export function MatchMap({ spec }: { spec: ChartSpec }) {
           <p className="muted small">The downloaded image is fortnite-api's current map, which can be a different island from your games. If so,
             upload that version's map (for example from fortnite.gg's map archive or the Fortnite wiki).</p>
         </div>
-      </aside>
+      </aside>}
       {calibrating && <Calibrator storm={o.storm} existing={calib} image={imgInfo?.custom ? 'custom' : 'pois'}
                                   onDone={(c) => { setCalib(c); setUseImage(!!c && !c.mismatch); setCalibrating(false); }} onCancel={() => setCalibrating(false)} />}
     </div>
