@@ -10,7 +10,7 @@ import traceback
 import uuid
 from dataclasses import asdict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -143,6 +143,25 @@ def run_analysis(analysis_id: str, req: RunRequest):
     out.update(status="ok", analysis=a.id, n_matches=n, n_compare=n_b, params=clean(params),
                elapsed_ms=round((time.perf_counter() - t0) * 1000))
     return out
+
+
+class ExportRequest(BaseModel):
+    filters: Filters = Field(default_factory=Filters)
+    team: str = ""
+    as_of: str = ""
+    scheme: str = ""
+    max_rows: int = 25
+
+
+@app.post("/api/export")
+def export_findings(req: ExportRequest):
+    """Every study run on the selection, as a zip of findings.md (for an AI), findings.json and findings.csv."""
+    _require(req.filters.dataset)
+    from .export import bundle, run_all
+    data = run_all(req.filters, req.team, req.as_of, req.scheme)
+    name = f"vantage-findings-{time.strftime('%Y%m%d-%H%M')}.zip"
+    return Response(content=bundle(data, max(5, min(req.max_rows, 200))), media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 def _require(dataset: str):

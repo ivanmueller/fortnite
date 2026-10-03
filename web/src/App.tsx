@@ -7,6 +7,7 @@ import { SelectionPanel } from './components/SelectionPanel';
 import { SectionView } from './components/SectionView';
 import { MatchesView } from './components/MatchesView';
 import { DataPage } from './components/DataPage';
+import { ExportPanel } from './components/ExportPanel';
 import { GamePlanView } from './components/GamePlanView';
 import { MatchRoom } from './components/MatchRoom';
 
@@ -83,6 +84,7 @@ export function App() {
           <SelectionPanel title="Group B" filters={compareFilters} onChange={(f) => setCompare(f)}
                           facets={facets.data} count={compareCount.data?.total} />
         )}
+        {datasetReady && <ExportPanel filters={filters} count={counts.data?.total} />}
       </aside>}
 
       <main className="main">

@@ -656,3 +656,10 @@ tbody tr:hover { background: #fff; }
 .hud__damage li.is-surge { color: var(--red); }
 .hud__damage li.is-other { color: var(--amber); }
 .call__same { margin: 0.25rem 0 0; font-size: var(--t-sm); color: var(--muted); }
+
+/* ---------- Export all findings (in the selection rail) ---------- */
+.export { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--grid); display: grid; gap: 0.6rem; }
+.export > summary { cursor: pointer; font: 600 var(--t-base) var(--font-display); color: var(--accent); }
+.export label { display: grid; gap: 0.3rem; font-size: var(--t-sm); color: var(--muted); }
+.export p { margin: 0; }
+.export .btn { justify-self: start; }

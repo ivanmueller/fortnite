@@ -200,6 +200,19 @@ def like_for_like(t: pd.DataFrame, col: str) -> dict:
 
 
 RATES = {"surged", "out", "safe_alive"}
+# how each outcome reads when staying back is higher / lower than rotating first
+READ = {
+    "net": ("Staying back gained more net damage than rotating first", "Staying back gained less net damage than rotating first"),
+    "taken": ("Staying back took more damage from players than rotating first", "Staying back took less damage from players than rotating first"),
+    "storm": ("Staying back took more storm damage than rotating first", "Staying back took less storm damage than rotating first"),
+    "surged": ("Staying back was surged more often than rotating first", "Staying back was surged less often than rotating first"),
+    "out": ("Staying back was eliminated during the zone more often than rotating first",
+            "Staying back was eliminated during the zone less often than rotating first"),
+    "safe_alive": ("Staying back was safe from surge and alive more often than rotating first",
+                   "Staying back was safe from surge and alive less often than rotating first"),
+    "points": ("Staying back finished with more placement points than rotating first",
+               "Staying back finished with fewer placement points than rotating first"),
+}
 
 
 def _fmt(col: str, v) -> str:
@@ -243,8 +256,7 @@ def run(ctx: Context) -> Result:
         if res["n"] >= 3:
             good = (res["mean"] > 0) == better_high
             r.test("Like for like", f"{label}: staying back vs rotating first", int(res["n"]), _diff(col, res["mean"]),
-                   res["p"], alpha, (f"Staying back went with more {label.lower()} than rotating first",
-                                     f"Staying back went with less {label.lower()} than rotating first"), direction=res["mean"])
+                   res["p"], alpha, READ[col], direction=res["mean"])
         rows.append({"Outcome": label, ROTATED: _fmt(col, ra), STAYED: _fmt(col, sa),
                      "Staying back, like for like": _diff(col, res["mean"]) if res["n"] else "–",
                      "Groups compared": int(res["n"]),

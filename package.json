@@ -9,7 +9,8 @@
     "dev:web": "npm --prefix web run dev",
     "demo-data": "node scripts/py.mjs pipeline/python/make_synthetic.py --preset demo --sample-dt 3 && node scripts/py.mjs pipeline/python/flatten.py --data-dir data_synthetic",
     "test": "node scripts/py.mjs -m pytest api/tests -q && npm --prefix web run typecheck",
-    "build": "npm --prefix web run build"
+    "build": "npm --prefix web run build",
+    "export": "node scripts/py.mjs scripts/export_findings.py"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
