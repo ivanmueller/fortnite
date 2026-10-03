@@ -186,6 +186,7 @@ def _decisions(ctx: Context, mid: str, ti: int) -> list[dict]:
             followed=bool(q["followed"]), options=[dict(key=k, label=lab, ev=round(v, 1)) for k, lab, v in opts], fight=fight,
             knew=dict(outside_m=round(float(q["outside_m"])), hp=round(float(q["hp"])), teams=int(q["teams_alive"]),
                       members=int(q["members"]), seen=int(q["seen"]), seen_close=int(q["seen_close"]),
+                      seen_inside=int(q["seen_inside"]) if "seen_inside" in q and q["seen_inside"] == q["seen_inside"] else 0,
                       surge="above" if q["surge_margin"] >= 0 else "below", kills=int(q["kills"]))))
     return out
 

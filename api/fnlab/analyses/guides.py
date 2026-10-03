@@ -1002,6 +1002,55 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "storm_hunt": Guide(
+        question="When your team is outside the next zone as it appears, does it pay to go in first and look for surge inside, or to "
+                 "stay back in or behind the storm and tag the teams rotating late?",
+        method=[
+            "Every team outside the next zone by 50 m+ when it appears (zones 2–7 with a wait of 20 s+ before the storm moves) is "
+            "classed by what it did halfway through the wait: inside the zone or half the distance covered = rotated first; under a "
+            "fifth covered = stayed back (in the storm if it took storm damage that zone, else behind it). In between is left out.",
+            "The class comes from movement, not from who got in, so teams sprayed and eliminated on the way in still count as rotating "
+            "first. Judging by who arrived would hide exactly that cost.",
+            "Like for like: teams are only compared with others in the same match and zone, the same distance band (under or over "
+            "300 m) and the same surge standing (net damage over the previous zone, at or below the lobby's median or above it). "
+            "Each group with both approaches gives one difference; the differences are averaged and tested.",
+            "Outcomes over the zone, from appearing to closing: net damage gained, damage taken from players, storm damage, surged at "
+            "any check, eliminated, safe from surge and alive, and the team's placement points in the end.",
+            "Getting sprayed: damage taken from players during the wait, by how many enemy teams were already set up inside the zone "
+            "within 150 m of the team's way in (the nearest point of the edge) when it appeared.",
+        ],
+        terms={
+            "Team-zones compared": "Teams outside the next zone that rotated first or stayed back, each zone counted once.",
+            "Rotated first / stayed back": "How many team-zones took each approach.",
+            "Staying back, like for like": "Placement points, staying back minus rotating first, within comparable groups.",
+            "Like for like": "Each outcome: staying back against rotating first within groups of the same match, zone, distance and "
+                             "surge standing.",
+            "Stay back or rotate first: like for like": "Each outcome's average for both approaches, the like-for-like difference, "
+                                                        "how many groups it rests on, and the verdict.",
+            "Who it pays off for": "The same comparison split by surge standing and distance: it can pay for teams low on surge or "
+                                   "far out and not for others.",
+            "Staying back: in the storm or behind it": "Teams that stayed back, split by whether they sat in the storm.",
+            "Getting sprayed on the way in": "Damage taken during the wait by how many teams were set up at the team's way in.",
+            "p": "The chance of a difference this large if both approaches were really equal. Small means a real difference.",
+        },
+        charts={
+            "Safe from surge and alive through the zone": "For each surge standing, the share of teams neither surged nor eliminated, "
+                                                          "rotating first against staying back (raw, not like for like).",
+            "Damage taken while rotating first, by teams set up at your way in": "If this rises with the number of teams set up, "
+                                                                                 "rotating first into a lined-up edge gets you sprayed.",
+        },
+        conclude=[
+            "Trust the like-for-like column over the raw averages: stronger teams may choose one approach more often.",
+            "Read 'Who it pays off for' before making it a rule: staying back may pay for teams below the surge line and cost the rest.",
+            "If the spray table rises steeply, the decision engine already prices it: it counts the teams it can see set up ahead.",
+        ],
+        limits=[
+            "Needs in-match health and damage, and zones where surge was live; early qualifier rounds may have no surge.",
+            "Cover, builds and line of sight aren't in the data: 'set up at your way in' counts teams near it, not teams with a shot.",
+            "Groups need both approaches in the same match and zone; with few matches, the comparison rests on few groups.",
+        ],
+    ),
+
     "gameplan": Guide(
         question="Before an event, what should this team do: where to land, when to rotate, what surge score to hold, which habits to "
                  "fix, and what the scoring rewards?",

@@ -50,7 +50,7 @@ def live_states(con, team: pd.DataFrame, perceive_m: float, land) -> pd.DataFram
     pos = df(con, """SELECT p.match_id, p.id, p.t, p.x, p.y, p.z, pl.team_index FROM positions p JOIN sel USING (match_id)
                      JOIN players pl ON pl.match_id = p.match_id AND pl.id = p.id WHERE NOT coalesce(pl.is_bot, FALSE)""")
     pos = pos.assign(tt=(pos["t"] // ep.STEP * ep.STEP).astype(float)).drop_duplicates(["match_id", "id", "tt"])
-    seen, close, above = np.zeros(len(t)), np.zeros(len(t)), np.zeros(len(t))
+    seen, close, above, inside_seen = np.zeros(len(t)), np.zeros(len(t)), np.zeros(len(t)), np.zeros(len(t))
     pg = {k: v for k, v in pos.groupby(["match_id", "tt"])}
     for (mid, tt), idx in t.groupby(["match_id", "t"]).indices.items():
         p = pg.get((mid, float(tt)))
@@ -67,10 +67,14 @@ def live_states(con, team: pd.DataFrame, perceive_m: float, land) -> pd.DataFram
         mc = (d <= 50) & other
         seen[idx] = ((m.astype(float) @ onehot) > 0).sum(1)
         close[idx] = ((mc.astype(float) @ onehot) > 0).sum(1)
+        # perceived enemy teams already set up inside the next zone: the ones that spray a team rotating in
+        nx, ny, nr = (float(rows[c].iloc[0]) for c in ("next_x", "next_y", "next_r"))
+        p_in = np.hypot(p["x"].to_numpy(float) - nx, p["y"].to_numpy(float) - ny) <= nr
+        inside_seen[idx] = (((m & p_in[None, :]).astype(float) @ onehot) > 0).sum(1)
         cnt = m.sum(1)
         zsum = (m * p["z"].to_numpy(float)[None, :]).sum(1)
         above[idx] = np.where(cnt > 0, (zsum / np.maximum(cnt, 1) - rows["z"].to_numpy(float)) / 100, 0.0)
-    t["seen"], t["seen_close"], t["seen_above"] = seen, close, above
+    t["seen"], t["seen_close"], t["seen_above"], t["seen_inside"] = seen, close, above, inside_seen
     # surge as the HUD shows it: team net damage rank above or below the cut-off
     t["surge_margin"] = t["surge_rank"] - surge_cutoff(con)
     # natural ground height rank under you, within the zone
@@ -158,7 +162,10 @@ def evaluate(t: pd.DataFrame, model, run_ms: float, p_hit: dict, odds: pd.Series
     grp = np.where(zone >= 7, "late", np.where(zone >= 5, "mid", "early"))
     full_hp = float(np.nanquantile(t["hp"], 0.99)) or 100.0       # the most health the data shows (200 with shields)
     hold_p = np.array([p_hit.get((g, "hold"), (0.05, 40))[0] * p_hit.get((g, "hold"), (0.05, 40))[1] for g in grp])
-    rot_p = np.array([p_hit.get((g, "rotate"), (0.08, 45))[0] * p_hit.get((g, "rotate"), (0.08, 45))[1] for g in grp])
+    # rotating: the hit risk measured for the number of enemy teams you can see already set up in the next zone (0, 1, 2+)
+    lb = np.minimum(d["seen_inside"].to_numpy(float) if "seen_inside" in d else np.zeros(len(d)), 2).astype(int)
+    rot_p = np.array([(lambda v: v[0] * v[1])(p_hit.get((g, "rotate", int(k)), p_hit.get((g, "rotate"), (0.08, 45))))
+                      for g, k in zip(grp, lb)])
     base = d[LIVE].copy()
 
     def state(px, py, hp_, outside, **extra):
@@ -228,13 +235,21 @@ def evaluate(t: pd.DataFrame, model, run_ms: float, p_hit: dict, odds: pd.Series
 
 
 def hit_risk(expo: pd.DataFrame) -> dict:
-    """(zone group, hold/rotate) -> (chance of a hit from a new team within 20 s, damage when hit)."""
+    """(zone group, hold/rotate) and (zone group, "rotate", lookers 0/1/2+) -> (chance of a hit from a new team within
+    20 s, damage when hit). The lookers split is used only where it has 30+ moments."""
     if expo is None or expo.empty:
         return {}
     e = expo.assign(grp=np.where(expo["zone"] >= 7, "late", np.where(expo["zone"] >= 5, "mid", "early")),
                     st=np.where(expo["outside_m"] > 0, "rotate", "hold"))
     out = {}
-    for (g, s), q in e.groupby(["grp", "st"]):
+    def risk(q):
         p10 = q["hit"].mean()
-        out[(g, s)] = (1 - (1 - p10) ** 2, float(q.loc[q["hit"], "dmg"].mean()) if q["hit"].any() else 40.0)
+        return (1 - (1 - p10) ** 2, float(q.loc[q["hit"], "dmg"].mean()) if q["hit"].any() else 40.0)
+    for (g, s), q in e.groupby(["grp", "st"]):
+        out[(g, s)] = risk(q)
+    if "lookers" in e:
+        rot = e[e["st"] == "rotate"].assign(lb=np.minimum(e.loc[e["st"] == "rotate", "lookers"], 2))
+        for (g, k), q in rot.groupby(["grp", "lb"]):
+            if len(q) >= 30:
+                out[(g, "rotate", int(k))] = risk(q)
     return out

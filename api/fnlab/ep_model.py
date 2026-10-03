@@ -210,9 +210,30 @@ def fit(team: pd.DataFrame, folds: int = 6, seed: int = 3, features: list[str] |
     return full, oos, base
 
 
+LOOK_M = 120      # enemy teams already inside the next zone this close to a rotating team are "looking out" at it
+
+
+def lookers(team: pd.DataFrame) -> np.ndarray:
+    """For every team-moment: enemy teams already inside the next zone within LOOK_M of it (team centres, full information).
+    Teams set up at the zone's edge spray the boxes of teams rotating in; this counts them."""
+    out = np.zeros(len(team), dtype=int)
+    t = team.reset_index(drop=True)
+    for _, idx in t.groupby(["match_id", "t"]).indices.items():
+        g = t.iloc[idx]
+        inside = (g["outside_m"].to_numpy(float) <= 0)
+        if not inside.any():
+            continue
+        x, y, ti = g["x"].to_numpy(float), g["y"].to_numpy(float), g["team_index"].to_numpy()
+        d = np.hypot(x[:, None] - x[None, :], y[:, None] - y[None, :]) / 100
+        near = (d <= LOOK_M) & inside[None, :] & (ti[:, None] != ti[None, :])
+        out[idx] = near.sum(1)
+    return out
+
+
 def exposure(team: pd.DataFrame, con) -> pd.DataFrame:
     """The chance of being hit within 10 s by a team you weren't already fighting (no hits between you in the last 30 s),
-    rotating (outside the next zone) vs holding (inside it), by zone."""
+    rotating (outside the next zone) vs holding (inside it), by zone, and for rotating teams by how many enemy teams were
+    already set up inside the next zone near them (lookers)."""
     hits = df(con, """SELECT d.match_id, d.t, d.amount, pa.team_index AS att, pt.team_index AS tgt
                       FROM damage d JOIN sel USING (match_id)
                       JOIN players pa ON pa.match_id = d.match_id AND pa.id = d.attacker_id
@@ -232,7 +253,8 @@ def exposure(team: pd.DataFrame, con) -> pd.DataFrame:
                      LEFT JOIN damage h ON h.match_id = s.match_id AND h.t > s.t AND h.t <= s.t + 10
                      JOIN players pt ON pt.match_id = h.match_id AND pt.id = h.target_id AND pt.team_index = s.team_index
                      GROUP BY 1, 2, 3""")
-    e = team[["match_id", "t", "team_index", "zone", "teams_alive", "outside_m", "enemies_150"]].merge(hit, on=["match_id", "t", "team_index"])
+    team = team.assign(lookers=lookers(team))
+    e = team[["match_id", "t", "team_index", "zone", "teams_alive", "outside_m", "enemies_150", "lookers"]].merge(hit, on=["match_id", "t", "team_index"])
     e = e.merge(dmg, on=["match_id", "t", "team_index"], how="left")
     e["state"] = np.where(e["outside_m"] > 0, "Rotating (outside the next zone)", "Holding (inside the next zone)")
     return e

@@ -20,7 +20,7 @@ type Option = { key: string; label: string; ev: number };
 type Decision = {
   stretch: number; t: number; zone: number; engine: string; actual: string; stake: number; followed: boolean; options: Option[];
   fight: { p_win: number; if_won: number; if_lost: number } | null;
-  knew: { outside_m: number; hp: number; teams: number; members: number; seen: number; seen_close: number; surge: string; kills: number };
+  knew: { outside_m: number; hp: number; teams: number; members: number; seen: number; seen_close: number; seen_inside: number; surge: string; kills: number };
 };
 type Room = {
   t0: number; t1: number; team_name: string; match: string; scoring: string; actions: Record<string, string>;
@@ -195,7 +195,9 @@ function DecisionCard({ room, t, onJump }: { room: Room; t: number; onJump: (t: 
       )}
       <p className="call__knew">What you knew: {d.knew.outside_m > 0 ? `${d.knew.outside_m} m outside the next zone` : 'inside the next zone'}, health and
         shield {d.knew.hp}, {d.knew.members} alive, {d.knew.teams} teams left, {d.knew.seen} team{d.knew.seen === 1 ? '' : 's'} within 120 m
-        {d.knew.seen_close ? ` (${d.knew.seen_close} within 50 m)` : ''}, surge {d.knew.surge} the cut-off.</p>
+        {d.knew.seen_close ? ` (${d.knew.seen_close} within 50 m)` : ''}
+        {d.knew.outside_m > 0 && d.knew.seen_inside > 0 ? `, ${d.knew.seen_inside} of them already set up in the zone ahead (rotating past them costs more)` : ''},
+        surge {d.knew.surge} the cut-off.</p>
     </div>
   );
 }
