@@ -47,6 +47,27 @@ def test_engine_rotation_risk_is_split_by_lookers():
     assert risk[("mid", "rotate", 2)][0] > risk[("mid", "rotate", 0)][0]
 
 
+def test_every_zone_with_a_wait_is_included_from_zone_1():
+    """Zone 1 appears at the safe-zones start; zones past 7 count too; a zone with no wait (moving) doesn't."""
+    import duckdb
+    from fnlab.analyses.storm_hunt import _windows, stage
+    con = duckdb.connect()
+    con.register("m_", pd.DataFrame({"match_id": ["m"], "safe_zones_start_t": [100.0]}))
+    con.execute("CREATE VIEW matches AS SELECT * FROM m_")
+    phases = list(range(1, 10))
+    start = [160.0 + 90 * (k - 1) for k in phases]
+    finish = [s_ + 45 for s_ in start]
+    finish[7] = start[8]                                   # zone 9 appears as zone 8 finishes and starts moving at once
+    con.register("z_", pd.DataFrame({"match_id": "m", "phase": phases, "next_x": 0.0, "next_y": 0.0, "next_r": 50_000.0,
+                                     "start_shrink_t": start, "finish_shrink_t": finish}))
+    con.execute("CREATE VIEW zones AS SELECT * FROM z_")
+    con.execute("CREATE TEMP TABLE sel AS SELECT 'm' AS match_id")
+    w = _windows(con)
+    assert w["zone"].tolist() == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert w.loc[w["zone"] == 1, "reveal"].iat[0] == 100.0 and w.loc[w["zone"] == 1, "prev"].iat[0] == 0.0
+    assert [stage(k) for k in (1, 3, 4, 5, 6, 9)] == ["Zones 1–3", "Zones 1–3", "Zones 4–5", "Zones 4–5", "Zones 6+", "Zones 6+"]
+
+
 @pytest.fixture(scope="module")
 def hunt(client, tmp_path_factory):
     d = tmp_path_factory.mktemp("hunt")
@@ -71,7 +92,17 @@ def test_study_runs_and_explains_itself(hunt):
     assert hunt["status"] == "ok" and not hunt["warnings"]
     titles = {t["title"] for t in hunt["tables"]}
     assert {"Stay back or rotate first: like for like", "Who it pays off for", "Staying back: in the storm or behind it",
-            "Getting sprayed on the way in"} <= titles
+            "Getting sprayed on the way in", "By zone: where staying back stops paying"} <= titles
+    bz = next(t for t in hunt["tables"] if t["title"] == "By zone: where staying back stops paying")
+    zones = [r[0] for r in bz["rows"]]
+    assert zones == sorted(zones)
+    for r in bz["rows"]:                                   # no verdict on fewer than 10 teams that stayed back
+        stayed = int(str(r[bz["columns"].index("Stayed back")]).split(" ")[0])
+        if stayed < 10:
+            assert r[bz["columns"].index("Verdict")] == "Too few to judge"
+    who = next(t for t in hunt["tables"] if t["title"] == "Who it pays off for")
+    assert who["columns"][:2] == ["Stage", "Surge standing"]
+    assert "Staying back is common through" in {x["label"] for x in hunt["metrics"]}
     m = {x["label"]: x["value"] for x in hunt["metrics"]}
     rot, stay = (int(v) for v in m["Rotated first / stayed back"].split(" / "))
     assert int(m["Team-zones compared"].replace(",", "")) == rot + stay and rot and stay

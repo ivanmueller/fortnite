@@ -3,7 +3,8 @@ Storm hunt or rotate first? Teams that must rotate (outside the next zone when i
 surge inside, or stay back, in or just behind the storm, to tag the teams rotating late. This compares the two among teams
 that started as far out with a similar surge standing, in the same zone of the same match.
 
-Per team and zone (zones 2-7 with a wait of at least MIN_WAIT_S before the storm moves):
+Per team and zone (every zone from zone 1 with a wait of at least MIN_WAIT_S before the storm moves; zone 1 appears at the
+match's safe-zones start, later zones when the previous one finishes closing):
   start      distance from the team's centre to the next zone's edge when it appears; surge standing: the team's net damage
              (dealt minus taken, between players) over the previous zone against the lobby's median then (at or below it =
              bottom half; teams that hadn't fought, on exactly 0, usually sit there)
@@ -16,8 +17,12 @@ Per team and zone (zones 2-7 with a wait of at least MIN_WAIT_S before the storm
   spray      damage taken from players during the wait, by the enemy teams already set up inside the next zone within
              LOOK_E_M of the team's way in (the nearest point of the zone's edge) when it appeared
 Comparison: groups of the same match, zone, distance band (under / over SPLIT_M) and surge half; within each group with both
-approaches, the difference in averages (stayed back minus rotated first); differences averaged across groups and tested,
-each group one observation.
+approaches, the difference in averages (stayed back minus rotated first); differences averaged across those groups and tested,
+each group one observation. A zone-3 team is never compared with a zone-6 team.
+By zone and stage: staying back is an early-game option (the storm is weak and surge is just starting); later, nearly every team
+rotates, and the few that stay back are often stuck rather than choosing it. So results are also given per zone and per stage
+(zones 1-3, 4-5, 6+), with how common staying back is in each; zones with fewer than MIN_STAYED teams that stayed back get no
+verdict.
 """
 from __future__ import annotations
 
@@ -33,6 +38,13 @@ from . import ALPHA_PARAM, Context, register
 from ._events_common import NEEDS_EVENTS, conclude_without_data, has_tables, player_hits, unexplained_drops
 
 MIN_WAIT_S = 20
+MIN_STAYED = 10        # teams that stayed back in a zone (or stage) before it gets a verdict
+COMMON = 0.15          # staying back is "common" in a zone while at least this share of the teams outside choose it
+STAGES = [(1, 3, "Zones 1–3"), (4, 5, "Zones 4–5"), (6, 99, "Zones 6+")]
+
+
+def stage(zone: int) -> str:
+    return next(lab for lo, hi, lab in STAGES if lo <= zone <= hi)
 MIN_OUT_M = 50
 SPLIT_M = 300
 LOOK_E_M = 150
@@ -53,13 +65,17 @@ OUTCOMES = {
 def _windows(con) -> pd.DataFrame:
     z = df(con, """SELECT z.match_id, z.phase, z.next_x, z.next_y, z.next_r, z.start_shrink_t, z.finish_shrink_t
                    FROM zones z JOIN sel USING (match_id) ORDER BY 1, 2""")
+    cols = set(con.execute("SELECT * FROM matches LIMIT 0").df().columns)
+    first = dict(df(con, "SELECT m.match_id, m.safe_zones_start_t FROM matches m JOIN sel USING (match_id)").itertuples(index=False, name=None)) \
+        if "safe_zones_start_t" in cols else {}
     rows = []
     for mid, g in z.groupby("match_id"):
         fin = dict(zip(g["phase"].astype(int), g["finish_shrink_t"]))
+        fin[0] = first.get(mid, np.nan)                     # zone 1 appears when the safe zones start
         for _, q in g.iterrows():
             k = int(q["phase"])
-            reveal, prev = fin.get(k - 1), fin.get(k - 2, 0.0)
-            if not 2 <= k <= 7 or reveal is None or reveal != reveal or q["next_x"] != q["next_x"]:
+            reveal, prev = fin.get(k - 1), (fin.get(k - 2, 0.0) if k >= 2 else 0.0)
+            if k < 1 or reveal is None or reveal != reveal or q["next_x"] != q["next_x"]:
                 continue
             wait = float(q["start_shrink_t"]) - float(reveal)
             if wait < MIN_WAIT_S:
@@ -167,6 +183,7 @@ def team_zones(ctx: Context) -> pd.DataFrame:
     t["approach"] = np.select([(t["dist_mid_m"] <= 0) | (progress >= 0.5), progress < 0.2], [ROTATED, STAYED], BETWEEN)
     t["detail"] = np.where(t["approach"] == STAYED, np.where(t["storm"] > 0, STORM, BEHIND), t["approach"])
     t["dist_band"] = np.where(t["dist_m"] < SPLIT_M, f"Under {SPLIT_M} m", f"{SPLIT_M} m or more")
+    t["stage"] = [stage(int(k)) for k in t["zone"]]
     for c in ("surged", "out", "safe_alive"):
         t[c] = t[c].astype(float)
     return t.reset_index(drop=True)
@@ -238,15 +255,46 @@ def run(ctx: Context) -> Result:
 
     # ---- who it pays off for
     who = []
-    for (half, band), g in cmp.groupby(["surge_half", "dist_band"]):
+    order = {lab: i for i, (_, _, lab) in enumerate(STAGES)}
+    for (stg, half), g in sorted(cmp.groupby(["stage", "surge_half"]), key=lambda kv: (order[kv[0][0]], kv[0][1])):
         ro, sb = g[g["approach"] == ROTATED], g[g["approach"] == STAYED]
         pts, safe = like_for_like(g, "points"), like_for_like(g, "safe_alive")
-        who.append({"Surge standing": half, "Distance out": band, "Teams (rotated / stayed)": f"{len(ro)} / {len(sb)}",
+        enough = pts["n"] >= 3 and len(sb) >= MIN_STAYED
+        who.append({"Stage": stg, "Surge standing": half, "Teams (rotated / stayed)": f"{len(ro)} / {len(sb)}",
                     "Safe and alive, rotated": _fmt("safe_alive", ro["safe_alive"].mean()), "Safe and alive, stayed": _fmt("safe_alive", sb["safe_alive"].mean()),
                     "Points, rotated": _fmt("points", ro["points"].mean()), "Points, stayed": _fmt("points", sb["points"].mean()),
-                    "Staying back, like for like": (f"{pts['mean']:+.1f} points, {safe['mean'] * 100:+.0f} safe and alive" if pts["n"] >= 3 else "Too few groups"),
+                    "Staying back, like for like": (f"{pts['mean']:+.1f} points, {safe['mean'] * 100:+.0f} safe and alive" if enough
+                                                    else "Too few to judge"),
                     "Groups": int(pts["n"])})
     r.table("Who it pays off for", pd.DataFrame(who))
+
+    # ---- by zone: how common staying back is, and where it stops paying
+    zrows, common_through, zchart = [], None, []
+    for k, g in t[t["approach"] != BETWEEN].groupby("zone"):
+        outside = int((t["zone"] == k).sum())
+        ro, sb = g[g["approach"] == ROTATED], g[g["approach"] == STAYED]
+        share = len(sb) / outside if outside else np.nan
+        if share == share and share >= COMMON and outside >= MIN_STAYED:
+            common_through = int(k)
+        pts, safe = like_for_like(g, "points"), like_for_like(g, "safe_alive")
+        if pts["p"] is None or pts["p"] != pts["p"]:
+            pts = {**pts, "p": 1.0}
+        judged = pts["n"] >= 3 and len(sb) >= MIN_STAYED
+        verdict = ("Too few to judge" if not judged else
+                   ("Staying back paid" if pts["mean"] > 0 else "Rotating first paid") + (" (strong evidence)" if pts["p"] < alpha else
+                                                                                        " (some evidence)" if pts["p"] < 0.05 else ", but no clear difference"))
+        zrows.append({"Zone": int(k), "Teams outside": outside, "Stayed back": f"{len(sb)} ({share:.0%})" if share == share else "–",
+                      "Storm damage, stayed back": _fmt("storm", sb["storm"].mean()),
+                      "Net gained, rotated / stayed": f"{_fmt('net', ro['net'].mean())} / {_fmt('net', sb['net'].mean())}",
+                      "Safe and alive, rotated / stayed": f"{_fmt('safe_alive', ro['safe_alive'].mean())} / {_fmt('safe_alive', sb['safe_alive'].mean())}",
+                      "Staying back, like for like": f"{pts['mean']:+.1f} points, {safe['mean'] * 100:+.0f} safe and alive" if judged else "–",
+                      "Groups": int(pts["n"]), "Verdict": verdict})
+        zchart.append((int(k), share * 100 if share == share else None))
+    r.table("By zone: where staying back stops paying", pd.DataFrame(zrows))
+    if zchart:
+        r.chart("bar", "How often teams outside the zone stayed back, by zone",
+                [dict(name="Stayed back", x=[f"Zone {k}" for k, _ in zchart], y=[None if v is None else round(v) for _, v in zchart])],
+                y_label="% of teams outside the next zone", reference_lines=[dict(axis="y", value=COMMON * 100, label="Common")])
 
     # ---- in the storm or behind it
     det = t[t["approach"] != BETWEEN].groupby("detail").agg(teams=("team_index", "size"), net=("net", "mean"), storm=("storm", "mean"),
@@ -280,6 +328,9 @@ def run(ctx: Context) -> Result:
     r.metric("Team-zones compared", f"{len(cmp):,}", f"Teams outside the next zone (by {MIN_OUT_M} m+) that rotated first or stayed back; "
              f"{int((t['approach'] == BETWEEN).sum())} in between are left out")
     r.metric("Rotated first / stayed back", f"{int((cmp['approach'] == ROTATED).sum())} / {int((cmp['approach'] == STAYED).sum())}")
+    r.metric("Staying back is common through", f"zone {common_through}" if common_through else "–",
+             f"The last zone where at least {COMMON:.0%} of the teams outside the next zone stayed back (with {MIN_STAYED}+ teams outside). "
+             "After it nearly everyone rotates, and the few who stay back are often stuck rather than choosing it.")
     rp, rs = results["points"], results["safe_alive"]
     r.metric("Staying back, like for like", f"{rp['mean']:+.1f} points" if rp["n"] else "–",
              f"Placement points, staying back minus rotating first, in {int(rp['n'])} groups of the same match, zone, distance and surge standing")
@@ -299,6 +350,9 @@ def run(ctx: Context) -> Result:
         "Like for like: only teams in the same match and zone, the same distance band and the same half of the lobby by net damage over the "
         "previous zone are compared; each such group counts once in the test.",
         "Surged: hit at any surge check while the zone was showing or closing. Safe and alive: not surged and not eliminated before it closed.",
+        f"By zone and stage: staying back is an early-game choice. Late in the game nearly every team rotates, so zones (and stages) with fewer "
+        f"than {MIN_STAYED} teams that stayed back get no verdict: the few there are often stuck, not choosing it. Surge is usually off in "
+        "the first zones, so there staying back is about the storm and position, not surge.",
         f"Getting sprayed: damage taken from players between the zone appearing and the storm moving, by enemy teams already inside the zone "
         f"within {LOOK_E_M} m of the nearest point of its edge (your way in) when it appeared.",
     ]

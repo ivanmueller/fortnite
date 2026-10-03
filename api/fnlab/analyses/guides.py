@@ -1006,7 +1006,8 @@ GUIDES: dict[str, Guide] = {
         question="When your team is outside the next zone as it appears, does it pay to go in first and look for surge inside, or to "
                  "stay back in or behind the storm and tag the teams rotating late?",
         method=[
-            "Every team outside the next zone by 50 m+ when it appears (zones 2–7 with a wait of 20 s+ before the storm moves) is "
+            "Every team outside the next zone by 50 m+ when it appears (every zone from zone 1 with a wait of 20 s+ before the storm "
+            "moves; zone 1 appears when the safe zones start) is "
             "classed by what it did halfway through the wait: inside the zone or half the distance covered = rotated first; under a "
             "fifth covered = stayed back (in the storm if it took storm damage that zone, else behind it). In between is left out.",
             "The class comes from movement, not from who got in, so teams sprayed and eliminated on the way in still count as rotating "
@@ -1018,6 +1019,9 @@ GUIDES: dict[str, Guide] = {
             "any check, eliminated, safe from surge and alive, and the team's placement points in the end.",
             "Getting sprayed: damage taken from players during the wait, by how many enemy teams were already set up inside the zone "
             "within 150 m of the team's way in (the nearest point of the edge) when it appeared.",
+            "Zone by zone: staying back is an early-game option. As the game goes on nearly every team rotates, and the few that stay "
+            "back are often stuck rather than choosing it, so results are also shown per zone and per stage (zones 1–3, 4–5, 6+), with "
+            "how common staying back was. A zone or stage with fewer than 10 teams that stayed back gets no verdict.",
         ],
         terms={
             "Team-zones compared": "Teams outside the next zone that rotated first or stayed back, each zone counted once.",
@@ -1027,13 +1031,22 @@ GUIDES: dict[str, Guide] = {
                              "surge standing.",
             "Stay back or rotate first: like for like": "Each outcome's average for both approaches, the like-for-like difference, "
                                                         "how many groups it rests on, and the verdict.",
-            "Who it pays off for": "The same comparison split by surge standing and distance: it can pay for teams low on surge or "
-                                   "far out and not for others.",
+            "Who it pays off for": "The same comparison split by stage of the game and surge standing (distance stays matched inside "
+                                   "each group): it can pay early for teams low on surge and not later, or the reverse.",
+            "By zone: where staying back stops paying": "Each zone: teams outside the next zone, how many stayed back and the share, "
+                                                        "their storm damage, net damage and safe-and-alive for both approaches, the "
+                                                        "like-for-like difference and the verdict. Read down the zones to see where it "
+                                                        "stops paying.",
+            "Staying back is common through": "The last zone where at least 15% of the teams outside the next zone stayed back. "
+                                              "After it, nearly everyone rotates.",
             "Staying back: in the storm or behind it": "Teams that stayed back, split by whether they sat in the storm.",
             "Getting sprayed on the way in": "Damage taken during the wait by how many teams were set up at the team's way in.",
             "p": "The chance of a difference this large if both approaches were really equal. Small means a real difference.",
         },
         charts={
+            "How often teams outside the zone stayed back, by zone": "The share of teams outside the next zone that stayed back, zone "
+                                                                     "by zone. Where it drops under the 'Common' line, staying back "
+                                                                     "has stopped being a real choice.",
             "Safe from surge and alive through the zone": "For each surge standing, the share of teams neither surged nor eliminated, "
                                                           "rotating first against staying back (raw, not like for like).",
             "Damage taken while rotating first, by teams set up at your way in": "If this rises with the number of teams set up, "

@@ -97,9 +97,9 @@ PAGES = [
         section("storm_hunt", "Storm hunt or rotate first?",
                 "Outside the next zone when it appears: go in first and look for surge inside, or stay back in the storm to tag late "
                 "rotators? Compared among teams as far out with a similar surge standing, in the same zone of the same match.",
-                charts=["Safe from surge and alive through the zone", "Damage taken while rotating first, by teams set up at your way in"],
-                table="Stay back or rotate first: like for like", rows=10, wrap=True,
-                metrics=["Team-zones compared", "Rotated first / stayed back", "Staying back, like for like"]),
+                charts=["How often teams outside the zone stayed back, by zone", "Damage taken while rotating first, by teams set up at your way in"],
+                table="By zone: where staying back stops paying", rows=12, wrap=True,
+                metrics=["Staying back is common through", "Team-zones compared", "Rotated first / stayed back", "Staying back, like for like"]),
         section("height_damage", "Getting damage from height", "Which height over opponents deals the most damage for the least taken back?",
                 charts=["Damage dealt for every 1 taken back, by height and range", "Damage dealt and taken back, by height over the opponent"],
                 metrics=["Trade from 15 m+ above", "Trade from 5–15 m above", "One-sided tags from 15 m+ above"]),
