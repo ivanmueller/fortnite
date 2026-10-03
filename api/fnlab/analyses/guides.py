@@ -572,7 +572,10 @@ GUIDES: dict[str, Guide] = {
         },
         charts={
             "Surge episodes by zone": "Which phases trigger surge.",
-            "Chance of being surged by damage dealt beforehand": "How the risk falls as a player deals more damage.",
+            "Chance of being surged, by damage rank within the same surge": "Players ranked against the others alive at the same "
+                "surge, by damage in the window surge actually counts (see the Surge study). The share surged should fall from the "
+                "bottom quarter to the top. Ranking within each surge avoids mixing early surges with late ones, when a smaller "
+                "lobby means a bigger share is hit.",
         },
         conclude=[
             "The 'Most damage dealt by a surged player' column is a practical target: above it, nobody was surged in "
@@ -948,55 +951,61 @@ GUIDES: dict[str, Guide] = {
     ),
 
     "surge_study": Guide(
-        question="How does surge actually work in these matches, and what do top players do about it: hold and hunt for damage, "
-                 "sit passively, or rotate?",
+        question="How does surge work in these matches, and what actually works against it: sitting in zone hunting, sitting "
+                 "passively, rotating early and building a surge base, or rotating late, and at what base height?",
         method=[
             "Surge is detected as several players inside the zone losing health in the same second with no player hitting them.",
-            "Which damage surge counts is measured, not assumed: for each surge episode, players are ranked by damage dealt over "
-            "several windows (the whole match, since the zone appeared, since the previous surge check, the last 60, 120 and 180 "
-            "seconds). The window whose ranking best separates surged from safe players is the one the game most likely uses, and "
-            "everything else on this page uses it.",
-            "The cut-off for each episode is midway between the most damage of a player who was surged and the least of a player "
-            "who wasn't.",
-            "Before each zone's first surge check, every player alive when the zone appeared is classed by what they did: held and "
-            "hunted (moved under 80 m and dealt 25+ damage), held passively (moved under 80 m, dealt less), or rotated (moved 80 m+).",
-            "The key comparison only includes players who were at or below the cut-off when the zone appeared (what the HUD would "
-            "have shown as 'below'), so everyone compared starts from the same situation.",
+            "Which damage surge counts is measured: for each surge, players are ranked by damage dealt over several windows (whole "
+            "match, since the zone appeared, since the previous surge check, the last 60, 120 and 180 seconds); the window that "
+            "best separates surged from safe players is used everywhere, including the Surge page.",
+            "Every player alive when a surge zone appeared is followed to its first surge check and classed by what they did: held "
+            "and hunted (moved under 80 m, dealt 25+ damage), held passively (moved under 80 m, dealt less), rotated early then held "
+            "(inside the new zone at least 20 s before the check), or rotated late (still moving at the check).",
+            "Base height is their height above the natural ground at the check (the ground is mapped from where players stood "
+            "before the storm moved), so it measures how tall they had built.",
+            "Success is measured on what surge is about: safe from that surge, eliminated before the next zone, and both together "
+            "(safe and alive), plus damage gathered per minute. The comparisons only use players at risk when the zone appeared, "
+            "within the same zone of the same match.",
         ],
         terms={
+            "Best approach (safe and alive)": "The approach and base height with the highest share of players safe from surge and "
+                                              "still alive at the next zone (at least 10 players).",
             "Damage surge counts": "The damage window that best explains who gets surged.",
             "Typical cut-off": "The median damage, in that window, that kept players safe.",
-            "Damage per minute, holding and hunting": "How fast players who held position and hunted gathered damage before a check.",
-            "Top-10 finishers holding and hunting": "Share of top-10 finishers who held position and dealt damage before a surge check.",
             "Surge episodes": "Detected surges across the selected matches.",
             "Which damage surge counts": "Each candidate window and how well it separates surged from safe players (1.00 = perfectly, "
                                          "0.50 = no better than chance).",
             "How surge works, by zone": "For each zone: how often surge hit, how long after the zone appeared, relative to the shrink "
-                                        "starting, players alive and hit, damage per tick and per player hit, and the damage that kept "
-                                        "players safe.",
-            "Below the cut-off when the zone appeared: what happened, by what they did": "Players who started at risk, grouped by what "
-                "they did before the surge check: how often they were surged, eliminated before the next zone, and how they finished.",
-            "Below the cut-off": "Holding and hunting compared with each alternative, within the same zone of the same match.",
+                                        "starting, players alive and hit, damage per tick and per player hit, and the cut-off.",
+            "Approach and base height: what worked": "Every approach at every base height: players, safe from surge, eliminated "
+                                                     "before the next zone, safe and alive, and damage per minute.",
+            "Who captures the most surge damage: the top 10% vs everyone": "Where the players who gathered the most damage before "
+                "surge checks stood (inside the new zone, at its edge), how tall they had built, which approach they used and how "
+                "they fared, against everyone and against top-10 finishers.",
+            "At risk when the zone appeared": "Approaches and base heights compared within the same zone of the same match, among "
+                                              "players who started at or below the cut-off.",
             "p": P_VALUE,
         },
         charts={
-            "Below the cut-off: which approach paid off": "For players at risk when the zone appeared, by what they did: the share "
-                "surged, eliminated before the next zone, and how they finished. Hunting avoids surge but carries fight risk; this "
-                "shows which side of that trade wins.",
-            "What players do before a surge check: top-10 finishers vs the rest": "How top-10 finishers split between holding and "
-                "hunting, holding passively and rotating, against everyone else.",
+            "Safe from surge and still alive, by approach and surge-base height": "For each approach, one bar per base height: the "
+                "share of players who weren't surged and were still alive when the next zone appeared. The tallest bar is what worked.",
+            "Where surge damage is captured: position in the new zone": "Damage gathered per minute before the check, by where players "
+                "stood relative to the new zone, on the ground against built up.",
+            "What players do before a surge check: top-10 finishers vs the rest": "How top-10 finishers split between the four "
+                                                                                  "approaches, against everyone else.",
+            "Everyone at the surge check": "Every player at the moment of one zone's first surge check: red were surged, grey stayed "
+                                           "safe, teal stayed safe with the most damage. Choose the game and zone above.",
             "Damage needed to stay safe from surge, by zone": "The median cut-off in each zone.",
-            "When surge checks happen": "How long after each zone appears its surge check usually comes.",
         },
         conclude=[
-            "Compare your team's damage at each zone's reveal with that zone's cut-off: below it, the question is whether there's "
-            "time and traffic to hunt before the check.",
-            "If holding and hunting beats rotating for players below the cut-off, sitting in zone hunting tags is the right call, "
-            "not a late rotation.",
+            "If rotating early and building a tall base beats sitting and hunting on 'safe and alive', the default surge plan is to "
+            "get into the new zone early and build up; if not, sitting in zone hunting is the right call.",
+            "The top-10% profile shows where surge damage is actually captured: copy the position and height, not just the approach.",
         ],
         limits=[
-            "Surge detection needs several players hit in the same second; very small surges can be missed.",
-            "Players who hold and hunt may be stronger fighters; compare top-10 finishers' choices as well as the outcomes.",
+            "Players who hunt or build tall may be stronger players; the within-zone comparisons and the top-10 finisher column help, "
+            "but read differences of a few points with caution.",
+            "Base height uses the natural ground under the player; standing on a natural ledge or roof can count as built.",
             "Needs in-match health and damage data, and matches where surge triggers (often later rounds and finals).",
         ],
     ),

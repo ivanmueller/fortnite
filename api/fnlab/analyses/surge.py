@@ -90,10 +90,21 @@ def run(ctx: Context) -> Result:
                               "in some competitive rounds; collect later rounds and finals to study it.")
         return r
 
+    # Use the damage window surge actually counts (measured on the Surge study) everywhere on this page, not whole-match damage.
+    from .surge_study import WINDOWS, measured
+    m = measured(ctx)
+    window = "whole match so far"
+    if m is not None and len(m["per"]):
+        per = m["per"].assign(dealt=m["per"]["dealt_w"])
+        window = WINDOWS[m["best"]].lower()
+        ep = ep.drop(columns=[c for c in ("max_dealt_surged", "min_dealt_safe") if c in ep])
+        ep = ep.merge(per[per["surged"]].groupby("episode")["dealt"].max().rename("max_dealt_surged"), left_on="episode", right_index=True, how="left")
+        ep = ep.merge(per[~per["surged"]].groupby("episode")["dealt"].min().rename("min_dealt_safe"), left_on="episode", right_index=True, how="left")
     per_m = ep.groupby("match_id").size()
-    r.headline = (f"Surge detected in {len(per_m):,} of {n_matches:,} matches ({len(ep):,} episodes). Surged players had "
-                  f"dealt a median {per.loc[per['surged'], 'dealt'].median():.0f} damage before it hit, against "
+    r.headline = (f"Surge detected in {len(per_m):,} of {n_matches:,} matches ({len(ep):,} episodes). Counting damage {window}, "
+                  f"surged players had dealt a median {per.loc[per['surged'], 'dealt'].median():.0f}, against "
                   f"{per.loc[~per['surged'], 'dealt'].median():.0f} for players it skipped.")
+    r.notes.append(f"Damage on this page is counted {window}: the window the Surge study found best explains who gets surged.")
     r.metric("Surge episodes", f"{len(ep):,}")
     r.metric("Matches with surge", f"{len(per_m):,}")
     r.metric("Players alive at surge", f"{ep['alive'].median():.0f}", "Median at the first tick of an episode")
@@ -132,11 +143,19 @@ def run(ctx: Context) -> Result:
                       "was never surged in that phase. That number is a practical safe target.")
     r.chart("bar", "Surge episodes by zone", [dict(name="Episodes", x=[f"Zone {int(p)}" for p in by["Zone"]], y=by["Episodes"].tolist())],
             y_label="Episodes")
-    bands = pd.cut(per["dealt"], [-1, 0, 100, 200, 300, 500, 1e9], labels=["0", "1–100", "101–200", "201–300", "301–500", "500+"])
-    g = per.groupby(bands, observed=True)["surged"].mean()
-    r.chart("bar", "Chance of being surged by damage dealt beforehand",
-            [dict(name="Surged", x=[str(i) for i in g.index], y=(g * 100).round(1).tolist())],
-            x_label="Damage dealt to players before the surge", y_label="% of alive players surged")
+    # Compare players facing the same surge: rank each player's damage within the episode, using the damage window surge
+    # actually counts (measured on the Surge study). Absolute whole-match damage mixes early and late surges: players with a
+    # lot of whole-match damage are mostly the ones still alive late, when surge hits a bigger share of a smaller lobby.
+    from .surge_study import WINDOWS, measured
+    m = measured(ctx)
+    if m is not None and len(m["per"]):
+        pr = m["per"]
+        q = pd.cut(pr["rank_w"], [-0.001, 0.25, 0.5, 0.75, 1.0001], labels=["Bottom quarter", "Second quarter", "Third quarter", "Top quarter"])
+        g = pr.groupby(q, observed=False)["surged"].mean()
+        r.chart("bar", "Chance of being surged, by damage rank within the same surge",
+                [dict(name="Surged", x=[str(i) for i in g.index], y=(g * 100).round(1).tolist())],
+                x_label=f"Damage dealt ({WINDOWS[m['best']].lower()}), ranked against the other players alive at that surge",
+                y_label="% surged")
 
     conclude(r, ctx, strategy=True, primary=["Per episode", "Per match"], alpha=alpha, recommended=20, single_season=True,
              takeaway_found="Surge behaves predictably: " + "; ".join(t["reading"].lower() for t in r.tests if t["significant"]) + ".",

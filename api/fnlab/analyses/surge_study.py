@@ -24,7 +24,7 @@ from ..conclusion import conclude
 from ..result import Result
 from ..stats import ttest_mean
 from ..store import df
-from . import ALPHA_PARAM, Context, register
+from . import ALPHA_PARAM, Context, Param, register
 from ._events_common import NEEDS_EVENTS, conclude_without_data, has_tables, player_hits
 
 WINDOWS = {"match": "Whole match so far", "zone": "Since the zone appeared", "prev": "Since the previous surge check",
@@ -42,10 +42,88 @@ def _auc(safe: np.ndarray, surged: np.ndarray) -> float:
     return float(((s > u).sum() + 0.5 * (s == u).sum()) / (len(safe) * len(surged)))
 
 
+_MEASURED: dict = {}
+
+
+def measured(ctx: Context) -> dict | None:
+    """Surge episodes with the damage window surge most likely counts, measured from the selected matches.
+    Returns ep (episodes with zone, appear time, cut-off), per (players per episode with dealt_w and rank_w within the
+    episode), best (window key), mean_auc, auc. Cached per selection."""
+    key = tuple(sorted(df(ctx.con, "SELECT match_id FROM sel")["match_id"]))
+    if key in _MEASURED:
+        return _MEASURED[key]
+    from .surge import surge_episodes
+    if not has_tables(ctx.con, "health", "damage"):
+        return None
+    ep, per = surge_episodes(ctx)
+    if ep.empty or per.empty:
+        return None
+    zones = df(ctx.con, "SELECT z.match_id, z.phase, z.finish_shrink_t FROM zones z JOIN sel USING (match_id)")
+    reveal = {(m, int(p) + 1): float(t) for m, p, t in zip(zones["match_id"], zones["phase"], zones["finish_shrink_t"])}
+    ep = ep.sort_values(["match_id", "t0"]).reset_index(drop=True)
+    ep["zone"] = ep["phase"].astype(int)
+    ep["appear"] = [reveal.get((m, z), np.nan) for m, z in zip(ep["match_id"], ep["zone"])]
+    ep["prev_t1"] = ep.groupby("match_id")["t1"].shift(1)
+    hits = player_hits(ctx.con)
+    auc = {k: [] for k in WINDOWS}
+    dealt: dict = {k: {} for k in WINDOWS}
+    for _, e in ep.iterrows():
+        g = per[per["episode"] == e["episode"]]
+        h = hits[(hits["match_id"] == e["match_id"]) & (hits["t"] < e["t0"])]
+        starts = {"match": -1e9, "zone": e["appear"] if e["appear"] == e["appear"] else -1e9,
+                  "prev": e["prev_t1"] if e["prev_t1"] == e["prev_t1"] else -1e9, "60": e["t0"] - 60, "120": e["t0"] - 120, "180": e["t0"] - 180}
+        for k, t_start in starts.items():
+            v = g["id"].map(h[h["t"] >= t_start].groupby("attacker_id")["amount"].sum()).fillna(0).to_numpy(float)
+            dealt[k][e["episode"]] = dict(zip(g["id"], v))
+            if g["surged"].sum() >= 2 and (~g["surged"]).sum() >= 2:
+                auc[k].append(_auc(v[~g["surged"].to_numpy()], v[g["surged"].to_numpy()]))
+    mean_auc = {k: float(np.nanmean(v)) if v else np.nan for k, v in auc.items()}
+    if not any(v == v for v in mean_auc.values()):
+        best = "zone"
+    else:
+        best = max(mean_auc, key=lambda k: mean_auc[k] if mean_auc[k] == mean_auc[k] else -1)
+    per = per.copy()
+    per["dealt_w"] = [dealt[best].get(e_, {}).get(i, np.nan) for e_, i in zip(per["episode"], per["id"])]
+    per = per.dropna(subset=["dealt_w"])
+    # 0 least – 1 most, within the same surge; tied players take the lowest rank of their group (dealing nothing is the bottom)
+    per["rank_w"] = per.groupby("episode")["dealt_w"].rank(pct=True, method="min")
+    cut = per.groupby("episode").apply(lambda g: (g.loc[g["surged"], "dealt_w"].max() + g.loc[~g["surged"], "dealt_w"].min()) / 2
+                                       if g["surged"].any() and (~g["surged"]).any() else np.nan, include_groups=False).rename("cutoff")
+    ep = ep.merge(cut, left_on="episode", right_index=True, how="left")
+    out = dict(ep=ep, per=per, best=best, mean_auc=mean_auc, auc=auc, hits=hits)
+    _MEASURED.clear()
+    _MEASURED[key] = out
+    return out
+
+
+APPROACHES = ["Held and hunted", "Held passively", "Rotated early, then held", "Rotated late"]
+HEIGHTS = ["On the ground", "Low build (3–10 m)", "Tall base (10–25 m)", "Very tall (25 m+)"]
+SPOTS = ["Centre half", "Inner", "Edge, inside", "Just outside", "Far outside"]
+EARLY_S = 20        # "rotated early": inside the new zone at least this long before the check
+
+
+def _land(ctx: Context):
+    from .. import zone_model as zm
+    from .zone_forecast import _load as zf_load
+    zf = zf_load(ctx)
+    if zf:
+        return zf["land"]
+    season = df(ctx.con, "SELECT m.season FROM matches m JOIN sel USING (match_id) LIMIT 1")
+    if len(season):
+        cells = df(ctx.con, zm.land_cells_sql(season["season"].iat[0]))
+        return zm.LandMap(cells) if len(cells) >= 50 else None
+    return None
+
+
+def _pct(v) -> str:
+    return "–" if v is None or v != v else f"{v:.0%}"
+
+
 @register("surge_study", "Surge study",
-          "How surge works in these matches (which damage counts, when it hits, the cut-off by zone) and what top players do "
-          "about it: hold and hunt, hold passively, or rotate, and which pays off when below the cut-off.",
-          params=[ALPHA_PARAM])
+          "Which damage surge counts, when it hits and the cut-off by zone; then where and how players capture surge damage: "
+          "sitting in zone hunting, sitting passively, rotating early and building a base, or rotating late, at every base height.",
+          params=[ALPHA_PARAM, Param("match", "Game to draw", "match", ""),
+                  Param("zone", "Zone to draw", "zone", 5, [{"value": z, "label": f"Zone {z}"} for z in range(2, 12)])])
 def run(ctx: Context) -> Result:
     alpha = float(ctx.params.get("alpha", 0.005))
     r, con = Result(), ctx.con
@@ -54,62 +132,29 @@ def run(ctx: Context) -> Result:
         r.warnings.append(NEEDS_EVENTS)
         conclude_without_data(r, ctx)
         return r
-    from .surge import surge_episodes
-    ep, per = surge_episodes(ctx)
-    if ep.empty or per.empty:
+    m = measured(ctx)
+    if m is None:
         r.headline = "No surge detected in these matches. Surge triggers in some competitive rounds (often later rounds and finals)."
         conclude_without_data(r, ctx)
         return r
-    zones = df(con, "SELECT z.match_id, z.phase, z.start_shrink_t, z.finish_shrink_t, z.next_x, z.next_y, z.next_r FROM zones z JOIN sel USING (match_id)")
-    reveal = {(m, int(p) + 1): float(t) for m, p, t in zip(zones["match_id"], zones["phase"], zones["finish_shrink_t"])}
-    shrink = {(m, int(p)): float(t) for m, p, t in zip(zones["match_id"], zones["phase"], zones["start_shrink_t"])}
-    ep = ep.sort_values(["match_id", "t0"]).reset_index(drop=True)
-    ep["zone"] = ep["phase"].astype(int)
-    ep["appear"] = [reveal.get((m, z), np.nan) for m, z in zip(ep["match_id"], ep["zone"])]
-    ep["prev_t1"] = ep.groupby("match_id")["t1"].shift(1)
-    hits = player_hits(con)
+    ep, per, best, mean_auc, auc, hits = m["ep"], m["per"], m["best"], m["mean_auc"], m["auc"], m["hits"]
 
-    # ---- 1. which damage window surge counts
-    auc = {k: [] for k in WINDOWS}
-    dealt_best: dict = {}
-    for _, e in ep.iterrows():
-        g = per[per["episode"] == e["episode"]]
-        if g["surged"].sum() < 2 or (~g["surged"]).sum() < 2:
-            continue
-        h = hits[(hits["match_id"] == e["match_id"]) & (hits["t"] < e["t0"])]
-        starts = {"match": -1e9, "zone": e["appear"] if e["appear"] == e["appear"] else -1e9,
-                  "prev": e["prev_t1"] if e["prev_t1"] == e["prev_t1"] else -1e9, "60": e["t0"] - 60, "120": e["t0"] - 120, "180": e["t0"] - 180}
-        for k, t_start in starts.items():
-            d = h[h["t"] >= t_start].groupby("attacker_id")["amount"].sum()
-            v = g["id"].map(d).fillna(0).to_numpy(float)
-            auc[k].append(_auc(v[~g["surged"].to_numpy()], v[g["surged"].to_numpy()]))
-            dealt_best.setdefault(k, {})[e["episode"]] = dict(zip(g["id"], v))
-    mean_auc = {k: float(np.nanmean(v)) if v else np.nan for k, v in auc.items()}
-    if not any(v == v for v in mean_auc.values()):
-        r.headline = "Surge was detected, but too few players were hit per episode to measure how it chooses them."
-        conclude_without_data(r, ctx)
-        return r
-    best = max(mean_auc, key=lambda k: mean_auc[k] if mean_auc[k] == mean_auc[k] else -1)
+    # ---- 1. the rule
     r.table("Which damage surge counts", pd.DataFrame({
         "Damage window": [WINDOWS[k] for k in WINDOWS],
         "How well it separates surged from safe players": [f"{mean_auc[k]:.2f}" if mean_auc[k] == mean_auc[k] else "–" for k in WINDOWS],
-        "Episodes": [int(np.sum(~np.isnan(auc[k]))) for k in WINDOWS],
-        "": ["Best fit" if k == best else "" for k in WINDOWS]}))
-    r.metric("Damage surge counts", WINDOWS[best], f"The window that best separates surged from safe players (score {mean_auc[best]:.2f}; "
-             "1.00 = perfectly, 0.50 = no better than chance)")
-
-    # recompute each episode's damage and cut-off with the best window
-    per = per.copy()
-    per["dealt_w"] = [dealt_best.get(best, {}).get(ep_, {}).get(i, np.nan) for ep_, i in zip(per["episode"], per["id"])]
-    per = per.dropna(subset=["dealt_w"])
-    cut = per.groupby("episode").apply(lambda g: (g.loc[g["surged"], "dealt_w"].max() + g.loc[~g["surged"], "dealt_w"].min()) / 2
-                                       if g["surged"].any() and (~g["surged"]).any() else np.nan, include_groups=False).rename("cutoff")
-    ep = ep.merge(cut, left_on="episode", right_index=True, how="left")
+        "Episodes": [int(np.sum(~np.isnan(auc[k]))) for k in WINDOWS], "": ["Best fit" if k == best else "" for k in WINDOWS]}))
+    r.metric("Damage surge counts", WINDOWS[best], f"The window that best separates surged from safe players (score "
+             f"{mean_auc[best]:.2f}; 1.00 = perfectly, 0.50 = no better than chance)" if mean_auc[best] == mean_auc[best] else "")
 
     # ---- 2. when and how much
-    ep["after_reveal_s"] = ep["t0"] - ep["appear"]
-    ep["vs_shrink_s"] = ep["t0"] - [shrink.get((m, z), np.nan) for m, z in zip(ep["match_id"], ep["zone"])]
-    ep["total"] = ep["ticks"] * ep["per_tick"]
+    zones = df(con, "SELECT z.match_id, z.phase, z.start_shrink_t, z.finish_shrink_t, z.next_x, z.next_y, z.next_r, z.cur_x, z.cur_y, z.cur_r "
+                    "FROM zones z JOIN sel USING (match_id)")
+    reveal = {(mm, int(p) + 1): float(t) for mm, p, t in zip(zones["match_id"], zones["phase"], zones["finish_shrink_t"])}
+    shrink = {(mm, int(p)): float(t) for mm, p, t in zip(zones["match_id"], zones["phase"], zones["start_shrink_t"])}
+    ep = ep.assign(after_reveal_s=ep["t0"] - ep["appear"],
+                   vs_shrink_s=ep["t0"] - [shrink.get((mm, z), np.nan) for mm, z in zip(ep["match_id"], ep["zone"])],
+                   total=ep["ticks"] * ep["per_tick"])
     bz = ep.groupby("zone").agg(episodes=("episode", "size"), matches=("match_id", "nunique"), after=("after_reveal_s", "median"),
                                 vs_shrink=("vs_shrink_s", "median"), alive=("alive", "median"), hit=("surged", "median"),
                                 per_tick=("per_tick", "median"), total=("total", "median"), cutoff=("cutoff", "median"))
@@ -123,104 +168,180 @@ def run(ctx: Context) -> Result:
     r.chart("bar", "Damage needed to stay safe from surge, by zone",
             [dict(name="Cut-off (median)", x=[f"Zone {z}" for z in bz.index], y=bz["cutoff"].round(0).tolist())],
             y_label=f"Damage dealt ({WINDOWS[best].lower()})")
-    r.chart("bar", "When surge checks happen", [dict(name="Seconds after the zone appears", x=[f"Zone {z}" for z in bz.index],
-                                                     y=bz["after"].round(0).tolist())], y_label="Seconds after the zone appears")
     r.metric("Surge episodes", f"{len(ep):,}", f"In {ep['match_id'].nunique()} matches")
     r.metric("Typical cut-off", f"{ep['cutoff'].median():.0f} damage", f"Median damage ({WINDOWS[best].lower()}) that kept players safe")
 
-    # ---- 3 & 4. what players do between the zone appearing and its first surge check
+    # ---- 3. every player alive when a surge zone appeared, at its first check
     first = ep.dropna(subset=["appear"]).groupby(["match_id", "zone"]).agg(t_check=("t0", "min"), appear=("appear", "first"),
                                                                            episode=("episode", "first"), cutoff=("cutoff", "first")).reset_index()
     first = first[(first["t_check"] - first["appear"]) >= 15]
+    zc = zones.assign(zone=zones["phase"].astype(int))[["match_id", "zone", "next_x", "next_y", "next_r", "cur_x", "cur_y", "cur_r"]]
+    first = first.merge(zc, on=["match_id", "zone"], how="left")
+    rows = pd.DataFrame()
     if len(first):
         con.register("ss_first", first)
         rows = df(con, """
-            WITH a AS (SELECT f.*, p.id, p.team_index, p.death_t, coalesce(p.team_placement, p.placement) AS final, p.pr_rank
+            WITH a AS (SELECT f.*, p.id, p.team_index, p.death_t, coalesce(p.team_placement, p.placement) AS final
                        FROM ss_first f JOIN players p ON p.match_id = f.match_id
                        WHERE NOT coalesce(p.is_bot, FALSE) AND (p.death_t IS NULL OR p.death_t > f.appear)),
                  s AS (SELECT a.*, pos.x AS x0, pos.y AS y0 FROM a ASOF JOIN positions pos ON pos.match_id = a.match_id AND pos.id = a.id AND a.appear >= pos.t),
-                 e AS (SELECT s.*, pos.x AS x1, pos.y AS y1 FROM s ASOF JOIN positions pos ON pos.match_id = s.match_id AND pos.id = s.id AND s.t_check >= pos.t)
-            SELECT * FROM e""")
+                 e AS (SELECT s.*, pos.x AS x1, pos.y AS y1, pos.z AS z1 FROM s ASOF JOIN positions pos
+                       ON pos.match_id = s.match_id AND pos.id = s.id AND s.t_check >= pos.t),
+                 inside AS (SELECT a.match_id, a.id, a.zone, min(p.t) AS t_in FROM a JOIN positions p ON p.match_id = a.match_id AND p.id = a.id
+                            AND p.t BETWEEN a.appear AND a.t_check
+                            WHERE sqrt(power(p.x - a.next_x, 2) + power(p.y - a.next_y, 2)) <= a.next_r GROUP BY 1, 2, 3)
+            SELECT e.*, inside.t_in FROM e LEFT JOIN inside USING (match_id, id, zone)""")
         rows = rows.dropna(subset=["x0", "x1", "final"])
         rows = rows[rows["death_t"].isna() | (rows["death_t"] > rows["t_check"] - 5)]
-        if len(rows) >= 30:
-            rows["moved_m"] = np.hypot(rows["x1"] - rows["x0"], rows["y1"] - rows["y0"]) / 100
-            # damage dealt between the reveal and the check, and the window damage at the reveal (the HUD status then)
-            got, start = [], []
-            for _, q in rows.iterrows():
-                h = hits[(hits["match_id"] == q["match_id"]) & (hits["attacker_id"] == q["id"])]
-                got.append(float(h[h["t"].between(q["appear"], q["t_check"])]["amount"].sum()))
-                e = ep[ep["episode"] == q["episode"]].iloc[0]
-                w0 = {"match": -1e9, "zone": q["appear"], "prev": e["prev_t1"] if e["prev_t1"] == e["prev_t1"] else -1e9,
-                      "60": q["appear"] - 60, "120": q["appear"] - 120, "180": q["appear"] - 180}[best]
-                start.append(float(h[h["t"].between(w0, q["appear"])]["amount"].sum()))
-            rows["dealt_before_check"], rows["dealt_at_reveal"] = got, start
-            rows["behaviour"] = np.where(rows["moved_m"] >= MOVED_M, "Rotated",
-                                         np.where(rows["dealt_before_check"] >= HUNT_DMG, "Held and hunted", "Held passively"))
-            # at risk when the zone appeared: at or below the cut-off (with a window that resets at the reveal, that's everyone)
-            rows["below"] = rows["dealt_at_reveal"] <= rows["cutoff"]
-            surged = per[["episode", "id", "surged"]]
-            rows = rows.merge(surged, on=["episode", "id"], how="left")
-            rows["surged"] = rows["surged"].fillna(False).astype(bool)
-            nxt = {(m, z): reveal.get((m, z + 1), np.inf) for m, z in zip(rows["match_id"], rows["zone"])}
-            rows["out_in_zone"] = [d == d and d <= nxt[(m, z)] for d, m, z in zip(rows["death_t"], rows["match_id"], rows["zone"])]
-            rows["ahead"] = 1 - rows.groupby(["match_id", "zone"])["final"].rank(pct=True)
-            rows["top10"] = rows["final"] <= 10
-            # what top finishers do
-            mix = rows.groupby(["top10", "behaviour"]).size().unstack(fill_value=0)
-            mix = mix.div(mix.sum(1), axis=0).reindex(columns=BEHAVIOURS, fill_value=0)
-            r.chart("bar", "What players do before a surge check: top-10 finishers vs the rest",
-                    [dict(name=b, x=["Top-10 finishers" if i else "Everyone else" for i in mix.index], y=(mix[b] * 100).round(0).tolist())
-                     for b in BEHAVIOURS], y_label="% of players", x_label="")
-            # which approach pays off when below the cut-off at the reveal
-            below = rows[rows["below"]]
-            out = below.groupby("behaviour").agg(players=("id", "size"), surged=("surged", "mean"), out=("out_in_zone", "mean"),
-                                                 ahead=("ahead", "mean")).reindex(BEHAVIOURS)
-            r.table("Below the cut-off when the zone appeared: what happened, by what they did", pd.DataFrame({
-                "What they did before the surge check": BEHAVIOURS, "Players": out["players"].fillna(0).astype(int).values,
-                "Surged": [f"{v:.0%}" if v == v else "–" for v in out["surged"]],
-                "Eliminated before the next zone": [f"{v:.0%}" if v == v else "–" for v in out["out"]],
-                "Finished ahead of the players alive then": [f"{v:.0%}" if v == v else "–" for v in out["ahead"]]}))
-            r.chart("bar", "Below the cut-off: which approach paid off",
-                    [dict(name=lab, x=BEHAVIOURS, y=(out[col] * 100).round(0).tolist()) for col, lab in
-                     (("surged", "Surged"), ("out", "Eliminated before the next zone"), ("ahead", "Finished ahead of players alive then"))],
-                    y_label="%")
-            # tests: within each zone-hold, holding and hunting vs rotating, for players below the cut-off
-            for b_vs in ("Rotated", "Held passively"):
-                diff = below.groupby(["match_id", "zone"]).apply(
-                    lambda g: g.loc[g["behaviour"] == "Held and hunted", "ahead"].mean() - g.loc[g["behaviour"] == b_vs, "ahead"].mean()
-                    if (g["behaviour"] == "Held and hunted").any() and (g["behaviour"] == b_vs).any() else np.nan, include_groups=False).dropna()
-                t = ttest_mean(diff, 0.0)
-                if t["n"] >= 3:
-                    r.test("Below the cut-off", f"Held and hunted vs {b_vs.lower()}", int(t["n"]), f"{t['mean'] * 100:+.0f} points of finish",
-                           t["p"], alpha, (f"Below the cut-off, holding and hunting finished better than {b_vs.lower()}",
-                                           f"Below the cut-off, holding and hunting finished worse than {b_vs.lower()}"), direction=t["mean"])
-            tag_rate = rows[rows["behaviour"] == "Held and hunted"]
-            if len(tag_rate):
-                rate = (tag_rate["dealt_before_check"] / ((tag_rate["t_check"] - tag_rate["appear"]) / 60)).median()
-                r.metric("Damage per minute, holding and hunting", f"{rate:.0f}", "Median damage per minute from a held position before a surge check")
-            r.metric("Top-10 finishers holding and hunting", f"{mix.loc[True, 'Held and hunted']:.0%}" if True in mix.index else "–",
-                     "Share of top-10 finishers who held position and dealt damage before a surge check")
+    if len(rows) >= 30:
+        h = hits[["match_id", "attacker_id", "t", "amount"]]
+        con.register("ss_rows", rows[["match_id", "id", "appear", "t_check"]])
+        con.register("ss_hits", h)
+        got = df(con, """SELECT r.match_id, r.id, r.appear, coalesce(sum(h.amount), 0) AS dealt_before_check FROM ss_rows r
+                         LEFT JOIN ss_hits h ON h.match_id = r.match_id AND h.attacker_id = r.id AND h.t BETWEEN r.appear AND r.t_check
+                         GROUP BY 1, 2, 3""")
+        rows = rows.merge(got, on=["match_id", "id", "appear"], how="left")
+        land = _land(ctx)
+        ground = np.full(len(rows), np.nan)
+        if land is not None:
+            _, ground = land.lookup(rows["x1"].to_numpy(float), rows["y1"].to_numpy(float))
+        rows["built_m"] = np.clip((rows["z1"].to_numpy(float) - np.nan_to_num(ground, nan=np.nanmedian(ground) if np.isfinite(ground).any() else 0)) / 100, 0, None)
+        rows["height"] = pd.cut(rows["built_m"], [-1, 3, 10, 25, 1e9], labels=HEIGHTS)
+        rows["moved_m"] = np.hypot(rows["x1"] - rows["x0"], rows["y1"] - rows["y0"]) / 100
+        early = rows["t_in"].notna() & (rows["t_in"] <= rows["t_check"] - EARLY_S)
+        rows["approach"] = np.where(rows["moved_m"] < MOVED_M, np.where(rows["dealt_before_check"] >= HUNT_DMG, APPROACHES[0], APPROACHES[1]),
+                                    np.where(early, APPROACHES[2], APPROACHES[3]))
+        rows["radial"] = np.hypot(rows["x1"] - rows["next_x"], rows["y1"] - rows["next_y"]) / rows["next_r"]
+        rows["spot"] = pd.cut(rows["radial"], [-1, 0.5, 0.85, 1.0, 1.25, 1e9], labels=SPOTS)
+        rows = rows.merge(per[["episode", "id", "surged"]], on=["episode", "id"], how="left")
+        rows["surged"] = rows["surged"].fillna(False).astype(bool)
+        nxt = {(mm, z): reveal.get((mm, z + 1), np.inf) for mm, z in zip(rows["match_id"], rows["zone"])}
+        rows["out_in_zone"] = [d == d and d <= nxt[(mm, z)] for d, mm, z in zip(rows["death_t"], rows["match_id"], rows["zone"])]
+        rows["safe_alive"] = ~rows["surged"] & ~rows["out_in_zone"]
+        rows["dpm"] = rows["dealt_before_check"] / ((rows["t_check"] - rows["appear"]) / 60)
+        rows["top10"] = rows["final"] <= 10
+
+        # the main answer: approach x base height -> safe from surge and still alive
+        g = rows.groupby(["approach", "height"], observed=False)
+        cell = g.agg(n=("id", "size"), safe=("surged", lambda v: 1 - v.mean()), out=("out_in_zone", "mean"),
+                     ok=("safe_alive", "mean"), dpm=("dpm", "median")).reset_index()
+        cell.loc[cell["n"] < 10, ["safe", "out", "ok", "dpm"]] = np.nan
+        series = []
+        for hgt in HEIGHTS:
+            c = cell[cell["height"] == hgt].set_index("approach").reindex(APPROACHES)
+            series.append(dict(name=hgt, x=APPROACHES, y=(c["ok"] * 100).round(0).tolist()))
+        r.chart("bar", "Safe from surge and still alive, by approach and surge-base height", series,
+                y_label="% safe from surge and alive at the next zone", x_label="What they did between the zone appearing and the surge check")
+        tbl = cell.assign(approach=pd.Categorical(cell["approach"], APPROACHES), height=pd.Categorical(cell["height"], HEIGHTS)) \
+            .sort_values(["approach", "height"])
+        r.table("Approach and base height: what worked", pd.DataFrame({
+            "Approach": tbl["approach"].astype(str), "Base height at the check": tbl["height"].astype(str), "Players": tbl["n"].astype(int),
+            "Safe from surge": [_pct(v) for v in tbl["safe"]], "Eliminated before the next zone": [_pct(v) for v in tbl["out"]],
+            "Safe and alive": [_pct(v) for v in tbl["ok"]], "Damage per minute": [f"{v:.0f}" if v == v else "–" for v in tbl["dpm"]]}))
+
+        # where the damage is captured: position relative to the new zone, ground vs built
+        rows["built"] = np.where(rows["built_m"] >= 3, "Built up (3 m+)", "On the ground")
+        sp = rows.groupby(["spot", "built"], observed=False)["dpm"].median().unstack()
+        r.chart("bar", "Where surge damage is captured: position in the new zone",
+                [dict(name=col, x=SPOTS, y=sp[col].reindex(SPOTS).round(0).tolist()) for col in ["On the ground", "Built up (3 m+)"] if col in sp],
+                y_label="Damage per minute before the check (median)", x_label="Position relative to the new zone at the check")
+
+        # the best surge capturers vs everyone
+        top = rows[rows["dealt_before_check"] >= rows["dealt_before_check"].quantile(0.9)]
+        def prof(d):
+            return [f"{(d['radial'] <= 1).mean():.0%}", f"{d['radial'].between(0.85, 1.25).mean():.0%}", f"{d['built_m'].median():.0f} m",
+                    f"{(d['built_m'] >= 10).mean():.0%}"] + [f"{(d['approach'] == a).mean():.0%}" for a in APPROACHES] + \
+                   [f"{d['safe_alive'].mean():.0%}", f"{d['dpm'].median():.0f}"]
+        labels = ["Inside the new zone at the check", "At the zone's edge (85–125% of its radius)", "Base height (median)", "Built 10 m+"] + \
+                 [f"Approach: {a.lower()}" for a in APPROACHES] + ["Safe and alive", "Damage per minute"]
+        r.table("Who captures the most surge damage: the top 10% vs everyone", pd.DataFrame({
+            "": labels, "Top 10% damage before checks": prof(top), "Everyone": prof(rows),
+            "Top-10 finishers": prof(rows[rows["top10"]]) if rows["top10"].any() else ["–"] * len(labels)}))
+
+        # what top finishers do
+        mix = rows.groupby(["top10", "approach"]).size().unstack(fill_value=0)
+        mix = mix.div(mix.sum(1), axis=0).reindex(columns=APPROACHES, fill_value=0)
+        r.chart("bar", "What players do before a surge check: top-10 finishers vs the rest",
+                [dict(name=a, x=["Top-10 finishers" if i else "Everyone else" for i in mix.index], y=(mix[a] * 100).round(0).tolist()) for a in APPROACHES],
+                y_label="% of players")
+
+        # tests, within the same zone of the same match, among players at risk when the zone appeared
+        e_ = ep.set_index("episode")
+        start_dealt = []
+        for _, q in rows.iterrows():
+            ee = e_.loc[q["episode"]]
+            w0 = {"match": -1e9, "zone": q["appear"], "prev": ee["prev_t1"] if ee["prev_t1"] == ee["prev_t1"] else -1e9,
+                  "60": q["appear"] - 60, "120": q["appear"] - 120, "180": q["appear"] - 180}[best]
+            hh = hits[(hits["match_id"] == q["match_id"]) & (hits["attacker_id"] == q["id"])]
+            start_dealt.append(float(hh[hh["t"].between(w0, q["appear"])]["amount"].sum()))
+        rows["at_risk"] = np.array(start_dealt) <= rows["cutoff"].fillna(np.inf)
+        risk = rows[rows["at_risk"]]
+
+        def compare(mask_a, mask_b, label, readings):
+            diff = risk.groupby(["match_id", "zone"]).apply(
+                lambda q: q.loc[mask_a(q), "safe_alive"].mean() - q.loc[mask_b(q), "safe_alive"].mean()
+                if mask_a(q).sum() >= 2 and mask_b(q).sum() >= 2 else np.nan, include_groups=False).dropna()
+            t = ttest_mean(diff, 0.0)
+            if t["n"] >= 3:
+                r.test("At risk when the zone appeared", label, int(t["n"]), f"{t['mean'] * 100:+.0f} points safe and alive", t["p"], alpha,
+                       readings, direction=t["mean"])
+        compare(lambda q: q["approach"] == APPROACHES[2], lambda q: q["approach"] == APPROACHES[0], "Rotating early, then holding vs holding and hunting",
+                ("Rotating early and holding in the new zone kept more players safe and alive than holding and hunting where they were",
+                 "Holding and hunting where they were kept more players safe and alive than rotating early"))
+        compare(lambda q: q["approach"] == APPROACHES[0], lambda q: q["approach"] == APPROACHES[1], "Holding and hunting vs holding passively",
+                ("Hunting from a held spot kept more players safe and alive than sitting passively",
+                 "Sitting passively kept more players safe and alive than hunting from a held spot"))
+        compare(lambda q: q["built_m"] >= 10, lambda q: q["built_m"] < 3, "A tall base (10 m+) vs the ground",
+                ("A tall surge base kept more players safe and alive than staying on the ground",
+                 "Staying on the ground kept more players safe and alive than a tall surge base"))
+        compare(lambda q: q["approach"] == APPROACHES[3], lambda q: q["approach"] != APPROACHES[3], "Rotating late vs everything else",
+                ("Rotating late kept more players safe and alive than the other approaches",
+                 "Rotating late left fewer players safe and alive than the other approaches"))
+
+        # the map: everyone at the moment of one zone's surge check
+        games = sorted(rows["match_id"].unique())
+        mid = ctx.params.get("match") if ctx.params.get("match") in games else games[0]
+        want = int(ctx.params.get("zone") or 5)
+        zs = sorted(rows[rows["match_id"] == mid]["zone"].unique())
+        zk = want if want in zs else zs[0]
+        q = rows[(rows["match_id"] == mid) & (rows["zone"] == zk)]
+        top_cut = q["dealt_before_check"].quantile(0.75) if len(q) else 0
+        def pts(d, name, color, size):
+            return dict(name=name, x=d["x1"].round(0).tolist(), y=d["y1"].round(0).tolist(), color=color, size=size)
+        fz = first[(first["match_id"] == mid) & (first["zone"] == zk)].iloc[0]
+        series = [pts(q[q["surged"]], "Surged", "#B4535F", 8),
+                  pts(q[~q["surged"] & (q["dealt_before_check"] < top_cut)], "Safe", "#8A97A6", 7),
+                  pts(q[~q["surged"] & (q["dealt_before_check"] >= top_cut)], "Safe, top quarter for damage", "#0F766E", 11)]
+        circles = [dict(x=float(fz["cur_x"]), y=float(fz["cur_y"]), r=float(fz["cur_r"]), label=f"Zone {zk - 1}"),
+                   dict(x=float(fz["next_x"]), y=float(fz["next_y"]), r=float(fz["next_r"]), label=f"Zone {zk}")] if fz["cur_x"] == fz["cur_x"] else \
+                  [dict(x=float(fz["next_x"]), y=float(fz["next_y"]), r=float(fz["next_r"]), label=f"Zone {zk}")]
+        pad = float(fz["cur_r"] if fz["cur_r"] == fz["cur_r"] else fz["next_r"]) * 1.3
+        r.chart("map_points", "Everyone at the surge check", series, circles=circles, zone_circles=True,
+                range_x=[float(fz["next_x"]) - pad, float(fz["next_x"]) + pad], range_y=[float(fz["next_y"]) - pad, float(fz["next_y"]) + pad])
+        r.notes.insert(0, f"Map: match {mid}, zone {zk}, at its first surge check.")
+        r.metric("Best approach (safe and alive)", (lambda c: f"{c.iloc[0]['approach']}, {c.iloc[0]['height'].lower()}" if len(c) else "–")(
+            cell.dropna(subset=["ok"]).sort_values("ok", ascending=False)), "The approach and base height with the highest share safe from "
+            "surge and still alive at the next zone (cells with at least 10 players)")
 
     sig = [x for x in r.tests if x["significant"]]
-    r.headline = (f"Surge counts damage dealt {WINDOWS[best].lower()} (best fit, score {mean_auc[best]:.2f}). It hit in "
-                  f"{ep['match_id'].nunique()} matches, a median {ep['after_reveal_s'].median():.0f} s after a zone appeared; the typical cut-off "
-                  f"was {ep['cutoff'].median():.0f} damage.")
-    conclude(r, ctx, strategy=True, primary=["Below the cut-off"], alpha=alpha, recommended=50,
-             takeaway_found=r.headline + " " + "; ".join(x["reading"] for x in sig) + ".",
-             takeaway_none=r.headline + " Which approach pays off when below the cut-off isn't clear yet.",
-             next_found=["Compare the cut-off by zone with your team's damage at each zone's reveal.",
-                         "Use 'Damage per minute, holding and hunting' to judge whether there's time to tag before the check."],
+    r.headline = (f"Surge counts damage dealt {WINDOWS[best].lower()}. It hit in {ep['match_id'].nunique()} matches, a median "
+                  f"{ep['after_reveal_s'].median():.0f} s after a zone appeared; the typical cut-off was {ep['cutoff'].median():.0f} damage.")
+    conclude(r, ctx, strategy=True, primary=["At risk when the zone appeared"], alpha=alpha, recommended=50,
+             takeaway_found="; ".join(x["reading"] for x in sig) + ".",
+             takeaway_none=r.headline + " No approach is clearly better yet for players at risk of surge.",
+             next_found=["Use the approach and base-height table to set a default surge plan for each zone.",
+                         "Check the map for a few games: where the top damage-gatherers stood when the surge check came."],
              next_none=["Add later-round and final matches, where surge hits more often."])
     r.notes += [
-        "Surge is detected as several players inside the zone losing health in the same second with no player hitting them.",
-        "Which damage counts: for each episode, players are ranked by each window's damage; the window whose ranking best "
-        "separates surged from safe players is used everywhere else. The cut-off is midway between the most damage of a surged "
-        "player and the least of a safe one.",
-        f"Before the check: from the zone appearing to its first surge check. Held = moved under {MOVED_M} m; hunted = dealt "
-        f"{HUNT_DMG}+ damage in that time; rotated = moved {MOVED_M} m or more.",
-        "Below the cut-off: the window's damage at the moment the zone appeared was at or under that episode's cut-off (what the "
-        "HUD's 'below' would have shown; if the window resets when the zone appears, everyone starts below). Players are compared "
-        "by what they did from the same starting situation.",
+        "Which damage counts: for each episode, players are ranked by each window's damage; the window whose ranking best separates "
+        "surged from safe players is used everywhere. The cut-off is midway between the most damage of a surged player and the least "
+        "of a safe one.",
+        f"Approaches, from the zone appearing to its first surge check: held = moved under {MOVED_M} m (hunted if they dealt "
+        f"{HUNT_DMG}+ damage); rotated early = moved and were inside the new zone at least {EARLY_S} s before the check; rotated late = "
+        "moved but weren't.",
+        "Base height: height above the natural ground (mapped from where players stood before the storm moved) at the check, so it "
+        "measures how tall they had built.",
+        "Safe and alive: not hit by that surge and still alive when the next zone appeared. The comparisons only include players at "
+        "risk when the zone appeared (at or below the cut-off), within the same zone of the same match.",
     ]
     return r
