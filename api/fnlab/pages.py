@@ -20,6 +20,11 @@ PAGES = [
                 charts=["Matches per week", "Lobby strength"],
                 metrics=["Matches", "Days covered", "Server replays", "Median lobby strength"]),
     ]),
+    dict(id="gameplan", title="Game plan", question="One team's plan for an event, built only from matches before it: where to land, when to "
+         "rotate, the surge line, the habits to fix and what the points reward.", sections=[
+        section("gameplan", "Game plan", "Type the team's names, set the event's first day, and select the matches to learn from in the left panel.",
+                table="Plan", rows=10, wrap=True, metrics=["Team", "Drop spot", "History", "Scoring"]),
+    ]),
     dict(id="review", title="Game review", question="One game, three stages: what you did, what the system recommends, why, and what it was worth.", sections=[
         section("review", "Game review", "Type the team's names, choose a game, and select matching lobbies in the left panel for the evidence.",
                 charts=["Early game map", "Mid game map"], table="Review", rows=40, wrap=True,

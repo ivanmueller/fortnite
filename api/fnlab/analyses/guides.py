@@ -967,6 +967,69 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "gameplan": Guide(
+        question="Before an event, what should this team do: where to land, when to rotate, what surge score to hold, which habits to "
+                 "fix, and what the scoring rewards?",
+        method=[
+            "Select the matches to learn from in the left panel (for example, this season's cash cups and FNCS rounds in strong "
+            "lobbies), type the team's names, and set the event's first day. Matches before that day are the history; matches on or "
+            "after it are the event. Nothing from the event is used to build the plan.",
+            "Drop: the team's usual spot (a named place, or the area they usually land when the data has no names), how often another "
+            "team lands there, split by how close the bus line passes, the players who land there regularly and how off-spawn fights "
+            "with them went, and backup spots that are less contested and score better.",
+            "Zones 1–2: how often the spot is inside zones 1 and 2, and when zone 2 misses it, how far away it is and whether it pulls "
+            "toward the map centre, sideways or away.",
+            "Rotations: each zone's wait before the storm moves, the rotation speed players actually managed (including stops and "
+            "building), and from that the latest time to leave from 100–500 m out to be inside before the storm moves. Checked against "
+            "storm damage taken by players who left later.",
+            "Surge: the rule the Surge study measured (team net damage since October 2025) and, for each zone's first surge check, the "
+            "score that kept teams safe in half and in 80% of games.",
+            "Habits: Playbook rules that the same players did better with when they followed them, ranked by how often this team "
+            "broke them, weighted by what they're worth.",
+            "Points: the event's scoring as an exchange rate between places and eliminations, and what a zero-point game costs this team.",
+            "Check: with event matches in the selection, each event game against what the plan said.",
+        ],
+        terms={
+            "Team": "The players found, and in how many history matches.",
+            "Drop spot": "The spot the plan is built around: typed, or where the team landed most.",
+            "History": "The matches the plan is built from: the selection before the event's first day.",
+            "Scoring": "The scoring scheme for the points block, from api/fnlab/scoring.json.",
+            "Plan": "Each block's one-line call and the tables behind it.",
+            "Confidence": "Solid: 30+ games. Thin: 10–29. Too few: under 10, and the number is left out.",
+            "Drop: how contested your spot is": "By how close the bus line passes: games, other teams landing there, and how often "
+                                               "one, or two or more, other teams were there.",
+            "Drop: your record there": "The team's own games at the spot, by bus route: how often they were contested, went out "
+                                       "off spawn, and their points per game.",
+            "Drop: who lands there": "Players who landed at the spot in 3+ games, and how off-spawns went when the team was there too.",
+            "Drop: backup spots": "Named places less contested than the team's spot, best points first.",
+            "Zones 1–2 from your spot": "How often the spot is inside zones 1 and 2, and where zone 2 is when it isn't.",
+            "Rotations: latest time to leave": "Seconds after each zone appears to leave from each distance, to be inside before the "
+                                               "storm moves; and how often players who left later took storm damage.",
+            "Surge: the line to stay above": "For each zone's first surge check: players alive, the score that kept teams safe in half "
+                                             "and in 80% of games, and how often this team was surged.",
+            "Habits: what to fix first": "Playbook rules, what following them was worth for the same players, and how often this team "
+                                         "broke them.",
+            "Points: places against eliminations": "How much one place up is worth in each range, and one elimination in places.",
+            "Check: what the plan said against the event": "The plan's numbers against what happened at the event.",
+            "Check: the event, game by game": "Each event game: landed at the spot, contested, spot in zones 1 and 2, surges, rotations "
+                                              "left after the latest time, and points.",
+        },
+        conclude=[
+            "Read the calls first: each one is the block's decision in one line. The tables are the evidence; 'Too few' means the plan "
+            "has nothing reliable to say there yet.",
+            "Backtest before trusting it: set the first day of a past event the team played, include that event's matches in the "
+            "selection, and read 'How the plan held up'.",
+            "Early in a season, most blocks will be thin: add the previous season's matches only for blocks that don't depend on the "
+            "map (surge, points), and expect the drop and zone blocks to firm up after a couple of weeks of cash cups.",
+        ],
+        limits=[
+            "The plan describes what happened to teams in similar spots and moments; fights, comms and mechanics aren't in it.",
+            "At a LAN, players use event accounts: type both their online and event names so they're found in the history and the event.",
+            "Drop spots without named places are circles around where the team usually lands, so nearby spots can merge.",
+            "Rotation timing assumes the measured average speed; a team with mobility items can leave later.",
+        ],
+    ),
+
     "surge_study": Guide(
         question="How does surge work in these matches, and what actually works against it: sitting in zone hunting, sitting "
                  "passively, rotating early and building a surge base, or rotating late, and at what base height?",

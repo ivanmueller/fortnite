@@ -85,3 +85,28 @@ def add_events(tables: Path, rule: str = "team_net", seed: int = 0) -> None:
             rows.append(dict(match_id=m, id=i, t=float(t), health=min(hp, 100.0), shield=max(hp - 100.0, 0.0)))
     damage.to_parquet(tables / "damage.parquet", index=False)
     pd.DataFrame(rows).to_parquet(tables / "health.parquet", index=False)
+
+
+def add_recurring_team(tables: Path, names=("clix", "rapid", "third"), spot=(20_000.0, 20_000.0), share=0.7, seed=0) -> None:
+    """
+    Make one team recur across every demo match (same names and accounts), landing near `spot` (cm) in `share` of games,
+    and give every landing a named place (400 m grid cells), so the game plan has a team history and named drop spots.
+    """
+    rng = np.random.default_rng(seed)
+    players = pd.read_parquet(tables / "players.parquet")
+    landings = pd.read_parquet(tables / "landings.parquet")
+    for mid, pl in players.groupby("match_id"):
+        team = int(pl["team_index"].min())
+        idx = pl.index[pl["team_index"] == team]
+        for j, i in enumerate(idx[: len(names)]):
+            players.loc[i, "name"] = names[j]
+            players.loc[i, "player_id"] = f"ACCOUNT_{names[j].upper()}"
+            players.loc[i, "pr_rank"] = 50.0 + j
+        if rng.random() < share:
+            li = landings.index[(landings["match_id"] == mid) & (landings["team_index"] == team)]
+            landings.loc[li, "land_x"] = spot[0] + rng.normal(0, 3_000, len(li))
+            landings.loc[li, "land_y"] = spot[1] + rng.normal(0, 3_000, len(li))
+    cell = 40_000.0
+    landings["poi"] = [f"Spot {int(np.floor(x / cell))},{int(np.floor(y / cell))}" for x, y in zip(landings["land_x"], landings["land_y"])]
+    players.to_parquet(tables / "players.parquet", index=False)
+    landings.to_parquet(tables / "landings.parquet", index=False)

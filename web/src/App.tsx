@@ -7,6 +7,7 @@ import { SelectionPanel } from './components/SelectionPanel';
 import { SectionView } from './components/SectionView';
 import { MatchesView } from './components/MatchesView';
 import { DataPage } from './components/DataPage';
+import { GamePlanView } from './components/GamePlanView';
 
 export const APP_NAME = 'Vantage';
 export const APP_TAGLINE = 'Competitive Fortnite analytics';
@@ -109,7 +110,11 @@ export function App() {
               <h1>{page.title}</h1>
               <p>{page.question}</p>
             </div>
-            {page.sections.map((s) => (
+            {page.id === 'gameplan' && (
+              <GamePlanView info={analyses.data?.find((a) => a.id === 'gameplan')} filters={filters} bootId={bootId} enabled={datasetReady}
+                            team={pageText[page.id] ?? ''} onTeam={(v) => setPageText((p) => ({ ...p, [page.id]: v }))} />
+            )}
+            {page.id !== 'gameplan' && page.sections.map((s) => (
               <SectionView key={`${page.id}-${s.analysis}`} section={s} info={analyses.data?.find((a) => a.id === s.analysis)}
                            filters={filters} compare={page.needs_compare ? compareFilters : undefined} bootId={bootId}
                            enabled={datasetReady} scope={scope}

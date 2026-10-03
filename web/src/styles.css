@@ -520,3 +520,53 @@ tbody tr:hover { background: #fff; }
 
 .calib__cross { stroke: #D08A12; stroke-width: 2; }
 .calib__handle { fill: #fff; stroke: #D08A12; stroke-width: 2.5; }
+
+/* ---------- Game plan: one team's pre-tournament sheet ---------- */
+.plan { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem 1.4rem 1rem; margin-bottom: 1.5rem; }
+.plan.is-busy { opacity: 0.65; transition: opacity 0.2s; }
+.plan__inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.75rem 1rem; align-items: end; }
+.plan__inputs label { display: grid; gap: 0.3rem; font-size: var(--t-sm); color: var(--muted); }
+.plan__inputs .input { width: 100%; }
+.plan__actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.plan__hint { margin: 0.6rem 0 1.25rem; max-width: 80ch; }
+.plan__ask { font-size: 1.08rem; font-weight: 500; max-width: 72ch; }
+
+.plan__band { background: var(--navy); color: #fff; border-radius: 8px; padding: 1.1rem 1.3rem 1rem; margin-bottom: 1.25rem;
+  border-bottom: 3px solid var(--accent-bright); }
+.plan__band h2 { font-size: var(--t-xl); font-weight: 600; letter-spacing: 0.01em; }
+.plan__band dl { display: flex; flex-wrap: wrap; gap: 0.4rem 2.25rem; margin: 0.7rem 0 0; }
+.plan__band dt { font-size: var(--t-sm); color: #b9c4d3; }
+.plan__band dd { margin: 0; font-weight: 600; }
+
+.plan__blocks { list-style: none; margin: 0; padding: 0; }
+.plan__block { display: grid; grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr); gap: 1rem 1.5rem;
+  padding: 1.1rem 0 0.4rem; border-top: 1px solid var(--grid); }
+.plan__block:first-child { border-top: 0; padding-top: 0.2rem; }
+.plan__call h3 { font-size: var(--t-md); font-weight: 600; color: var(--accent); }
+.plan__call p { margin: 0.4rem 0 0; font-weight: 500; line-height: 1.45; }
+.plan__evidence .table { margin-bottom: 1rem; }
+/* Plan tables: headers are the widest part, so let them wrap and keep cells compact. */
+.plan__evidence table { font-size: 0.86rem; }
+.plan__evidence th, .plan__evidence td { padding: 0.4rem 0.6rem; }
+.plan__evidence th { white-space: normal; vertical-align: bottom; min-width: 3.5rem; line-height: 1.25; }
+.plan__evidence td:first-child { white-space: normal; min-width: 9rem; }
+.plan__block--check { border-top: 2px solid var(--amber); }
+.plan__block--check .plan__call h3 { color: var(--amber); }
+.plan__more { margin-top: 1rem; }
+
+@media (max-width: 900px) {
+  .plan__block { grid-template-columns: minmax(0, 1fr); gap: 0.6rem; }
+}
+
+@media print {
+  .topbar, .rail, .tabs, .intro, .plan__inputs, .plan__hint, .plan__more, .table__head .link { display: none !important; }
+  .app { display: block; }
+  body { background: #fff; font-size: 11pt; }
+  .main { padding: 0; }
+  .plan { border: 0; padding: 0; background: #fff; }
+  .plan__band { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .plan__block { break-inside: avoid; grid-template-columns: 11rem minmax(0, 1fr); }
+  .table__scroll { overflow: visible; border-color: var(--grid); }
+  table { font-size: 9pt; }
+  th { white-space: normal; position: static; }
+}
