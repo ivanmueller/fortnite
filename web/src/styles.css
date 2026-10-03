@@ -514,6 +514,9 @@ tbody tr:hover { background: #fff; }
 
 .calib__svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
 .calib__zone { fill: none; stroke: #0F766E; stroke-width: 2; }
-.calib__zone.is-live { stroke: #D08A12; stroke-dasharray: 6 4; }
+.calib__zone.is-live { stroke: #D08A12; stroke-width: 2.5; fill: rgba(208, 138, 18, 0.08); }
 .calib__zonefit { fill: none; stroke: rgba(180, 83, 95, 0.55); stroke-width: 1; stroke-dasharray: 3 3; }
 .calib__edge { fill: #D08A12; stroke: #fff; stroke-width: 1.5; }
+
+.calib__cross { stroke: #D08A12; stroke-width: 2; }
+.calib__handle { fill: #fff; stroke: #D08A12; stroke-width: 2.5; }
