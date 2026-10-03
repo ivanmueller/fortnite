@@ -8,13 +8,17 @@ const MatchMap = lazy(() => import('../charts/MatchMap').then((m) => ({ default:
 
 type Weapon = { t: number; name: string; rarity: string | null };
 type Pickup = { t: number; item: string; category: string | null; count: number | null };
+type Hit = { t: number; amount: number; cause: 'hit' | 'storm' | 'surge' | 'other'; by: string | null };
 type Player = {
   id: number; name: string; death: number | null; knocks: number[]; revives: number[];
   hp: { t: number[]; health: number[]; shield: number[] } | null; weapons: Weapon[]; pickups: Pickup[];
+  damage: Hit[]; killed_by: string | null;
 };
+type Stretch = { stretch: number; t0: number; t1: number; zone: number; engine: string; actual: string; followed: boolean;
+  stake: number; checks: number; t_max: number };
 type Option = { key: string; label: string; ev: number };
 type Decision = {
-  t: number; zone: number; engine: string; actual: string; stake: number; followed: boolean; options: Option[];
+  stretch: number; t: number; zone: number; engine: string; actual: string; stake: number; followed: boolean; options: Option[];
   fight: { p_win: number; if_won: number; if_lost: number } | null;
   knew: { outside_m: number; hp: number; teams: number; members: number; seen: number; seen_close: number; surge: string; kills: number };
 };
@@ -26,6 +30,7 @@ type Room = {
   surge: { t: number[]; zone: number[]; net: number[]; dealt: number[]; taken: number[]; lines: Record<string, number>;
            episodes: { t: number; zone: number; surged: boolean | null }[]; rule: string | null } | null;
   decisions: Decision[];
+  stretches: Stretch[];
 };
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -33,6 +38,8 @@ const RARITY: Record<string, string> = {
   common: '#9aa3ad', uncommon: '#3fa34d', rare: '#2f80d1', epic: '#9b4fd6', legendary: '#d98a1f', mythic: '#c9a400',
 };
 const MATERIAL: Record<string, string> = { wood: 'Wood', stone: 'Brick', metal: 'Metal' };
+const CAUSE: Record<Hit['cause'], string> = { hit: 'hit', storm: 'storm', surge: 'surge', other: 'fall or other' };
+const RECENT_S = 20;
 
 function hpAt(p: Player, t: number): { health: number; shield: number } | null {
   if (!p.hp) return null;
@@ -84,12 +91,13 @@ function PlayerCard({ p, t }: { p: Player; t: number }) {
   const hp = hpAt(p, t);
   const { weapons, current } = loadoutAt(p, t);
   const picked = pickedUpAt(p, t);
+  const recent = p.damage.filter((e) => e.t <= t && t - e.t <= RECENT_S).slice(-3).reverse();
   return (
     <div className={`hud__player hud__player--${status}`}>
       <div className="hud__name">
         <strong>{p.name}</strong>
         {status === 'knocked' && <span className="hud__tag hud__tag--knocked">Knocked</span>}
-        {status === 'out' && <span className="hud__tag">Eliminated {p.death !== null ? fmt(p.death) : ''}</span>}
+        {status === 'out' && <span className="hud__tag">Eliminated {p.death !== null ? fmt(p.death) : ''}{p.killed_by ? ` by ${p.killed_by}` : ''}</span>}
       </div>
       {status !== 'out' && (hp ? (
         <div className="hud__bars"><Bar value={hp.shield} max={100} kind="shield" /><Bar value={hp.health} max={100} kind="health" /></div>
@@ -99,6 +107,15 @@ function PlayerCard({ p, t }: { p: Player; t: number }) {
           {weapons.map((w) => (
             <li key={w.name} className={current?.name === w.name ? 'is-current' : ''} style={{ borderColor: RARITY[w.rarity ?? ''] ?? 'var(--line)' }}
                 title={`${w.name}${w.rarity ? `, ${w.rarity}` : ''}${current?.name === w.name ? ' (in hand)' : ''}`}>{w.name}</li>
+          ))}
+        </ul>
+      )}
+      {status !== 'out' && recent.length > 0 && (
+        <ul className="hud__damage" aria-label="Damage in the last 20 seconds">
+          {recent.map((e) => (
+            <li key={`${e.t}-${e.cause}-${e.amount}`} className={`is-${e.cause}`}>
+              −{e.amount} <span>{e.cause === 'hit' ? `from ${e.by}` : CAUSE[e.cause]}, {fmt(e.t)}</span>
+            </li>
           ))}
         </ul>
       )}
@@ -151,12 +168,16 @@ function DecisionCard({ room, t, onJump }: { room: Room; t: number; onJump: (t: 
   const youKey = keys.has(d.actual) ? d.actual : d.actual === 'rotate_alt' && keys.has('rotate') ? 'rotate' : 'hold';
   const max = Math.max(...d.options.map((o) => o.ev), 1);
   const label = (k: string) => room.actions[k] ?? k;
+  const stretch = room.stretches.find((x) => x.stretch === d.stretch);
   return (
     <div className={`call ${d.followed ? 'call--ok' : 'call--miss'}`}>
       <div className="call__head">
         <h3>{fmt(d.t)}, zone {d.zone}</h3>
         <p className="call__verdict">{d.followed ? 'Matched the best option' : `${d.stake.toFixed(1)} points at stake`}</p>
       </div>
+      {stretch && stretch.checks > 1 && (
+        <p className="call__same">Same call since {fmt(stretch.t0)} ({stretch.checks} checks{stretch.t1 > d.t ? `, until ${fmt(stretch.t1)}` : ''})</p>
+      )}
       <p className="call__line"><span>You</span> {label(d.actual)}</p>
       <p className="call__line"><span>Best</span> {label(d.engine)}</p>
       <ul className="call__options" aria-label="Expected points for each option">
@@ -199,7 +220,7 @@ export function MatchRoom({ filters, bootId, enabled, team, onTeam }: Props) {
   const chart: ChartSpec | undefined = r?.charts.find((c) => c.kind === 'match_replay');
   const room = chart?.options as unknown as Room | undefined;
   const game = room?.games.find((g) => g.match === room.match);
-  const bigCalls = useMemo(() => (room?.decisions ?? []).filter((d) => !d.followed && d.stake >= 1).sort((a, b) => b.stake - a.stake).slice(0, 6), [room]);
+  const bigCalls = useMemo(() => (room?.stretches ?? []).filter((x) => !x.followed && x.stake >= 1).sort((a, b) => b.stake - a.stake).slice(0, 6), [room]);
 
   return (
     <section className={`room ${run.isFetching ? 'is-busy' : ''}`} aria-busy={run.isFetching}>
@@ -257,9 +278,10 @@ export function MatchRoom({ filters, bootId, enabled, team, onTeam }: Props) {
                 <div className="room__calls">
                   <h4>Biggest calls this game</h4>
                   <ol>
-                    {bigCalls.map((d) => (
-                      <li key={d.t}><button className="link" onClick={() => onJump(d.t)}>{fmt(d.t)}, zone {d.zone}</button>: {room.actions[d.actual] ?? d.actual},
-                        best was {(room.actions[d.engine] ?? d.engine).toLowerCase()} (+{d.stake.toFixed(1)})</li>
+                    {bigCalls.map((x) => (
+                      <li key={x.stretch}><button className="link" onClick={() => onJump(x.t_max)}>
+                        {x.checks > 1 ? `${fmt(x.t0)}–${fmt(x.t1)}` : fmt(x.t0)}, zone {x.zone}</button>: {room.actions[x.actual] ?? x.actual},
+                        best was {(room.actions[x.engine] ?? x.engine).toLowerCase()} (+{x.stake.toFixed(1)})</li>
                     ))}
                   </ol>
                 </div>

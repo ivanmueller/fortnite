@@ -547,8 +547,10 @@ GUIDES: dict[str, Guide] = {
     "surge": Guide(
         question="When does competitive storm surge trigger, who does it hit, and what surge score keeps a team safe?",
         method=[
-            "Replays don't record surge directly. It appears as 3 or more players inside the safe zone losing health in "
-            "the same second with no player hitting them; ticks within 10 s form one episode.",
+            "Replays don't record surge directly. It appears as health lost inside the safe zone with no player hitting them, by 3 or "
+            "more players in the same second, or repeating every 3–7 s for one player (a surge on a single duo or a lone player; the "
+            "storm ticks every second and fall damage doesn't repeat). Without the second rule, a surge on one duo would be missed. "
+            "Ticks within 10 s form one episode.",
             "For each episode: players alive, players hit, damage per tick, and each alive player's surge score before it started.",
             "Surge score is the rule the Surge study measured. Since October 2025, tournaments surge the teams with the lowest net "
             "damage (damage dealt minus damage taken, between players only); older matches used damage dealt. Comparing surged and "
@@ -800,8 +802,9 @@ GUIDES: dict[str, Guide] = {
             "every situation. It's told "
             "the directions the game fixes (more health never hurts, more storm never helps, fewer teams left never hurts a team "
             "that's alive) and learns how much each matters. Each game is priced by a model that never saw it.",
-            "Every 20 seconds the engine compares five options 20 seconds ahead: hold, rotate by the direct route, rotate by a less "
-            "crowded entry (perceived enemies only), heal (when there's health to gain), and engage a visible enemy (the measured "
+            "Every 20 seconds the engine compares four options 20 seconds ahead: hold (and heal if it's safe: no enemy within 50 m and "
+            "no damage in the last 10 s; healing is maintenance, never advice on its own), rotate by the direct route, rotate by a "
+            "less crowded entry (perceived enemies only), and engage a visible enemy (the measured "
             "win rate for its health; a loss means being placed now, at the points for the teams left).",
             "What the team actually did over the same 20 seconds is read from the data (held, rotated by which route, healed, "
             "engaged) and priced the same way: the difference is the points at stake.",
@@ -1066,7 +1069,8 @@ GUIDES: dict[str, Guide] = {
         question="How does surge work in these matches, and what actually works against it: sitting in zone hunting, sitting "
                  "passively, rotating early and building a surge base, or rotating late, and at what base height?",
         method=[
-            "Surge is detected as several players inside the zone losing health in the same second with no player hitting them.",
+            "Surge is detected as health lost inside the zone with no player hitting them: 3+ players in the same second, or one "
+            "player's drops repeating every 3–7 s (a surge on a single duo or a lone player).",
             "Which damage surge counts is measured: for each surge, players are ranked by every candidate rule, damage dealt or net "
             "damage (dealt minus taken), per player or per team, over several windows (whole match, since the zone appeared, since "
             "the previous surge check, the last 60, 120 and 180 seconds). The rule that best separates surged from safe players is "

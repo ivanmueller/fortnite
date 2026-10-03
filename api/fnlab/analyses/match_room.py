@@ -4,11 +4,15 @@ Match room: one team's game, played back on the map, with what they had and what
 Built on the match map's replay (every player's path, the storm, eliminations, the rotation plan per zone) and adds:
   HUD        per player over time: health and shield, knocked and eliminated, weapons seen in hand (with rarity),
              items picked up (materials, heals, ammo); per team: build pieces placed by material
+  damage     every health drop per player with its cause: a hit (by whom), the storm, surge (unexplained drops inside
+             the zone in surge's rhythm, as the Surge page detects them) or other (fall damage and the like), and what
+             eliminated them: the last damage before their elimination
   surge      the team's net damage (dealt minus taken, between players) since the current zone appeared, against
              the line that kept teams safe in that zone across the selected matches, and the surges in this game
   decisions  every engine decision point (live knowledge only): what the team did, the best option by expected points,
              every option's value, and for a fight its parts: chance to win, points if won (with the elimination),
              points if lost (placed now). The points at stake are the gap between the best option and what they did.
+             Consecutive checks with the same call form one stretch, so a call repeated every 20 s counts once.
   games      the team's games in the selection, to switch between them
 
 What the replays don't give (yet): material and item counts. Replays record weapons in hand, pickups and build
@@ -27,6 +31,8 @@ from ._events_common import has_tables
 from .audit import _find_team
 
 SURGE_STEP = 5        # seconds between surge-score samples
+STRETCH_GAP_S = 25    # decision checks closer than this, with the same call, are one stretch
+DEATH_WINDOW_S = 10   # the damage that eliminated a player: their last within this many seconds before it
 PERCEIVE_M = 120.0    # the engine's perception radius, as on the match map
 
 
@@ -42,6 +48,40 @@ def _pretty(weapon) -> str:
     return p(weapon)
 
 
+def _damage(con, mid: str, ids: list[int]) -> dict[int, list[dict]]:
+    """Every health drop for these players in one match, with its cause: hit (by whom), storm, surge or other."""
+    from ._events_common import unexplained_drops
+    from .surge import surge_drops
+    out: dict[int, list[dict]] = {i: [] for i in ids}
+    have = {t for (t,) in con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
+    if not {"health", "damage"} <= have:
+        return out
+    idl = ", ".join(str(i) for i in ids)
+    names = dict(df(con, f"SELECT id, name FROM players WHERE match_id = '{mid}'").itertuples(index=False, name=None))
+    hits = _q(con, f"""SELECT t, target_id AS id, attacker_id, amount FROM damage WHERE match_id = '{mid}' AND target_kind = 'player'
+                       AND target_id IN ({idl}) AND attacker_id IS NOT NULL ORDER BY t""")
+    for t, i, a, amt in hits.itertuples(index=False, name=None):
+        if a != i:
+            out[int(i)].append(dict(t=round(float(t), 1), amount=round(float(amt)), cause="hit", by=str(names.get(a, "?"))))
+    con.execute("CREATE OR REPLACE TEMP TABLE mr_sel AS SELECT match_id FROM sel")
+    try:
+        con.execute(f"CREATE OR REPLACE TEMP TABLE sel AS SELECT '{mid}' AS match_id")
+        drops = unexplained_drops(con)
+    finally:
+        con.execute("CREATE OR REPLACE TEMP TABLE sel AS SELECT match_id FROM mr_sel")
+    drops = drops[drops["id"].isin(ids)].copy()
+    if len(drops):
+        inside = drops[(drops["in_storm"] == False) & drops["phase"].notna()]  # noqa: E712
+        surged = surge_drops(inside) if len(inside) else pd.Series(dtype=bool)
+        drops["cause"] = np.where(drops["in_storm"] == True, "storm", "other")  # noqa: E712
+        drops.loc[surged[surged].index, "cause"] = "surge"
+        for t, i, lost, cause in drops[["t", "id", "lost", "cause"]].itertuples(index=False, name=None):
+            out[int(i)].append(dict(t=round(float(t), 1), amount=round(float(lost)), cause=str(cause), by=None))
+    for i in out:
+        out[i].sort(key=lambda e: e["t"])
+    return out
+
+
 def _hud(con, mid: str, members: pd.DataFrame, ti: int) -> dict:
     ids = [int(i) for i in members["id"]]
     idl = ", ".join(str(i) for i in ids)
@@ -51,6 +91,7 @@ def _hud(con, mid: str, members: pd.DataFrame, ti: int) -> dict:
     pk = _q(con, f"""SELECT picked_by AS id, picked_t AS t, item, category, count FROM pickups
                      WHERE match_id = '{mid}' AND picked_by IN ({idl}) AND picked_t IS NOT NULL ORDER BY picked_t""") if "pickups" in have else pd.DataFrame()
     kl = _q(con, f"SELECT victim_id AS id, t, downed, revived FROM kills WHERE match_id = '{mid}' AND victim_id IN ({idl}) ORDER BY t") if "kills" in have else pd.DataFrame()
+    dmg = _damage(con, mid, ids)
     players = []
     for _, m in members.iterrows():
         pid = int(m["id"])
@@ -59,7 +100,14 @@ def _hud(con, mid: str, members: pd.DataFrame, ti: int) -> dict:
         p = pk[pk["id"] == pid] if len(pk) else pk
         k = kl[kl["id"] == pid] if len(kl) else kl
         knocks = [float(t) for t, dn in zip(k.get("t", []), k.get("downed", [])) if bool(dn)]
-        players.append(dict(
+        death = None if m["death_t"] != m["death_t"] else float(m["death_t"])
+        log = dmg.get(pid, [])
+        last = [e for e in log if death is not None and death - DEATH_WINDOW_S <= e["t"] <= death + 1]
+        killed_by = None
+        if last:
+            e = last[-1]
+            killed_by = f"{e['by']}" if e["cause"] == "hit" else {"storm": "the storm", "surge": "surge", "other": "fall or other damage"}[e["cause"]]
+        players.append(dict(damage=log, killed_by=killed_by,
             id=pid, name=str(m["name"]), death=None if m["death_t"] != m["death_t"] else float(m["death_t"]),
             knocks=knocks, revives=[float(t) for t, rv in zip(k.get("t", []), k.get("revived", [])) if bool(rv)],
             hp=dict(t=h["t"].round(2).tolist(), health=h["health"].fillna(0).round(0).tolist(), shield=h["shield"].fillna(0).round(0).tolist())
@@ -122,13 +170,18 @@ def _decisions(ctx: Context, mid: str, ti: int) -> list[dict]:
     if ed is None or not len(ed["d"]):
         return []
     em = ed["d"][(ed["d"]["match_id"] == mid) & (ed["d"]["team_index"] == ti)].sort_values("t")
-    out = []
+    out, prev = [], None
     for _, q in em.iterrows():
         opts = sorted(((k, eng.ACTIONS[k], float(q[f"ev_{k}"])) for k in eng.ACTIONS if q[f"ev_{k}"] > -1e8), key=lambda x: -x[2])
         fight = None
         if "p_win" in q and q["p_win"] == q["p_win"]:
             fight = dict(p_win=round(float(q["p_win"]), 2), if_won=round(float(q["ev_win"]), 1), if_lost=round(float(q["ev_lose"]), 1))
+        key = (q["engine"], q["actual"], bool(q["followed"]))
+        new = prev is None or key != prev[0] or float(q["t"]) - prev[1] > STRETCH_GAP_S
+        stretch = (out[-1]["stretch"] + 1 if out else 0) if new else out[-1]["stretch"]
+        prev = (key, float(q["t"]))
         out.append(dict(
+            stretch=stretch,
             t=float(q["t"]), zone=int(q["zone"]), engine=q["engine"], actual=q["actual"], stake=round(float(q["stake"]), 1),
             followed=bool(q["followed"]), options=[dict(key=k, label=lab, ev=round(v, 1)) for k, lab, v in opts], fight=fight,
             knew=dict(outside_m=round(float(q["outside_m"])), hp=round(float(q["hp"])), teams=int(q["teams_alive"]),
@@ -173,15 +226,23 @@ def run(ctx: Context) -> Result:
     o["games"] = [dict(match=m, game=i + 1, date=str(d)[:10], placement=None if p != p else int(p), points=None if pt != pt else round(float(pt)))
                   for i, (m, d, p, pt) in enumerate(zip(games["match_id"], games["match_date"], games["placement"], games["points"]))]
     o["hud"], o["surge"], o["decisions"] = hud, surge, decisions
+    stretches = []
+    for sid in sorted({d["stretch"] for d in decisions}):
+        q = [d for d in decisions if d["stretch"] == sid]
+        stretches.append(dict(stretch=sid, t0=q[0]["t"], t1=q[-1]["t"], zone=q[0]["zone"], engine=q[0]["engine"], actual=q[0]["actual"],
+                              followed=q[0]["followed"], stake=max(d["stake"] for d in q), checks=len(q),
+                              t_max=max(q, key=lambda d: d["stake"])["t"]))
+    o["stretches"] = stretches
     o["scoring"] = scheme.label
     from .. import engine as eng
     o["actions"] = dict(eng.ACTIONS)
     chart["title"] = "Match room"
     g = next((x for x in o["games"] if x["match"] == mid), None)
-    missed = [d for d in decisions if not d["followed"] and d["stake"] >= 1]
+    missed = [x for x in stretches if not x["followed"] and x["stake"] >= 1]
     r.headline = (f"{o['team_name']}, game {g['game'] if g else '?'}: placed {g['placement'] if g else '?'}, {g['points'] if g else '?'} points. "
                   f"{len(missed)} decision{'s' if len(missed) != 1 else ''} where another option was worth a point or more.")
-    r.metric("Decisions worth 1+ point", f"{len(missed)} of {len(decisions)}", "Decision points where the best option beat what the team did by a point or more")
+    r.metric("Decisions worth 1+ point", f"{len(missed)} of {len(stretches)}", "Calls (consecutive checks with the same call count once) where "
+             "the best option beat what the team did by a point or more")
     if not hud["has"]["health"]:
         r.notes.append("No health data for this game: re-process it with data option 7 for health and shield bars.")
     r.notes.append("Materials and item counts aren't in the replay data the pipeline reads: the HUD shows weapons seen in hand, items "

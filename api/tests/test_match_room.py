@@ -88,3 +88,16 @@ def test_every_decision_is_consistent(room):
         if d["fight"]:
             assert 0 <= d["fight"]["p_win"] <= 1 and d["fight"]["if_won"] >= d["fight"]["if_lost"] - 1e-6
     assert any(d["fight"] for d in ds)
+    assert all(d["engine"] in {"hold", "rotate", "rotate_alt", "engage"} and "heal" not in {x["key"] for x in d["options"]} for d in ds)
+
+
+def test_repeated_calls_form_one_stretch_and_damage_has_causes(room):
+    o = next(c for c in room["charts"] if c["kind"] == "match_replay")["options"]
+    ds, st = o["decisions"], o["stretches"]
+    assert st and len(st) <= len(ds) and sum(x["checks"] for x in st) == len(ds)
+    for a, b in zip(ds, ds[1:]):
+        if a["stretch"] == b["stretch"]:
+            assert (a["engine"], a["actual"], a["followed"]) == (b["engine"], b["actual"], b["followed"]) and b["t"] - a["t"] <= 25
+    for p in o["hud"]["players"]:
+        assert "killed_by" in p and all(e["cause"] in {"hit", "storm", "surge", "other"} and e["amount"] >= 0 for e in p["damage"])
+    assert any(e["cause"] == "hit" and e["by"] for p in o["hud"]["players"] for e in p["damage"])

@@ -649,3 +649,10 @@ tbody tr:hover { background: #fff; }
   .call__options li { grid-template-columns: minmax(0, 1fr) 4rem 3rem; }
 }
 @media (prefers-reduced-motion: reduce) { .hpbar__fill { transition: none; } }
+.hud__damage { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.15rem; font-size: 0.8rem; font-weight: 600; }
+.hud__damage li span { font-weight: 400; color: var(--muted); }
+.hud__damage li.is-hit { color: var(--ink); }
+.hud__damage li.is-storm { color: #6b4fa0; }
+.hud__damage li.is-surge { color: var(--red); }
+.hud__damage li.is-other { color: var(--amber); }
+.call__same { margin: 0.25rem 0 0; font-size: var(--t-sm); color: var(--muted); }

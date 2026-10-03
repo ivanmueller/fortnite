@@ -17,7 +17,8 @@ Options, looked at HORIZON_S seconds ahead:
   hold       stay; storm damage and the chance of a random hit where you stand
   rotate     run toward the next zone's edge by the direct route
   rotate_alt the less crowded entry (perceived enemies only), up to 45 degrees around
-  heal       +50 health and shield, staying put
+  (healing is part of holding: a team that can heal safely, with no enemy within 50 m and no damage in the last 10 s,
+   is valued as healing +50 while it holds. Healing is maintenance, not a strategic call, so it's never advice on its own.)
   engage     a visible enemy: win with the measured win rate for your health (else placed now: the placement
              points for the teams left)
 The engine picks the option with the most expected points; the team's actual action over the same 20 s is read
@@ -37,7 +38,7 @@ HORIZON_S = 20
 HEAL = 50
 LIVE = ["teams_alive", "zone", "progress", "members", "hp", "outside_m", "storm_m", "off_centre", "kills", "hit_10s",
         "surge_margin", "seen", "seen_close", "seen_above", "ground_rank", *ep.SKILL]
-ACTIONS = {"hold": "Hold", "rotate": "Rotate now (direct)", "rotate_alt": "Rotate by the less crowded entry", "heal": "Heal first",
+ACTIONS = {"hold": "Hold (heal if you can)", "rotate": "Rotate now (direct)", "rotate_alt": "Rotate by the less crowded entry",
            "engage": "Engage the visible team"}
 STORM_DPS = {2: 1, 3: 1, 4: 2, 5: 5, 6: 8}          # per second; 10 from zone 7
 
@@ -190,10 +191,10 @@ def evaluate(t: pd.DataFrame, model, run_ms: float, p_hit: dict, odds: pd.Series
     p_win = np.array([float(odds.get(b, 0.45)) for b in hb])
     lose = scheme.placement_points(d["teams_alive"].astype(int)).to_numpy(float)
     NEG = -1e9
-    d["ev_hold"] = P["hold"]
+    can_heal = (hp <= full_hp - 25) & (d["seen_close"].to_numpy(float) == 0) & (d["hit_10s"].to_numpy(float) < 1)
+    d["ev_hold"] = np.where(can_heal, np.maximum(P["hold"], P["heal"]), P["hold"])
     d["ev_rotate"] = np.where(to_edge > 0, P["rotate"], NEG)
     d["ev_rotate_alt"] = np.where((to_edge > 0) & (crowd > 0), P["rotate_alt"], NEG)
-    d["ev_heal"] = np.where(hp <= full_hp - 25, P["heal"], NEG)                # only worth considering when there's health to gain
     d["ev_engage"] = np.where(d["seen"].to_numpy(float) > 0, p_win * (P["win"] + scheme.elimination) + (1 - p_win) * lose, NEG)
     # the fight's parts, so a review can show the trade (e.g. forcing a refresh): chance to win, points if won, points if lost
     d["p_win"] = np.where(d["seen"].to_numpy(float) > 0, p_win, np.nan)
@@ -208,7 +209,7 @@ def evaluate(t: pd.DataFrame, model, run_ms: float, p_hit: dict, odds: pd.Series
     ang = np.degrees(np.arccos(np.clip((mvx * ux + mvy * uy) / (np.hypot(mvx, mvy) + 1e-9), -1, 1)))
     act = np.where(np.nan_to_num(dealt) > 20, "engage",
                    np.where((to_edge > 0) & (moved_in >= 30), np.where(ang < 35, "rotate", "rotate_alt"),
-                            np.where(healed >= 25, "heal", "hold")))
+                            "hold"))
     d["actual"] = act
     keys = list(ACTIONS)
     evs = d[[f"ev_{k}" for k in keys]].to_numpy(float)

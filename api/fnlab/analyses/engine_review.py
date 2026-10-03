@@ -191,7 +191,7 @@ def _notes(r: Result, data: dict, perceive: float) -> None:
         f"surge above or below the cut-off (bottom {data['cutoff']:.0%} of team net damage this zone), enemies within {perceive:.0f} m, "
         "the natural ground under you, and both teams' Power Rankings. Never far enemies' positions or anyone else's health.",
         f"Scoring: {data['scheme'].describe()}",
-        f"Every {eng.DECISION_S} s the engine compares hold, rotate (direct or by the less crowded entry), heal and engage, "
+        f"Every {eng.DECISION_S} s the engine compares hold (healing when it's safe), rotate (direct or by the less crowded entry) and engage, "
         f"{eng.HORIZON_S} s ahead, and prices each with a points model trained on live knowledge only (each game by a model that "
         f"never saw it). Rotation speed: {data['run_ms']:.1f} m/s.",
         "'Followed' means the team did what the engine recommends, or something within half a point of it.",

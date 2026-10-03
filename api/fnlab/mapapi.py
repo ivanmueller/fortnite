@@ -2,8 +2,12 @@
 The real Fortnite map image for the interactive match map, and its calibration.
 
 The image (saved by the map download as map.png / map_pois.png in the data folder) uses pixels; the game uses
-its own coordinates. Clicking three named places on the image gives three (pixel, game) pairs, from which an
-affine transform is fitted (it handles any rotation or flip between the two).
+its own coordinates. Clicking named places (or dragging zone circles) on the image gives (pixel, game) pairs, from
+which a similarity transform is fitted: one uniform scale, a rotation or flip, and a shift. A top-down map image is
+exactly that, so the fit can't shear or stretch one axis to absorb a slightly-off click (the old affine fit could,
+and with three clicks it matched them exactly while drifting everywhere else). The error is checked by leaving each
+place out of the fit in turn and measuring how far off the fit puts it: an honest error, not a fit to itself.
+The zones and player paths are never moved: they're drawn in the replay's own game coordinates.
 """
 from __future__ import annotations
 
@@ -25,15 +29,61 @@ def _data() -> Path:
     return Path(config.DATASETS["real"])
 
 
+def fit_similarity(px: np.ndarray, g: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Image pixels (n, 2) -> game cm (n, 2) by uniform scale, rotation or flip, and shift (least squares, 2+ points).
+    Returns (image_to_game, game_to_image) as 2x3 matrices [[a, b, c], [d, e, f]] applied to [x, y, 1]."""
+    pm, gm = px.mean(0), g.mean(0)
+    P, G = px - pm, g - gm
+    n2 = float((P ** 2).sum()) or 1.0
+    best = None
+    for flip in (1.0, -1.0):
+        Q = P * [1.0, flip]
+        a = float((Q[:, 0] * G[:, 0] + Q[:, 1] * G[:, 1]).sum()) / n2
+        b = float((Q[:, 0] * G[:, 1] - Q[:, 1] * G[:, 0]).sum()) / n2
+        M = np.array([[a, -b], [b, a]]) @ np.diag([1.0, flip])
+        res = float(((P @ M.T - G) ** 2).sum())
+        if best is None or res < best[0]:
+            best = (res, M)
+    M = best[1]
+    t = gm - M @ pm
+    Minv = np.linalg.inv(M)
+    return np.c_[M, t], np.c_[Minv, -Minv @ t]
+
+
+def _fit(points: list[dict], image: str) -> dict:
+    P = np.array([[p["px"], p["py"]] for p in points], float)
+    G = np.array([[p["x"], p["y"]] for p in points], float)
+    img_to_game, game_to_img = fit_similarity(P, G)
+    if len(points) >= 3:      # leave each place out, fit on the rest, and see how far off it lands
+        loo = []
+        for i in range(len(points)):
+            keep = np.arange(len(points)) != i
+            a, _ = fit_similarity(P[keep], G[keep])
+            loo.append(float(np.hypot(*(a[:, :2] @ P[i] + a[:, 2] - G[i]))) / 100)
+        error = max(loo)
+    else:
+        error, loo = None, []
+    return {"image_to_game": img_to_game.tolist(), "game_to_image": game_to_img.tolist(), "image": image, "points": points,
+            "error_m": error, "errors_m": [round(e, 1) for e in loo], "model": "similarity",
+            "mismatch": len(points) >= 4 and error is not None and error > MISMATCH_M}
+
+
 def calibration() -> dict | None:
-    """{'image_to_game': 2x3 matrix, 'game_to_image': 2x3 matrix, 'image': name} or None."""
+    """{'image_to_game': 2x3 matrix, 'game_to_image': 2x3 matrix, 'image': name, 'error_m', ...} or None.
+    A calibration saved by the older affine fit is refitted from its saved places, so it improves without re-clicking."""
     p = _data() / "map_calibration.json"
     if not p.exists():
         return None
     try:
-        return json.loads(p.read_text())
+        c = json.loads(p.read_text())
     except ValueError:
         return None
+    if c.get("model") != "similarity" and len(c.get("points") or []) >= 2:
+        try:
+            c = _fit(c["points"], c.get("image", "plain"))
+        except (KeyError, np.linalg.LinAlgError):
+            pass
+    return c
 
 
 IMAGES = {"plain": "map.png", "pois": "map_pois.png", "custom": "map_custom.img"}
@@ -108,17 +158,14 @@ def save_calibration(c: Calibration, request: Request):
     local_only(request)
     if len(c.points) < 3:
         raise HTTPException(400, "Click at least three places.")
-    P = np.array([[p.px, p.py, 1.0] for p in c.points])
-    G = np.array([[p.x, p.y] for p in c.points])
-    img_to_game, *_ = np.linalg.lstsq(P, G, rcond=None)            # 3x2: [px, py, 1] -> [x, y]
-    Gh = np.c_[G, np.ones(len(G))]
-    game_to_img, *_ = np.linalg.lstsq(Gh, P[:, :2], rcond=None)
-    resid = np.hypot(*(P @ img_to_game - G).T) / 100
-    if len(c.points) >= 3 and abs(np.linalg.det(img_to_game[:2])) < 1e-9:
-        raise HTTPException(400, "Those places are in a line; pick three spread across the map.")
-    error = float(resid.max())
-    out = {"image_to_game": img_to_game.T.tolist(), "game_to_image": game_to_img.T.tolist(), "image": c.image,
-           "points": [p.model_dump() for p in c.points], "error_m": error, "mismatch": len(c.points) >= 4 and error > MISMATCH_M}
+    pts = [p.model_dump() for p in c.points]
+    spread = np.array([[p["px"], p["py"]] for p in pts], float)
+    if np.ptp(spread[:, 0]) + np.ptp(spread[:, 1]) < 1e-6:
+        raise HTTPException(400, "Those places are all at one spot; pick three spread across the map.")
+    try:
+        out = _fit(pts, c.image)
+    except np.linalg.LinAlgError:
+        raise HTTPException(400, "Those places don't fix the map's position; pick three spread across the map.")
     (_data() / "map_calibration.json").write_text(json.dumps(out, indent=1))
     return out
 

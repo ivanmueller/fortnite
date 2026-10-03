@@ -1,9 +1,11 @@
 """
 Surge: when competitive storm surge triggers, who it hits, and how much damage keeps a player safe.
 
-Replays don't record surge directly. It shows up in the data as several players losing health in
-the same second while inside the safe zone, with no player hitting them. Detection:
-  tick     MIN_PLAYERS+ players inside the zone lose health in the same second with no player hit nearby
+Replays don't record surge directly. It shows up in the data as health lost inside the safe zone with no player
+hitting them, in surge's rhythm. Detection (all drops: inside the zone, no player hit within the surrounding seconds):
+  tick     MIN_PLAYERS+ players lose health in the same second, or one player's drops repeat every CADENCE_S
+           (surge ticks about every 5 s; the storm ticks every second and fall damage doesn't repeat). The second rule
+           catches a surge that hits a single duo or a lone player, which the first misses.
   episode  ticks no more than EPISODE_GAP_S apart
 Surge targets the lowest scorers on its rule (since October 2025 in tournaments: team net damage, dealt minus
 taken). The Surge study measures which rule the matches follow (surge_rule.py); this page uses it to compare
@@ -23,7 +25,22 @@ from . import ALPHA_PARAM, Context, register
 from ._events_common import NEEDS_EVENTS, conclude_without_data, has_tables, player_hits, unexplained_drops
 
 MIN_PLAYERS = 3
+CADENCE_S = (3.0, 7.0)
 EPISODE_GAP_S = 10
+
+
+def surge_drops(inside: pd.DataFrame) -> pd.Series:
+    """For unexplained drops inside the zone (match_id, id, t): is each a surge tick? Either MIN_PLAYERS+ players dropped in
+    that same second, or the player's previous or next unexplained drop is CADENCE_S away (surge's rhythm)."""
+    if inside.empty:
+        return pd.Series(dtype=bool)
+    sec = inside["t"].round(0)
+    crowd = inside.assign(sec=sec).groupby(["match_id", "sec"])["id"].transform("nunique") >= MIN_PLAYERS
+    o = inside.sort_values(["match_id", "id", "t"])
+    g = o.groupby(["match_id", "id"])["t"]
+    lo, hi = CADENCE_S
+    rhythm = ((o["t"] - g.shift(1)).between(lo, hi) | (g.shift(-1) - o["t"]).between(lo, hi)).reindex(inside.index)
+    return crowd | rhythm.fillna(False)
 
 
 def surge_episodes(ctx: Context) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -32,9 +49,10 @@ def surge_episodes(ctx: Context) -> tuple[pd.DataFrame, pd.DataFrame]:
     if drops.empty:
         return pd.DataFrame(), pd.DataFrame()
     inside = drops[(drops["in_storm"] == False) & drops["phase"].notna()].copy()  # noqa: E712
+    inside = inside[surge_drops(inside)].copy()
     inside["sec"] = inside["t"].round(0)
     tick = inside.groupby(["match_id", "sec"]).agg(players=("id", "nunique"), lost=("lost", "median"), phase=("phase", "max")).reset_index()
-    tick = tick[tick["players"] >= MIN_PLAYERS].sort_values(["match_id", "sec"])
+    tick = tick.sort_values(["match_id", "sec"])
     if tick.empty:
         return pd.DataFrame(), pd.DataFrame()
     tick["episode"] = (tick.groupby("match_id")["sec"].diff().fillna(1e9) > EPISODE_GAP_S).cumsum()
@@ -165,8 +183,9 @@ def run(ctx: Context) -> Result:
                          "Collect more later-round matches (data menu option T): surge is round-specific."],
              next_none=["Collect more later-round matches (data menu option T): surge is round-specific."])
     r.notes += [
-        f"Surge is detected, not recorded: {MIN_PLAYERS}+ players inside the zone losing health in the same second with no "
-        "player hitting them. Fall damage is individual and the storm is excluded, so false alarms should be rare.",
+        f"Surge is detected, not recorded: health lost inside the zone with no player hitting them, either by {MIN_PLAYERS}+ players "
+        f"in the same second or repeating every {CADENCE_S[0]:.0f}–{CADENCE_S[1]:.0f} s for one player (a surge on a single duo). The "
+        "storm ticks every second and fall damage doesn't repeat, so false alarms should be rare.",
         "Surge score counts damage between players on different teams only (no storm, fall or self damage), before the episode starts.",
     ]
     return r

@@ -350,32 +350,49 @@ export function MatchMap({ spec, time, onTime, bare = false }: { spec: ChartSpec
 type Ref = { key: string; name: string; x: number; y: number; kind: string; r?: number };      // game coordinates (and zone radius) in cm
 type Pick = Ref & { px: number; py: number; rpx?: number };
 
-/** Least-squares affine fit image px -> game cm from 3+ picks, with each pick's error in metres. */
-function fitAffine(picks: Pick[]): { err: number[]; toImage: (x: number, y: number) => [number, number]; scale: number } | null {
-  if (picks.length < 3) return null;
-  const S = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], Bx = [0, 0, 0], By = [0, 0, 0];
-  for (const p of picks) {
-    const v = [p.px, p.py, 1];
-    for (let i = 0; i < 3; i++) { for (let j = 0; j < 3; j++) S[i][j] += v[i] * v[j]; Bx[i] += v[i] * p.x; By[i] += v[i] * p.y; }
+/** Similarity fit image px -> game cm (uniform scale, rotation or flip, shift), least squares from 2+ points. */
+function similarity(picks: Pick[]): { a: number[][]; inv: number[][]; scale: number } | null {
+  if (picks.length < 2) return null;
+  const n = picks.length;
+  const pm = [picks.reduce((s, p) => s + p.px, 0) / n, picks.reduce((s, p) => s + p.py, 0) / n];
+  const gm = [picks.reduce((s, p) => s + p.x, 0) / n, picks.reduce((s, p) => s + p.y, 0) / n];
+  const P = picks.map((p) => [p.px - pm[0], p.py - pm[1]]), G = picks.map((p) => [p.x - gm[0], p.y - gm[1]]);
+  const n2 = P.reduce((s, q) => s + q[0] * q[0] + q[1] * q[1], 0);
+  if (n2 < 1e-9) return null;
+  let best: { res: number; M: number[][] } | null = null;
+  for (const flip of [1, -1]) {
+    let a = 0, b = 0;
+    P.forEach((q, i) => { const qx = q[0], qy = q[1] * flip; a += qx * G[i][0] + qy * G[i][1]; b += qx * G[i][1] - qy * G[i][0]; });
+    a /= n2; b /= n2;
+    const M = [[a, -b * flip], [b, a * flip]];
+    const res = P.reduce((s, q, i) => s + (M[0][0] * q[0] + M[0][1] * q[1] - G[i][0]) ** 2 + (M[1][0] * q[0] + M[1][1] * q[1] - G[i][1]) ** 2, 0);
+    if (!best || res < best.res) best = { res, M };
   }
-  const det = (M: number[][]) => M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0])
-    + M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
-  const D = det(S);
-  if (Math.abs(D) < 1e-6) return null;
-  const solve = (b: number[]) => [0, 1, 2].map((k) => det(S.map((row, i) => row.map((v, j) => (j === k ? b[i] : v)))) / D);
-  const ax = solve(Bx), ay = solve(By);                     // gx = ax0 px + ax1 py + ax2 ; gy = ay0 px + ay1 py + ay2
-  const d2 = ax[0] * ay[1] - ax[1] * ay[0];
-  if (Math.abs(d2) < 1e-12) return null;
-  const err = picks.map((p) => Math.hypot(ax[0] * p.px + ax[1] * p.py + ax[2] - p.x, ay[0] * p.px + ay[1] * p.py + ay[2] - p.y) / 100);
-  const toImage = (x: number, y: number): [number, number] => {
-    const gx = x - ax[2], gy = y - ay[2];
-    return [(ay[1] * gx - ax[1] * gy) / d2, (-ay[0] * gx + ax[0] * gy) / d2];
-  };
-  const scale = Math.sqrt(Math.abs(d2));                     // cm per image pixel (area-preserving average)
-  return { err, toImage, scale };
+  const M = best!.M;
+  const t = [gm[0] - (M[0][0] * pm[0] + M[0][1] * pm[1]), gm[1] - (M[1][0] * pm[0] + M[1][1] * pm[1])];
+  const det = M[0][0] * M[1][1] - M[0][1] * M[1][0];
+  if (Math.abs(det) < 1e-12) return null;
+  const Mi = [[M[1][1] / det, -M[0][1] / det], [-M[1][0] / det, M[0][0] / det]];
+  const ti = [-(Mi[0][0] * t[0] + Mi[0][1] * t[1]), -(Mi[1][0] * t[0] + Mi[1][1] * t[1])];
+  return { a: [[M[0][0], M[0][1], t[0]], [M[1][0], M[1][1], t[1]]], inv: [[Mi[0][0], Mi[0][1], ti[0]], [Mi[1][0], Mi[1][1], ti[1]]],
+           scale: Math.sqrt(Math.abs(det)) };
 }
 
-/** Line the map image up with game coordinates: click any named places, landmarks or real zone centres, as many as you like. */
+/** The calibration fit, with each place's error in metres measured with that place left out of the fit (3+ places). */
+function fitAffine(picks: Pick[]): { err: number[]; toImage: (x: number, y: number) => [number, number]; scale: number } | null {
+  if (picks.length < 3) return null;
+  const f = similarity(picks);
+  if (!f) return null;
+  const err = picks.map((p, i) => {
+    const g = similarity(picks.filter((_, j) => j !== i));
+    if (!g) return 0;
+    return Math.hypot(g.a[0][0] * p.px + g.a[0][1] * p.py + g.a[0][2] - p.x, g.a[1][0] * p.px + g.a[1][1] * p.py + g.a[1][2] - p.y) / 100;
+  });
+  const toImage = (x: number, y: number): [number, number] =>
+    [f.inv[0][0] * x + f.inv[0][1] * y + f.inv[0][2], f.inv[1][0] * x + f.inv[1][1] * y + f.inv[1][2]];
+  return { err, toImage, scale: f.scale };
+}
+
 function Calibrator({ storm, existing, image, onDone, onCancel }: {
   storm: Storm[]; existing: Calib; image: 'custom' | 'pois'; onDone: (c: Calib) => void; onCancel: () => void;
 }) {
