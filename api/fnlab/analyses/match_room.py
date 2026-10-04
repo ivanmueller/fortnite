@@ -163,12 +163,48 @@ def _surge(ctx: Context, mid: str, ti: int, t0: float, t1: float) -> dict | None
     return dict(t=ts.round(1).tolist(), zone=zone_at.tolist(), net=net, dealt=dl, taken=tk, lines=lines, episodes=episodes, rule=rule)
 
 
+CROWD_MIN = 20       # decisions in a situation before the field's split is shown
+TOP_MIN = 8          # decisions by top teams in a situation before theirs is shown
+TOP_MAJORITY = 0.7   # top teams agreeing this strongly against the engine flags a decision for a second look
+
+
+def _situation(d: pd.DataFrame) -> pd.Series:
+    """A coarse 'spot like this': stage of the game, distance outside the next zone, enemies within 50 m, health band."""
+    zg = np.where(d["zone"] >= 6, "late", np.where(d["zone"] >= 4, "mid", "early"))
+    ob = pd.cut(d["outside_m"], [-1, 0, 100, 300, 1e9], labels=["in", "lt100", "100to300", "300plus"]).astype(str)
+    hb = pd.cut(d["hp"], [-1, 100, 175, 1e9], labels=["low", "mid", "high"]).astype(str)
+    return pd.Series(zg, index=d.index) + "|" + ob + "|" + (d["seen_close"] > 0).astype(str) + "|" + hb
+
+
+def _crowd(ctx: Context, d: pd.DataFrame, mid: str, ti: int) -> tuple[pd.Series, dict, dict]:
+    """What the field, and the top teams (Field and top teams), did in each situation, leaving this team's game out."""
+    from .field_study import _team_games, top_teams
+    con = ctx.con
+    tg = _team_games(con, scoring.active())
+    teams = tg.groupby("key").agg(games=("match_id", "nunique"), ppg=("points", "mean"))
+    top, _ = top_teams(teams)
+    top_tm = set(map(tuple, tg.loc[tg["key"].isin(top), ["match_id", "team_index"]].itertuples(index=False, name=None)))
+    sit = _situation(d)
+    others = ~((d["match_id"] == mid) & (d["team_index"] == ti))
+    is_top = np.array([(m, t) in top_tm for m, t in zip(d["match_id"], d["team_index"])])
+    field, tops = {}, {}
+    for s_, q in d[others].groupby(sit[others]):
+        field[s_] = (q["actual"].value_counts(normalize=True).round(2).to_dict(), len(q))
+    for s_, q in d[others & is_top].groupby(sit[others & is_top]):
+        tops[s_] = (q["actual"].value_counts(normalize=True).round(2).to_dict(), len(q))
+    return sit, field, tops
+
+
 def _decisions(ctx: Context, mid: str, ti: int) -> list[dict]:
     from .engine_review import decisions
     from .. import engine as eng
     ed = decisions(ctx, PERCEIVE_M)
     if ed is None or not len(ed["d"]):
         return []
+    try:
+        sit, field, tops = _crowd(ctx, ed["d"], mid, ti)
+    except Exception:  # noqa: BLE001 - the room works without the crowd
+        sit, field, tops = None, {}, {}
     em = ed["d"][(ed["d"]["match_id"] == mid) & (ed["d"]["team_index"] == ti)].sort_values("t")
     out, prev = [], None
     for _, q in em.iterrows():
@@ -180,7 +216,17 @@ def _decisions(ctx: Context, mid: str, ti: int) -> list[dict]:
         new = prev is None or key != prev[0] or float(q["t"]) - prev[1] > STRETCH_GAP_S
         stretch = (out[-1]["stretch"] + 1 if out else 0) if new else out[-1]["stretch"]
         prev = (key, float(q["t"]))
+        crowd = None
+        if sit is not None:
+            s_ = sit.get(q.name)
+            fd, fn = field.get(s_, ({}, 0))
+            td, tn = tops.get(s_, ({}, 0))
+            if fn >= CROWD_MIN:
+                top_choice = max(td, key=td.get) if tn >= TOP_MIN and td else None
+                crowd = dict(field=fd, n_field=int(fn), top=td if tn >= TOP_MIN else None, n_top=int(tn),
+                             second_look=bool(top_choice and td[top_choice] >= TOP_MAJORITY and top_choice != q["engine"]))
         out.append(dict(
+            crowd=crowd,
             stretch=stretch,
             t=float(q["t"]), zone=int(q["zone"]), engine=q["engine"], actual=q["actual"], stake=round(float(q["stake"]), 1),
             followed=bool(q["followed"]), options=[dict(key=k, label=lab, ev=round(v, 1)) for k, lab, v in opts], fight=fight,

@@ -30,6 +30,12 @@ PAGES = [
         section("gameplan", "Game plan", "Type the team's names, set the event's first day, and select the matches to learn from in the left panel.",
                 table="Plan", rows=10, wrap=True, metrics=["Team", "Drop spot", "History", "Scoring"]),
     ]),
+    dict(id="field", title="Field and top teams", question="What does the whole field do, what do the best teams do differently, and "
+         "what does your team do?", sections=[
+        section("field", "Field and top teams", "Type your team's names to add your column. Select a season (or one event) in strong lobbies.",
+                table="Field, top teams and you", rows=14, wrap=True, charts=["How often the field, the top teams and you do each"],
+                metrics=["Copy this", "Top teams", "Teams in the field", "Your games"]),
+    ]),
     dict(id="review", title="Game review", question="One game, three stages: what you did, what the system recommends, why, and what it was worth.", sections=[
         section("review", "Game review", "Type the team's names, choose a game, and select matching lobbies in the left panel for the evidence.",
                 charts=["Early game map", "Mid game map"], table="Review", rows=40, wrap=True,

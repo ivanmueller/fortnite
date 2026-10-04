@@ -20,6 +20,7 @@ type Option = { key: string; label: string; ev: number };
 type Decision = {
   stretch: number; t: number; zone: number; engine: string; actual: string; stake: number; followed: boolean; options: Option[];
   fight: { p_win: number; if_won: number; if_lost: number } | null;
+  crowd: { field: Record<string, number>; n_field: number; top: Record<string, number> | null; n_top: number; second_look: boolean } | null;
   knew: { outside_m: number; hp: number; teams: number; members: number; seen: number; seen_close: number; seen_inside: number; surge: string; kills: number };
 };
 type Room = {
@@ -168,6 +169,9 @@ function DecisionCard({ room, t, onJump }: { room: Room; t: number; onJump: (t: 
   const youKey = keys.has(d.actual) ? d.actual : d.actual === 'rotate_alt' && keys.has('rotate') ? 'rotate' : 'hold';
   const max = Math.max(...d.options.map((o) => o.ev), 1);
   const label = (k: string) => room.actions[k] ?? k;
+  const verb: Record<string, string> = { hold: 'held', rotate: 'rotated straight in', rotate_alt: 'rotated by a quieter entry', engage: 'fought' };
+  const split = (m: Record<string, number>) => Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .map(([k, v]) => `${verb[k] ?? k} ${Math.round(v * 100)}%`).join(', ');
   const stretch = room.stretches.find((x) => x.stretch === d.stretch);
   return (
     <div className={`call ${d.followed ? 'call--ok' : 'call--miss'}`}>
@@ -192,6 +196,11 @@ function DecisionCard({ room, t, onJump }: { room: Room; t: number; onJump: (t: 
       {d.fight && (
         <p className="call__fight">Fight: {Math.round(d.fight.p_win * 100)}% to win at your health. Won: {d.fight.if_won.toFixed(1)} points
           (with the elimination). Lost: {d.fight.if_lost.toFixed(1)} (placed now, {d.knew.teams} teams left).</p>
+      )}
+      {d.crowd && (
+        <p className="call__crowd">In spots like this: the field {split(d.crowd.field)} ({d.crowd.n_field} decisions)
+          {d.crowd.top ? `; top teams ${split(d.crowd.top)} (${d.crowd.n_top})` : ''}.
+          {d.crowd.second_look && <strong> Most top teams chose differently from the engine here: worth a second look.</strong>}</p>
       )}
       <p className="call__knew">What you knew: {d.knew.outside_m > 0 ? `${d.knew.outside_m} m outside the next zone` : 'inside the next zone'}, health and
         shield {d.knew.hp}, {d.knew.members} alive, {d.knew.teams} teams left, {d.knew.seen} team{d.knew.seen === 1 ? '' : 's'} within 120 m

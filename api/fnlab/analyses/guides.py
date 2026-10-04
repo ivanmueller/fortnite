@@ -1002,6 +1002,53 @@ GUIDES: dict[str, Guide] = {
         ],
     ),
 
+    "field": Guide(
+        question="What does the whole field do, what do the best teams do differently, and what does your team do?",
+        method=[
+            "The field's choices are information, like the betting public's odds in Bill Benter's horse-racing model: most teams in "
+            "strong lobbies already know a lot. The edge is where the best teams consistently depart from the field, and where the "
+            "field's common choice doesn't pay.",
+            "A team is the same set of player accounts, followed across its games. Each team counts once: its value is the average "
+            "over its games, so teams that played more don't outweigh the rest.",
+            "Top teams: the top 10% by points per game among teams with 8+ games in the selection (fewer games if too few teams have "
+            "that many, with a note). 'Top 3 in this selection' is the three teams with the most total points: select one event to "
+            "see its podium.",
+            "The fingerprint per game: landed with another team, lost a player off spawn, stayed back when outside the zone (zones "
+            "1–3, 4–5), sat in the storm, when it left for the zone against the field, surged at the checks it faced, distance from "
+            "the zone's centre (zones 4–6), height (zones 6+), and eliminations per minute alive early and late. Anything only "
+            "possible while alive is measured over the time alive, so it doesn't simply reward surviving.",
+            "Two checks per behaviour: top teams against the rest (each team one value), and the same team against itself: its "
+            "points per game in games where it did it against games where it didn't. The second can't be explained by who the team is.",
+        ],
+        terms={
+            "Copy this": "Behaviours where top teams differ from the field and the same team scores more doing what they do.",
+            "Top teams": "The top 10% of teams by points per game among teams with enough games (the metric gives how many and the "
+                         "games each needed; the table lists them).",
+            "Teams in the field": "Teams (the same player accounts) in the selection.",
+            "Your games": "Games found for the names you typed, and your points per game.",
+            "Field, top teams and you": "Each behaviour: the field's average, the top teams', the selection's top 3, yours, the two "
+                                        "checks and the verdict.",
+            "Top 3 in this selection": "The three teams with the most total points: a picture, not evidence.",
+            "Where you differ most from the top teams": "Your biggest gaps from the top teams, largest first, with each verdict.",
+            "Top vs field": "Top teams' values against every other team's (rank test, each team one value).",
+            "Same team": "A team's points per game when it did it against when it didn't, averaged across teams.",
+        },
+        charts={"How often the field, the top teams and you do each": "The share of games each did it, for the yes/no behaviours."},
+        conclude=[
+            "'Copy this' rows are the strongest: top teams do it, and teams score more in the games they do it.",
+            "'Top teams' habit' rows may be skill rather than choice: they differ, but doing it doesn't help other teams. Test them in "
+            "scrims before making them rules.",
+            "'The field underuses / overuses it' rows are the closest thing to Benter's edge: most of the field does the opposite of "
+            "what helps.",
+        ],
+        limits=[
+            "A team needs repeated games: select a season or several events, not one game.",
+            "Duos change between events; a new pairing starts with no history.",
+            "Same-team comparisons show what goes with better games, not proof it causes them: a team may stay back when it's already "
+            "losing.",
+        ],
+    ),
+
     "storm_hunt": Guide(
         question="When your team is outside the next zone as it appears, does it pay to go in first and look for surge inside, or to "
                  "stay back in or behind the storm and tag the teams rotating late?",

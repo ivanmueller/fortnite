@@ -663,3 +663,5 @@ tbody tr:hover { background: #fff; }
 .export label { display: grid; gap: 0.3rem; font-size: var(--t-sm); color: var(--muted); }
 .export p { margin: 0; }
 .export .btn { justify-self: start; }
+.call__crowd { margin: 0.6rem 0 0; font-size: 0.88rem; }
+.call__crowd strong { color: var(--amber); font-weight: 600; }

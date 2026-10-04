@@ -138,3 +138,17 @@ def add_loadouts(tables: Path, names=("clix", "rapid", "third"), seed=0) -> None
     pd.DataFrame(held).to_parquet(tables / "weapons_held.parquet", index=False)
     pd.DataFrame(picks).to_parquet(tables / "pickups.parquet", index=False)
     pd.DataFrame(builds).to_parquet(tables / "builds.parquet", index=False)
+
+
+def add_recurring_field(tables: Path) -> None:
+    """Every team recurs across the demo matches: the k-th team (by team index) in each match is the same accounts, so the
+    field has teams with many games (run before add_recurring_team, which renames the first team)."""
+    players = pd.read_parquet(tables / "players.parquet")
+    for mid, pl in players.groupby("match_id"):
+        order = {t: k for k, t in enumerate(sorted(pl["team_index"].dropna().unique()))}
+        for i, row in pl.iterrows():
+            k = order.get(row["team_index"])
+            slot = int((pl[(pl["team_index"] == row["team_index"])].index.get_loc(i)))
+            players.loc[i, "name"] = f"team{k}_{slot}"
+            players.loc[i, "player_id"] = f"ACCOUNT_T{k}_{slot}"
+    players.to_parquet(tables / "players.parquet", index=False)
